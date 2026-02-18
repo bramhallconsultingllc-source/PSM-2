@@ -35,7 +35,10 @@ MONTH_NAMES  = ["Jan","Feb","Mar","Apr","May","Jun",
 ZONE_COLORS  = {"Green":"#10b981","Yellow":"#f59e0b","Red":"#ef4444"}
 HIRE_COLORS  = {"growth":"#3b82f6","replacement":"#6366f1",
                 "shed_pause":"#f59e0b","freeze_flu":"#94a3b8","none":"#e2e8f0"}
-Q_COLORS     = ["#6366f1","#10b981","#f59e0b","#3b82f6"]   # Q1–Q4
+Q_COLORS        = ["#6366f1","#10b981","#f59e0b","#3b82f6"]   # Q1–Q4
+Q_MONTH_GROUPS  = [[0,1,2],[3,4,5],[6,7,8],[9,10,11]]         # month indices per quarter
+Q_BG            = ["rgba(99,102,241,0.07)","rgba(16,185,129,0.07)",
+                   "rgba(245,158,11,0.07)","rgba(59,130,246,0.07)"]
 
 # ── Session state ─────────────────────────────────────────────────────────────
 for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_policies=[]).items():
@@ -229,10 +232,7 @@ if not st.session_state.optimized:
     fig_prev = make_subplots(specs=[[{"secondary_y": True}]])
 
     # Quarter shading
-    q_month_groups = [[0,1,2],[3,4,5],[6,7,8],[9,10,11]]
-    q_bg = ["rgba(99,102,241,0.07)","rgba(16,185,129,0.07)",
-             "rgba(245,158,11,0.07)","rgba(59,130,246,0.07)"]
-    for qi, (months_in_q, bg) in enumerate(zip(q_month_groups, q_bg)):
+    for qi, (months_in_q, bg) in enumerate(zip(Q_MONTH_GROUPS, Q_BG)):
         fig_prev.add_vrect(x0=months_in_q[0]-0.5, x1=months_in_q[-1]+0.5,
                            fillcolor=bg, layer="below", line_width=0)
         impact = quarterly_impacts[qi]
@@ -346,7 +346,7 @@ with tabs[0]:
 
     # Quarter background bands for all 36 months
     def get_q_bg(mo):
-        return q_bg[mo.quarter - 1]
+        return Q_BG[mo.quarter - 1]
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
                         subplot_titles=("Load (Pts/Provider/Shift)", "Staffing (FTE)"),
@@ -526,8 +526,7 @@ with tabs[2]:
     fig_demand = make_subplots(specs=[[{"secondary_y": True}]])
 
     # Quarter shading
-    q_month_groups = [[0,1,2],[3,4,5],[6,7,8],[9,10,11]]
-    for qi, (months_in_q, bg) in enumerate(zip(q_month_groups, q_bg)):
+    for qi, (months_in_q, bg) in enumerate(zip(Q_MONTH_GROUPS, Q_BG)):
         fig_demand.add_vrect(x0=months_in_q[0]-0.5, x1=months_in_q[-1]+0.5,
                              fillcolor=bg, layer="below", line_width=0)
         impact = quarterly_impacts[qi]
