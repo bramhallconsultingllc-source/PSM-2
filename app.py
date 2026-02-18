@@ -316,6 +316,104 @@ z1.metric("🟢 Green Months", s["green_months"])
 z2.metric("🟡 Yellow Months", s["yellow_months"])
 z3.metric("🔴 Red Months",    s["red_months"])
 
+# ── Helpers (defined here so they're available to hero chart + all tabs) ──────
+def active_policy():
+    return st.session_state.get("manual_policy") or best
+
+def mlabel(mo):
+    return f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1]}"
+
+
+# Always visible above the tabs; updates when Manual Override changes policy
+# ══════════════════════════════════════════════════════════════════════════════
+def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor, title=None):
+    """
+    Stacked bar (seasonal + flu uplift visits/day) with FTE Required line
+    and three policy reference lines: Winter FTE, Base FTE, Summer Floor FTE.
+    Uses Year 1 data from the simulation so policy lines reflect the actual run.
+    """
+    yr1 = [mo for mo in pol.months if mo.year == 1]
+    yr1_lbls = [MONTH_NAMES[mo.calendar_month - 1] for mo in yr1]
+
+    visits_base_only = [base_visits * cfg.seasonality_index[mo.calendar_month-1] * peak_factor
+                        for mo in yr1]
+    visits_with_flu  = [mo.demand_visits_per_day for mo in yr1]
+    fte_req_yr1      = [mo.demand_fte_required for mo in yr1]
+    flu_adder        = [vf - vb for vf, vb in zip(visits_with_flu, visits_base_only)]
+
+    summer_floor_val = pol.base_fte * cfg.summer_shed_floor_pct
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Quarter shading + labels
+    for qi, (months_in_q, bg) in enumerate(zip(Q_MONTH_GROUPS, Q_BG)):
+        fig.add_vrect(x0=months_in_q[0]-0.5, x1=months_in_q[-1]+0.5,
+                      fillcolor=bg, layer="below", line_width=0)
+        impact = quarterly_impacts[qi]
+        fig.add_annotation(
+            x=months_in_q[1], y=max(visits_with_flu) * 1.10,
+            text=f"<b>{QUARTER_LABELS[qi]}</b><br>{'+' if impact >= 0 else ''}{impact*100:.0f}%",
+            showarrow=False, font=dict(size=12, color=Q_COLORS[qi]),
+            bgcolor="rgba(255,255,255,0.85)", borderpad=3,
+        )
+
+    # Stacked bars: seasonal baseline + flu uplift
+    fig.add_bar(x=yr1_lbls, y=visits_base_only,
+                name="Seasonal visits/day", marker_color="#3b82f6", opacity=0.75)
+    fig.add_bar(x=yr1_lbls, y=flu_adder,
+                name="+ Flu uplift", marker_color="#ef4444", opacity=0.85,
+                base=visits_base_only)
+
+    # Base visits reference
+    fig.add_hline(y=base_visits, line_dash="dash", line_color="#9ca3af",
+                  annotation_text=f"Base ({base_visits:.0f}/day)",
+                  annotation_font=dict(color="#6b7280"))
+
+    # FTE Required line (secondary axis)
+    fig.add_scatter(x=yr1_lbls, y=fte_req_yr1,
+                    name="FTE Required", mode="lines+markers",
+                    line=dict(color="#f59e0b", width=3),
+                    marker=dict(size=9, color="#f59e0b",
+                                line=dict(color="white", width=1.5)),
+                    secondary_y=True)
+
+    # Policy reference lines (secondary axis)
+    fig.add_hline(y=pol.winter_fte, line_dash="dot", line_color="#3b82f6", line_width=2,
+                  annotation_text=f"Winter FTE ({pol.winter_fte:.1f})",
+                  annotation_font=dict(color="#3b82f6", size=11),
+                  secondary_y=True)
+    fig.add_hline(y=pol.base_fte, line_dash="dot", line_color="#6366f1", line_width=2,
+                  annotation_text=f"Base FTE ({pol.base_fte:.1f})",
+                  annotation_font=dict(color="#6366f1", size=11),
+                  secondary_y=True)
+    fig.add_hline(y=summer_floor_val, line_dash="dot", line_color="#10b981", line_width=2,
+                  annotation_text=f"Summer Floor ({summer_floor_val:.1f})",
+                  annotation_font=dict(color="#10b981", size=11),
+                  secondary_y=True)
+
+    fig.update_layout(
+        height=460,
+        template="plotly_white",
+        barmode="stack",
+        title=dict(text=title or "Annual Volume & FTE Requirement by Month",
+                   font=dict(size=15, color="#1e3a5f")),
+        legend=dict(orientation="h", y=-0.18, x=0),
+        margin=dict(t=60, b=80),
+    )
+    fig.update_yaxes(title_text="Visits/Day", secondary_y=False,
+                     showgrid=True, gridcolor="#f1f5f9")
+    fig.update_yaxes(title_text="FTE Required / Policy Lines", secondary_y=True,
+                     showgrid=False)
+    fig.update_xaxes(showgrid=False)
+    return fig
+
+st.divider()
+st.plotly_chart(
+    render_hero_chart(active_policy(), cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor),
+    use_container_width=True
+)
+st.divider()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -329,12 +427,6 @@ tabs = st.tabs([
     "⏱️ Req Timing",
     "📊 Data Table",
 ])
-
-def active_policy():
-    return st.session_state.get("manual_policy") or best
-
-def mlabel(mo):
-    return f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1]}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — 36-Month Load
@@ -516,55 +608,13 @@ with tabs[2]:
 
     # ── Annual demand curve (Year 1) ──────────────────────────────────────────
     st.markdown("#### Annual Demand Curve (Year 1)")
+    st.caption("Same chart shown above the tabs — reproduced here for reference alongside the tables below.")
     yr1 = [mo for mo in mos if mo.year == 1]
-    yr1_lbls = [MONTH_NAMES[mo.calendar_month - 1] for mo in yr1]
-
-    visits_base_only   = [base_visits * cfg.seasonality_index[mo.calendar_month-1] * peak_factor for mo in yr1]
-    visits_with_flu    = [mo.demand_visits_per_day for mo in yr1]
-    fte_req_yr1        = [mo.demand_fte_required for mo in yr1]
-
-    fig_demand = make_subplots(specs=[[{"secondary_y": True}]])
-
-    # Quarter shading
-    for qi, (months_in_q, bg) in enumerate(zip(Q_MONTH_GROUPS, Q_BG)):
-        fig_demand.add_vrect(x0=months_in_q[0]-0.5, x1=months_in_q[-1]+0.5,
-                             fillcolor=bg, layer="below", line_width=0)
-        impact = quarterly_impacts[qi]
-        fig_demand.add_annotation(
-            x=months_in_q[1], y=max(visits_with_flu)*1.09,
-            text=f"{QUARTER_LABELS[qi]}: {'+' if impact>=0 else ''}{impact*100:.0f}%",
-            showarrow=False, font=dict(size=11, color=Q_COLORS[qi]), bgcolor="rgba(255,255,255,0.8)"
-        )
-
-    fig_demand.add_bar(x=yr1_lbls, y=visits_base_only,
-                       name="Seasonal visits", marker_color="#3b82f6", opacity=0.75)
-    flu_adder = [vf - vb for vf, vb in zip(visits_with_flu, visits_base_only)]
-    fig_demand.add_bar(x=yr1_lbls, y=flu_adder,
-                       name="+ Flu uplift", marker_color="#ef4444", opacity=0.8,
-                       base=visits_base_only)
-    fig_demand.add_hline(y=base_visits, line_dash="dash", line_color="#6b7280",
-                         annotation_text=f"Base ({base_visits:.0f}/day)")
-    fig_demand.add_scatter(x=yr1_lbls, y=fte_req_yr1, name="FTE Required",
-                           mode="lines+markers",
-                           line=dict(color="#f59e0b", width=3), marker=dict(size=9),
-                           secondary_y=True)
-    fig_demand.add_hline(y=best.base_fte, line_dash="dot", line_color="#6366f1",
-                         annotation_text=f"Base FTE ({best.base_fte:.1f})",
-                         secondary_y=True)
-    fig_demand.add_hline(y=best.winter_fte, line_dash="dot", line_color="#3b82f6",
-                         annotation_text=f"Winter FTE ({best.winter_fte:.1f})",
-                         secondary_y=True)
-    summer_floor_fte_val = best.base_fte * cfg.summer_shed_floor_pct
-    fig_demand.add_hline(y=summer_floor_fte_val, line_dash="dot", line_color="#10b981",
-                         annotation_text=f"Summer Floor ({summer_floor_fte_val:.1f})",
-                         secondary_y=True)
-
-    fig_demand.update_layout(height=460, template="plotly_white", barmode="stack",
-                             title="Monthly Demand vs FTE Policy Lines",
-                             legend=dict(orientation="h", y=-0.2))
-    fig_demand.update_yaxes(title_text="Visits/Day", secondary_y=False)
-    fig_demand.update_yaxes(title_text="FTE Required / Policy", secondary_y=True)
-    st.plotly_chart(fig_demand, use_container_width=True)
+    st.plotly_chart(
+        render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor,
+                          title="Annual Demand Curve — Year 1 Detail"),
+        use_container_width=True
+    )
 
     # ── Quarterly summary table ───────────────────────────────────────────────
     st.markdown("#### Quarterly Demand Summary (36-Month Avg)")
