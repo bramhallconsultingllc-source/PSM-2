@@ -27,8 +27,10 @@ class SupportStaffConfig:
     Staffing and rate config for non-provider team members.
     Cost folds into SWB/visit only — not graphed or included in FTE optimizer.
 
-    Ratios are per provider on floor per shift.
-    RT is a flat per-shift constant regardless of provider count.
+    Ratios are per APC on floor per shift.
+    RT is a flat per-shift constant regardless of APC count.
+    Physician supervision and supervisor admin costs are included
+    ONLY when their respective hours/month inputs are > 0.
     """
     # Per-shift hourly rates (fully loaded BEFORE benefits/bonus/OT multiplier)
     physician_rate_hr:   float = 135.79
@@ -60,8 +62,8 @@ class SupportStaffConfig:
                               shift_hours: float,
                               operating_days_per_week: float) -> float:
         """
-        Estimate monthly support staff cost for a given average provider count.
-        avg_providers_on_floor: average concurrent providers across the month.
+        Estimate monthly support staff cost for a given average APC count on floor.
+        Supervision cost is included ONLY when hours > 0.
         """
         operating_days_mo = operating_days_per_week * (52 / 12)
         hours_per_staff_mo = shift_hours * operating_days_mo
@@ -72,10 +74,19 @@ class SupportStaffConfig:
                     self.psr_rate_hr * hours_per_staff_mo * self.total_multiplier)
         rt_cost  = (self.rt_flat_fte *
                     self.rt_rate_hr * hours_per_staff_mo * self.total_multiplier)
-        sup_cost = ((self.supervisor_hrs_mo + self.supervisor_admin_mo) *
-                    self.supervisor_rate_hr * self.total_multiplier)
 
-        return ma_cost + psr_cost + rt_cost + sup_cost
+        # Physician supervision: billed at physician rate × hrs/mo, only if hrs > 0
+        phys_sup_cost = (
+            self.supervisor_hrs_mo * self.physician_rate_hr * self.total_multiplier
+            if self.supervisor_hrs_mo > 0 else 0.0
+        )
+        # Operations supervisor admin: billed at supervisor rate × hrs/mo, only if hrs > 0
+        sup_admin_cost = (
+            self.supervisor_admin_mo * self.supervisor_rate_hr * self.total_multiplier
+            if self.supervisor_admin_mo > 0 else 0.0
+        )
+
+        return ma_cost + psr_cost + rt_cost + phys_sup_cost + sup_admin_cost
 
 
 @dataclass
