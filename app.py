@@ -96,26 +96,22 @@ html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; backgrou
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
 [data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
-    background: rgba(255,255,255,0.15) !important;
-    border: 1px solid rgba(255,255,255,0.35) !important;
-    color: #FFFFFF !important;
+    background: #1E3A52 !important;
+    border: 1px solid #3A6080 !important;
+    color: #F0F6FF !important;
+    -webkit-text-fill-color: #F0F6FF !important;
     border-radius: 3px;
     font-size: 0.92rem !important;
-    font-weight: 600 !important; }}
-[data-testid="stSidebar"] input::placeholder {{ color: rgba(255,255,255,0.5) !important; }}
-[data-testid="stSidebar"] input::-webkit-input-placeholder {{ color: rgba(255,255,255,0.5) !important; }}
-[data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
-[data-testid="stSidebar"] div[data-testid="stNumberInput"] p,
-[data-testid="stSidebar"] div[data-testid="stNumberInput"] span {{
-    color: #FFFFFF !important; }}
-[data-testid="stSidebar"] .stNumberInput input,
-[data-testid="stSidebar"] .stTextInput input,
-[data-testid="stSidebar"] .stSelectbox select {{
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important; }}
-[data-testid="stSidebar"] button[kind="secondary"] {{
-    color: #FFFFFF !important;
-    border-color: rgba(255,255,255,0.3) !important; }}
+    font-weight: 500 !important; }}
+[data-testid="stSidebar"] input::placeholder {{
+    color: #6A8FAA !important;
+    -webkit-text-fill-color: #6A8FAA !important; }}
+[data-testid="stSidebar"] input:focus, [data-testid="stSidebar"] select:focus {{
+    background: #1E3A52 !important;
+    border-color: #5A9FCA !important;
+    color: #F0F6FF !important;
+    -webkit-text-fill-color: #F0F6FF !important;
+    outline: none !important; }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stExpander summary p {{
     font-size: 0.68rem !important; font-weight: 600 !important; text-transform: uppercase !important;
     letter-spacing: 0.10em !important; color: #8FAABB !important; }}
