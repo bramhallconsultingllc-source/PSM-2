@@ -96,8 +96,26 @@ html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; backgrou
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
 [data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
-    background: rgba(255,255,255,0.11) !important; border: 1px solid rgba(255,255,255,0.22) !important;
-    color: #F0F6FB !important; border-radius: 3px; font-size: 0.92rem !important; font-weight: 500 !important; }}
+    background: rgba(255,255,255,0.15) !important;
+    border: 1px solid rgba(255,255,255,0.35) !important;
+    color: #FFFFFF !important;
+    border-radius: 3px;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important; }}
+[data-testid="stSidebar"] input::placeholder {{ color: rgba(255,255,255,0.5) !important; }}
+[data-testid="stSidebar"] input::-webkit-input-placeholder {{ color: rgba(255,255,255,0.5) !important; }}
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div[data-testid="stNumberInput"] p,
+[data-testid="stSidebar"] div[data-testid="stNumberInput"] span {{
+    color: #FFFFFF !important; }}
+[data-testid="stSidebar"] .stNumberInput input,
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stSelectbox select {{
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important; }}
+[data-testid="stSidebar"] button[kind="secondary"] {{
+    color: #FFFFFF !important;
+    border-color: rgba(255,255,255,0.3) !important; }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stExpander summary p {{
     font-size: 0.68rem !important; font-weight: 600 !important; text-transform: uppercase !important;
     letter-spacing: 0.10em !important; color: #8FAABB !important; }}
@@ -515,7 +533,7 @@ with tabs[0]:
                     line=dict(color=NAVY,width=2.5),
                     marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
                     row=1,col=1)
-    for yv,lbl,col in [(budget,"Budget",C_GREEN),(budget+cfg.yellow_threshold_above,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
         fig.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
                       annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col),row=1,col=1)
 
@@ -608,10 +626,14 @@ with tabs[2]:
     pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
     st.markdown("## SHIFT COVERAGE MODEL")
     e1,e2,e3,e4=st.columns(4)
-    e1.metric("Shift Slots/Week",  f"{cfg.shift_slots_per_week:.0f}")
-    e2.metric("Shifts/Week/FTE",   f"{cfg.shifts_per_week_per_fte:.2f}")
-    e3.metric("FTE per Slot",      f"{cfg.fte_per_shift_slot:.2f}")
-    e4.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}")
+    e1.metric("Shift Slots/Week",   f"{cfg.shift_slots_per_week:.0f}",
+              help=f"{cfg.operating_days_per_week}d x {cfg.shifts_per_day} shifts/day")
+    e2.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
+              help="APC contract shifts — coverage denominator (FTE fraction affects cost only)")
+    e3.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
+              help=f"{cfg.operating_days_per_week} days / {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f}")
+    e4.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
+              help="visits/day / pts-per-APC x FTE-per-slot")
 
     prov_needed=[mo.demand_providers_per_shift for mo in mos]
     prov_on_floor=[mo.providers_on_floor for mo in mos]
@@ -779,7 +801,7 @@ with tabs[5]:
                     mode="lines+markers",line=dict(color=NAVY,width=2.5),marker=dict(size=8,line=dict(color="white",width=1.5)))
     fma.add_scatter(x=m_labels_12,y=ma["yr1_load_plus"],name=f"+{ma_delta} FTE ({pol.base_fte+ma_delta:.1f} FTE)",
                     mode="lines+markers",line=dict(color=C_GREEN,width=2.5,dash="dash"),marker=dict(size=8,line=dict(color="white",width=1.5)))
-    for yv,lbl,col in [(budget,"Budget",C_GREEN),(budget+cfg.yellow_threshold_above,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
         fma.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
                       annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
     fma.update_layout(**mk_layout(height=340,title=f"Year 1 Load: Current vs +{ma_delta} FTE"))
@@ -845,7 +867,7 @@ with tabs[6]:
                     name="Base scenario",line=dict(color=NAVY,width=2.5))
     fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
                     name=f"Stress (+{shock_mag*100:.0f}%)",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    for yv,lbl,col in [(budget,"Budget",C_GREEN),(budget+cfg.yellow_threshold_above,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
         fs2.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
     fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
     fs2.update_yaxes(title_text="Pts/APC/Shift")
