@@ -328,9 +328,12 @@ def mlabel(mo):
 # ══════════════════════════════════════════════════════════════════════════════
 def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor, title=None):
     """
-    Stacked bar (seasonal + flu uplift visits/day) with FTE Required line
-    and three policy reference lines: Winter FTE, Base FTE, Summer Floor FTE.
-    Uses Year 1 data from the simulation so policy lines reflect the actual run.
+    Stacked bar (seasonal + flu uplift visits/day) with:
+      - FTE Required line (demand)
+      - Paid FTE line (actual headcount on payroll)
+      - Effective FTE line (ramp-adjusted productive capacity)
+      - Three policy reference lines: Winter FTE, Base FTE, Summer Floor FTE
+    Uses Year 1 data from the simulation.
     """
     yr1 = [mo for mo in pol.months if mo.year == 1]
     yr1_lbls = [MONTH_NAMES[mo.calendar_month - 1] for mo in yr1]
@@ -339,9 +342,14 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
                         for mo in yr1]
     visits_with_flu  = [mo.demand_visits_per_day for mo in yr1]
     fte_req_yr1      = [mo.demand_fte_required for mo in yr1]
+    paid_fte_yr1     = [mo.paid_fte for mo in yr1]
+    eff_fte_yr1      = [mo.effective_fte for mo in yr1]
     flu_adder        = [vf - vb for vf, vb in zip(visits_with_flu, visits_base_only)]
 
     summer_floor_val = pol.base_fte * cfg.summer_shed_floor_pct
+
+    # Hiring mode for marker coloring on Paid FTE line
+    hire_marker_colors = [HIRE_COLORS.get(mo.hiring_mode, "#94a3b8") for mo in yr1]
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -364,20 +372,38 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
                 name="+ Flu uplift", marker_color="#ef4444", opacity=0.85,
                 base=visits_base_only)
 
-    # Base visits reference
+    # Base visits reference line
     fig.add_hline(y=base_visits, line_dash="dash", line_color="#9ca3af",
                   annotation_text=f"Base ({base_visits:.0f}/day)",
                   annotation_font=dict(color="#6b7280"))
 
-    # FTE Required line (secondary axis)
+    # ── Actual staffing lines (secondary axis) ────────────────────────────────
+    # Effective FTE — ramp-adjusted productive capacity (dashed, inside Paid)
+    fig.add_scatter(x=yr1_lbls, y=eff_fte_yr1,
+                    name="Effective FTE (productive)",
+                    mode="lines",
+                    line=dict(color="#10b981", width=2, dash="dash"),
+                    secondary_y=True)
+
+    # Paid FTE — actual headcount on payroll (solid, colored dots by hiring mode)
+    fig.add_scatter(x=yr1_lbls, y=paid_fte_yr1,
+                    name="Paid FTE (actual)",
+                    mode="lines+markers",
+                    line=dict(color="#10b981", width=2.5),
+                    marker=dict(size=10, color=hire_marker_colors,
+                                line=dict(color="white", width=1.5)),
+                    secondary_y=True)
+
+    # ── Demand line (secondary axis) ──────────────────────────────────────────
     fig.add_scatter(x=yr1_lbls, y=fte_req_yr1,
-                    name="FTE Required", mode="lines+markers",
+                    name="FTE Required (demand)",
+                    mode="lines+markers",
                     line=dict(color="#f59e0b", width=3),
                     marker=dict(size=9, color="#f59e0b",
                                 line=dict(color="white", width=1.5)),
                     secondary_y=True)
 
-    # Policy reference lines (secondary axis)
+    # ── Policy reference lines (secondary axis) ───────────────────────────────
     fig.add_hline(y=pol.winter_fte, line_dash="dot", line_color="#3b82f6", line_width=2,
                   annotation_text=f"Winter FTE ({pol.winter_fte:.1f})",
                   annotation_font=dict(color="#3b82f6", size=11),
@@ -386,25 +412,25 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
                   annotation_text=f"Base FTE ({pol.base_fte:.1f})",
                   annotation_font=dict(color="#6366f1", size=11),
                   secondary_y=True)
-    fig.add_hline(y=summer_floor_val, line_dash="dot", line_color="#10b981", line_width=2,
+    fig.add_hline(y=summer_floor_val, line_dash="dot", line_color="#10b981", line_width=1.5,
                   annotation_text=f"Summer Floor ({summer_floor_val:.1f})",
                   annotation_font=dict(color="#10b981", size=11),
                   secondary_y=True)
 
     fig.update_layout(
-        height=460,
+        height=480,
         template="plotly_white",
         barmode="stack",
         title=dict(text=title or "Annual Volume & FTE Requirement by Month",
                    font=dict(size=15, color="#1e3a5f")),
         legend=dict(orientation="h", y=-0.18, x=0),
-        margin=dict(t=60, b=80),
+        margin=dict(t=60, b=90),
     )
     fig.update_yaxes(title_text="Visits/Day", secondary_y=False,
                      showgrid=True, gridcolor="#f1f5f9")
-    fig.update_yaxes(title_text="FTE Required / Policy Lines", secondary_y=True,
-                     showgrid=False)
+    fig.update_yaxes(title_text="FTE", secondary_y=True, showgrid=False)
     fig.update_xaxes(showgrid=False)
+
     return fig
 
 st.divider()
