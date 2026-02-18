@@ -293,7 +293,7 @@ with st.sidebar:
 
     with st.expander("BASE DEMAND", expanded=True):
         base_visits = st.number_input("Visits / Day", 20.0, 300.0, 80.0, 5.0)
-        budget_ppp  = st.number_input("Pts / Provider / Shift", 10.0, 60.0, 36.0, 1.0)
+        budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0)
         peak_factor = st.slider("Peak Factor", 1.00, 1.30, 1.10, 0.01)
 
     with st.expander("QUARTERLY SEASONALITY", expanded=True):
@@ -311,18 +311,22 @@ with st.sidebar:
     with st.expander("SHIFT STRUCTURE"):
         op_days   = st.number_input("Operating Days/Week", 1, 7, 7)
         shift_hrs = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5)
-        # Shifts/day: auto-computed from daily hours / shift length, capped 1-3
+        # Compute the smart default: assume 12-hr operating window, ceil(12 / shift_hrs), cap 1-3
         import math as _math
-        _daily_hrs   = 12.0   # assume 12hr operating window default
-        _auto_shifts = max(1, min(3, _math.ceil(_daily_hrs / shift_hrs)))
-        st.markdown(
-            f"<div style='font-size:0.72rem; color:#8FAABB; padding:0.2rem 0 0.4rem;'>"
-            f"Shifts/day (auto): <b style='color:#C8D8E8'>{_auto_shifts}</b> "
-            f"&nbsp;({shift_hrs:.0f} hr shifts, 12 hr day)</div>",
-            unsafe_allow_html=True
+        _auto_shifts = max(1, min(3, _math.ceil(12.0 / shift_hrs)))
+        # Persist user overrides across rerenders; reset when shift_hrs changes
+        _shift_key = f"shifts_day_override_{shift_hrs}"
+        if _shift_key not in st.session_state:
+            st.session_state[_shift_key] = _auto_shifts
+        shifts_day = st.number_input(
+            "Shifts/Day",
+            min_value=1, max_value=3,
+            value=st.session_state[_shift_key],
+            step=1,
+            help=f"Auto-computed as ⌈12 hr day ÷ {shift_hrs:.0f} hr shift⌉ = {_auto_shifts}. Edit to override.",
+            key=_shift_key,
         )
-        shifts_day = _auto_shifts
-        fte_shifts = st.number_input("Shifts/Week per Provider", 1.0, 7.0, 3.0, 0.5)
+        fte_shifts = st.number_input("Shifts/Week per APC", 1.0, 7.0, 3.0, 0.5)
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05)
 
     with st.expander("STAFFING POLICY"):
@@ -331,13 +335,13 @@ with st.sidebar:
         summer_shed_floor = st.slider("Summer Shed Floor (% of Base)", 60, 100, 85, 5)
 
     with st.expander("PROVIDER COMPENSATION"):
-        perm_cost_i = st.number_input("Perm Provider Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d")
-        flex_cost_i = st.number_input("Flex Provider Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d")
+        perm_cost_i = st.number_input("Perm APC Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d")
+        flex_cost_i = st.number_input("Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d")
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0)
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0)
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
-        st.caption("Scales with providers on floor. RT is a flat 1 FTE per shift. Feeds SWB/visit only.")
+        st.caption("Scales with APCs on floor each month. RT is flat per shift. Feeds SWB/visit only — not graphed.")
 
         # Comp multipliers
         sm1, sm2, sm3 = st.columns(3)
@@ -354,27 +358,40 @@ with st.sidebar:
         r5, r6 = st.columns(2)
         with r1: phys_rate = st.number_input("Physician ($/hr)",  50.0, 300.0, 135.79, 1.0)
         with r2: psr_rate  = st.number_input("PSR ($/hr)",         8.0, 60.0,  21.23, 0.25)
-        with r3: app_rate  = st.number_input("APP ($/hr)",        30.0, 200.0,  62.00, 1.0)
+        with r3: app_rate  = st.number_input("APC ($/hr)",        30.0, 200.0,  62.00, 1.0)
         with r4: rt_rate   = st.number_input("RT ($/hr)",          8.0, 80.0,   31.36, 0.25)
         with r5: ma_rate   = st.number_input("MA ($/hr)",          8.0, 60.0,   24.14, 0.25)
         with r6: sup_rate  = st.number_input("Supervisor ($/hr)",  8.0, 80.0,   28.25, 0.25)
 
         # Ratios
         st.markdown("<div style='font-size:0.65rem; text-transform:uppercase; "
-                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Staff Ratios</div>",
+                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Staff Ratios (per APC on floor)</div>",
                     unsafe_allow_html=True)
         ra1, ra2 = st.columns(2)
-        with ra1: ma_ratio  = st.number_input("MA : Provider",  0.0, 4.0, 1.0, 0.25)
-        with ra2: psr_ratio = st.number_input("PSR : Provider", 0.0, 4.0, 1.0, 0.25)
+        with ra1: ma_ratio  = st.number_input("MA : APC",  0.0, 4.0, 1.0, 0.25)
+        with ra2: psr_ratio = st.number_input("PSR : APC", 0.0, 4.0, 1.0, 0.25)
         rt_flat  = st.number_input("RT FTE (flat per shift)", 0.0, 4.0, 1.0, 0.5)
 
-        # Supervision
+        # Physician supervision — cost added only when hours > 0
         st.markdown("<div style='font-size:0.65rem; text-transform:uppercase; "
-                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Supervision</div>",
+                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>"
+                    "Physician Supervision  (cost added only when hrs &gt; 0)</div>",
                     unsafe_allow_html=True)
         sv1, sv2 = st.columns(2)
-        with sv1: phys_sup_hrs = st.number_input("Phys Supervision (hrs/mo)", 0.0, 200.0, 0.0, 5.0)
-        with sv2: sup_admin_hrs= st.number_input("Supervisor (hrs/mo)",       0.0, 200.0, 0.0, 5.0)
+        with sv1: phys_sup_hrs  = st.number_input("Physician Supervision (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
+                                                   help="Physician supervisor billed at Physician $/hr × hrs/mo × multiplier")
+        with sv2: sup_admin_hrs = st.number_input("Supervisor Admin (hrs/mo)",       0.0, 200.0, 0.0, 5.0,
+                                                   help="Operations supervisor billed at Supervisor $/hr × hrs/mo × multiplier")
+        if phys_sup_hrs > 0 or sup_admin_hrs > 0:
+            _mult = 1 + benefits_load/100 + bonus_pct_ss/100 + ot_sick_pct/100
+            _phys_mo  = phys_sup_hrs  * phys_rate * _mult if phys_sup_hrs  > 0 else 0
+            _sup_mo   = sup_admin_hrs * sup_rate   * _mult if sup_admin_hrs > 0 else 0
+            st.caption(
+                f"Supervision cost: "
+                + (f"Physician **${_phys_mo:,.0f}/mo**" if phys_sup_hrs > 0 else "")
+                + (" · " if phys_sup_hrs > 0 and sup_admin_hrs > 0 else "")
+                + (f"Supervisor **${_sup_mo:,.0f}/mo**" if sup_admin_hrs > 0 else "")
+            )
 
     with st.expander("HIRING PHYSICS"):
         days_sign  = st.number_input("Days to Sign",           7, 120, 30, 7)
@@ -385,7 +402,7 @@ with st.sidebar:
         st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
 
     with st.expander("TURNOVER & PENALTY RATES"):
-        st.caption("Costs derived as % of annual provider salary — no manual dollar entry needed.")
+        st.caption("Costs derived as % of annual APC salary — no manual dollar entry needed.")
         tp1, tp2 = st.columns(2)
         tp3, tp4 = st.columns(2)
         with tp1:
@@ -787,7 +804,7 @@ with tabs[0]:
 
     fig.add_scatter(
         x=lbls, y=[mo.patients_per_provider_per_shift for mo in mos],
-        mode="lines+markers", name="Pts / Provider / Shift",
+        mode="lines+markers", name="Pts / APC / Shift",
         line=dict(color=NAVY, width=2.5),
         marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos], size=7,
                     line=dict(color="white", width=1.5)),
@@ -821,8 +838,8 @@ with tabs[0]:
                                     line=dict(color="white", width=1.5)), row=2, col=1)
 
     fig.update_layout(**mk_layout(height=620, xaxis2=dict(tickangle=-45),
-                                  title="36-Month Provider Load & FTE Trajectory"))
-    fig.update_yaxes(title_text="Pts / Provider / Shift", showgrid=True,
+                                  title="36-Month APC Load & FTE Trajectory"))
+    fig.update_yaxes(title_text="Pts / APC / Shift", showgrid=True,
                      gridcolor=RULE, row=1, col=1)
     fig.update_yaxes(title_text="FTE", showgrid=True, gridcolor=RULE, row=2, col=1)
     st.plotly_chart(fig, use_container_width=True)
@@ -874,8 +891,8 @@ with tabs[1]:
                marker_color="rgba(185,28,28,0.28)")
     fc.update_layout(**mk_layout(height=340, barmode="overlay",
                                  xaxis=dict(tickangle=-45),
-                                 title="Concurrent Providers: Required vs On Floor"))
-    fc.update_yaxes(title_text="Concurrent Providers")
+                                 title="Concurrent APCs: Required vs On Floor"))
+    fc.update_yaxes(title_text="Concurrent APCs")
     st.plotly_chart(fc, use_container_width=True)
 
     gap_colors = [C_RED if g>0.05 else (C_YELLOW if g>-0.05 else C_GREEN) for g in gap]
@@ -884,7 +901,7 @@ with tabs[1]:
     fg.add_hline(y=0, line_color=SLATE, line_width=1)
     fg.update_layout(**mk_layout(height=220, xaxis=dict(tickangle=-45),
                                  title="Coverage Gap  ( + = understaffed  ·  − = overstaffed )"))
-    fg.update_yaxes(title_text="Providers")
+    fg.update_yaxes(title_text="APCs")
     st.plotly_chart(fg, use_container_width=True)
 
     df_sh = pd.DataFrame([{
@@ -1006,7 +1023,7 @@ with tabs[3]:
         f"padding:0.7rem 1rem; border-radius:0 3px 3px 0; margin-bottom:1rem; "
         f"font-size:0.82rem;'>"
         f"<b>SWB/Visit breakdown:</b> &nbsp; "
-        f"Provider ${_swb_prov_v:.2f} &nbsp;+&nbsp; "
+        f"APC ${_swb_prov_v:.2f} &nbsp;+&nbsp; "
         f"Support staff ${_swb_supp_v:.2f} &nbsp;=&nbsp; "
         f"<b>${s2['annual_swb_per_visit']:.2f}</b> total &nbsp;·&nbsp; "
         f"Target ${cfg.swb_target_per_visit:.2f}"
@@ -1101,8 +1118,8 @@ with tabs[4]:
                   line_color=C_RED, line_width=1.5,
                   annotation_text="Red", annotation_position="right")
     fcm.update_layout(**mk_layout(height=340, xaxis=dict(tickangle=-45),
-                                  title="Provider Load: Optimal vs Manual Override"))
-    fcm.update_yaxes(title_text="Pts / Provider / Shift")
+                                  title="APC Load: Optimal vs Manual Override"))
+    fcm.update_yaxes(title_text="Pts / APC / Shift")
     st.plotly_chart(fcm, use_container_width=True)
 
     ff2 = go.Figure()
