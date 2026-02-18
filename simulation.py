@@ -144,8 +144,12 @@ class ClinicConfig:
     swb_violation_penalty:           float = 500_000
 
     # ── Zone Thresholds ───────────────────────────────────────────────────────
-    yellow_threshold_above: float = 4.0
-    red_threshold_above:    float = 8.0
+    # Zone thresholds — pts/APC above budget that triggers each zone.
+    # Budget (36) is the GREEN ceiling: any load above budget enters Yellow.
+    # yellow_threshold_above = 0 means Yellow starts immediately above budget.
+    # red_threshold_above = 4 means Red starts at budget + 4 (e.g. 40 pts/APC).
+    yellow_threshold_above: float = 0.0   # Green: <= budget; Yellow: budget < x <= budget+4
+    red_threshold_above:    float = 4.0   # Red:   > budget + 4
 
     # ── Derived ───────────────────────────────────────────────────────────────
     @property
@@ -162,15 +166,33 @@ class ClinicConfig:
 
     @property
     def shift_slots_per_week(self) -> float:
+        """Total shift slots to fill per week (operating days x shifts/day)."""
         return self.operating_days_per_week * self.shifts_per_day
 
     @property
     def shifts_per_week_per_fte(self) -> float:
+        """Shifts per week a single FTE is contracted to work."""
         return self.fte_shifts_per_week / self.fte_fraction
 
     @property
     def fte_per_shift_slot(self) -> float:
-        return self.shift_slots_per_week / self.shifts_per_week_per_fte
+        """
+        FTE required to keep ONE concurrent provider slot filled continuously.
+
+        Logic: one slot needs operating_days_per_week shifts covered per week.
+        One APC works fte_shifts_per_week shifts/week (regardless of fte_fraction,
+        which only affects cost — not scheduling coverage).
+        shifts_per_day is already captured in demand (providers_per_shift) to
+        determine how many concurrent slots are needed; it must NOT multiply
+        the FTE-per-slot conversion again or it double-counts.
+
+        Example: 7 operating days, 3 shifts/week per APC ->
+            fte_per_slot = 7 / 3 = 2.33
+            (need 2.33 APCs to keep 1 concurrent slot filled every day)
+        """
+        if self.fte_shifts_per_week <= 0:
+            return 1.0
+        return self.operating_days_per_week / self.fte_shifts_per_week
 
     @property
     def seasonality_index(self) -> List[float]:
