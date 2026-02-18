@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from simulation import (ClinicConfig, simulate_policy, optimize,
+from simulation import (ClinicConfig, SupportStaffConfig, simulate_policy, optimize,
                         MONTH_TO_QUARTER, QUARTER_NAMES, QUARTER_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,14 +104,15 @@ html, body, [class*="css"] {{
     border-right: none;
 }}
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
-[data-testid="stSidebar"] * {{ color: #A8BED0 !important; }}
+[data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] select {{
-    background: rgba(255,255,255,0.07) !important;
-    border: 1px solid rgba(255,255,255,0.13) !important;
-    color: #E2EBF3 !important;
+    background: rgba(255,255,255,0.11) !important;
+    border: 1px solid rgba(255,255,255,0.22) !important;
+    color: #F0F6FB !important;
     border-radius: 3px;
-    font-size: 0.85rem !important;
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
 }}
 [data-testid="stSidebar"] .stSlider [data-testid="stThumb"] {{
     background: {C_ACTUAL} !important;
@@ -122,7 +123,7 @@ html, body, [class*="css"] {{
     font-weight: 600 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.10em !important;
-    color: #64849E !important;
+    color: #8FAABB !important;
 }}
 [data-testid="stSidebar"] .stButton > button {{
     background: {C_ACTUAL} !important;
@@ -307,20 +308,20 @@ with st.sidebar:
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day")
 
-    with st.expander("FLU UPLIFT (visits/day)"):
-        flu_defs = [10,8,3,0,0,0,0,0,0,0,5,8]
-        flu_cols = st.columns(4)
-        flu_uplift_vals = []
-        for i, d in enumerate(flu_defs):
-            with flu_cols[i % 4]:
-                flu_uplift_vals.append(
-                    st.number_input(MONTH_NAMES[i], 0, 50, d, 1,
-                                    key=f"flu_{i}", label_visibility="visible"))
-
     with st.expander("SHIFT STRUCTURE"):
-        op_days    = st.number_input("Operating Days/Week", 1, 7, 7)
-        shifts_day = st.number_input("Shifts/Day", 1, 3, 1)
-        shift_hrs  = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5)
+        op_days   = st.number_input("Operating Days/Week", 1, 7, 7)
+        shift_hrs = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5)
+        # Shifts/day: auto-computed from daily hours / shift length, capped 1-3
+        import math as _math
+        _daily_hrs   = 12.0   # assume 12hr operating window default
+        _auto_shifts = max(1, min(3, _math.ceil(_daily_hrs / shift_hrs)))
+        st.markdown(
+            f"<div style='font-size:0.72rem; color:#8FAABB; padding:0.2rem 0 0.4rem;'>"
+            f"Shifts/day (auto): <b style='color:#C8D8E8'>{_auto_shifts}</b> "
+            f"&nbsp;({shift_hrs:.0f} hr shifts, 12 hr day)</div>",
+            unsafe_allow_html=True
+        )
+        shifts_day = _auto_shifts
         fte_shifts = st.number_input("Shifts/Week per Provider", 1.0, 7.0, 3.0, 0.5)
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05)
 
@@ -329,44 +330,127 @@ with st.sidebar:
                                   format_func=lambda x: MONTH_NAMES[x-1])
         summer_shed_floor = st.slider("Summer Shed Floor (% of Base)", 60, 100, 85, 5)
 
-    with st.expander("ECONOMICS"):
-        perm_cost_i = st.number_input("Perm Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d")
-        flex_cost_i = st.number_input("Flex Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d")
+    with st.expander("PROVIDER COMPENSATION"):
+        perm_cost_i = st.number_input("Perm Provider Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d")
+        flex_cost_i = st.number_input("Flex Provider Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d")
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0)
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0)
 
-    with st.expander("HIRING PHYSICS"):
-        days_sign  = st.number_input("Days to Sign", 7, 120, 30, 7)
-        days_cred  = st.number_input("Days to Credential", 7, 180, 60, 7)
-        days_ind   = st.number_input("Days to Independence", 14, 180, 90, 7)
-        attrition  = st.slider("Monthly Attrition Rate", 0.005, 0.05, 0.015, 0.005, format="%.3f")
-        turnover_rc= st.number_input("Turnover Replace Cost ($)", 20_000, 300_000, 80_000, 5_000, format="%d")
+    with st.expander("SUPPORT STAFF  (SWB only)"):
+        st.caption("Scales with providers on floor. RT is a flat 1 FTE per shift. Feeds SWB/visit only.")
 
-    with st.expander("PENALTY WEIGHTS"):
-        burnout_pen   = st.number_input("Burnout Penalty/Red Month ($)", 10_000, 500_000, 50_000, 10_000, format="%d")
-        overstaff_pen = st.number_input("Overstaff Penalty/FTE-Month ($)", 500, 20_000, 3_000, 500, format="%d")
-        swb_pen       = st.number_input("SWB Violation Penalty ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d")
+        # Comp multipliers
+        sm1, sm2, sm3 = st.columns(3)
+        with sm1: benefits_load = st.number_input("Benefits Load %", 0.0, 60.0, 30.0, 1.0)
+        with sm2: bonus_pct_ss  = st.number_input("Bonus %",         0.0, 30.0, 10.0, 1.0)
+        with sm3: ot_sick_pct   = st.number_input("OT+Sick %",       0.0, 20.0,  4.0, 0.5)
+
+        # Hourly rates
+        st.markdown("<div style='font-size:0.65rem; text-transform:uppercase; "
+                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Hourly Rates</div>",
+                    unsafe_allow_html=True)
+        r1, r2 = st.columns(2)
+        r3, r4 = st.columns(2)
+        r5, r6 = st.columns(2)
+        with r1: phys_rate = st.number_input("Physician ($/hr)",  50.0, 300.0, 135.79, 1.0)
+        with r2: psr_rate  = st.number_input("PSR ($/hr)",         8.0, 60.0,  21.23, 0.25)
+        with r3: app_rate  = st.number_input("APP ($/hr)",        30.0, 200.0,  62.00, 1.0)
+        with r4: rt_rate   = st.number_input("RT ($/hr)",          8.0, 80.0,   31.36, 0.25)
+        with r5: ma_rate   = st.number_input("MA ($/hr)",          8.0, 60.0,   24.14, 0.25)
+        with r6: sup_rate  = st.number_input("Supervisor ($/hr)",  8.0, 80.0,   28.25, 0.25)
+
+        # Ratios
+        st.markdown("<div style='font-size:0.65rem; text-transform:uppercase; "
+                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Staff Ratios</div>",
+                    unsafe_allow_html=True)
+        ra1, ra2 = st.columns(2)
+        with ra1: ma_ratio  = st.number_input("MA : Provider",  0.0, 4.0, 1.0, 0.25)
+        with ra2: psr_ratio = st.number_input("PSR : Provider", 0.0, 4.0, 1.0, 0.25)
+        rt_flat  = st.number_input("RT FTE (flat per shift)", 0.0, 4.0, 1.0, 0.5)
+
+        # Supervision
+        st.markdown("<div style='font-size:0.65rem; text-transform:uppercase; "
+                    "letter-spacing:0.1em; color:#8FAABB; padding-top:0.4rem;'>Supervision</div>",
+                    unsafe_allow_html=True)
+        sv1, sv2 = st.columns(2)
+        with sv1: phys_sup_hrs = st.number_input("Phys Supervision (hrs/mo)", 0.0, 200.0, 0.0, 5.0)
+        with sv2: sup_admin_hrs= st.number_input("Supervisor (hrs/mo)",       0.0, 200.0, 0.0, 5.0)
+
+    with st.expander("HIRING PHYSICS"):
+        days_sign  = st.number_input("Days to Sign",           7, 120, 30, 7)
+        days_cred  = st.number_input("Days to Credential",     7, 180, 60, 7)
+        days_ind   = st.number_input("Days to Independence",  14, 180, 90, 7)
+        annual_att = st.number_input("Annual Attrition Rate %", 1.0, 50.0, 18.0, 1.0,
+                                     help="Converted to monthly rate internally (÷ 12)")
+        st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
+
+    with st.expander("TURNOVER & PENALTY RATES"):
+        st.caption("Costs derived as % of annual provider salary — no manual dollar entry needed.")
+        tp1, tp2 = st.columns(2)
+        tp3, tp4 = st.columns(2)
+        with tp1:
+            turnover_pct = st.number_input("Replacement Cost\n(% of salary)", 10.0, 150.0, 40.0, 5.0,
+                                           help="Recruiting + temp coverage + onboarding. Default 40% ≈ $80k on $200k salary.")
+        with tp2:
+            burnout_pct  = st.number_input("Burnout Penalty\n(% salary/red mo)", 5.0, 100.0, 25.0, 5.0,
+                                           help="Risk cost per Red month. Default 25% ≈ $50k on $200k salary.")
+        with tp3:
+            overstaff_pen= st.number_input("Overstaff Penalty\n($/FTE-month)", 500, 20_000, 3_000, 500, format="%d")
+        with tp4:
+            swb_pen      = st.number_input("SWB Violation\nPenalty ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d")
+
+        # Show derived dollar amounts for transparency
+        _rep_cost = perm_cost_i * turnover_pct / 100
+        _burn_cost = perm_cost_i * burnout_pct / 100
+        st.caption(f"Replacement cost: **${_rep_cost:,.0f}** · Burnout/red month: **${_burn_cost:,.0f}**")
 
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
     run_opt = st.button("RUN OPTIMIZER", type="primary", use_container_width=True)
 
 # ── Config ────────────────────────────────────────────────────────────────────
+support_cfg = SupportStaffConfig(
+    physician_rate_hr=phys_rate,
+    app_rate_hr=app_rate,
+    psr_rate_hr=psr_rate,
+    ma_rate_hr=ma_rate,
+    rt_rate_hr=rt_rate,
+    supervisor_rate_hr=sup_rate,
+    ma_ratio=ma_ratio,
+    psr_ratio=psr_ratio,
+    rt_flat_fte=rt_flat,
+    supervisor_hrs_mo=phys_sup_hrs,
+    supervisor_admin_mo=sup_admin_hrs,
+    benefits_load_pct=benefits_load/100,
+    bonus_pct=bonus_pct_ss/100,
+    ot_sick_pct=ot_sick_pct/100,
+)
+
+# flu_uplift removed — seasonality % is the sole demand modifier
+_zero_flu = [0.0] * 12
+
 cfg = ClinicConfig(
     base_visits_per_day=base_visits,
     budgeted_patients_per_provider_per_day=budget_ppp,
     peak_factor=peak_factor,
     quarterly_volume_impact=quarterly_impacts,
-    flu_uplift=flu_uplift_vals,
-    operating_days_per_week=int(op_days), shifts_per_day=int(shifts_day),
-    shift_hours=shift_hrs, fte_shifts_per_week=fte_shifts, fte_fraction=fte_frac,
+    operating_days_per_week=int(op_days),
+    shifts_per_day=int(shifts_day),
+    shift_hours=shift_hrs,
+    fte_shifts_per_week=fte_shifts,
+    fte_fraction=fte_frac,
     flu_anchor_month=flu_anchor,
     summer_shed_floor_pct=summer_shed_floor / 100,
-    annual_provider_cost_perm=perm_cost_i, annual_provider_cost_flex=flex_cost_i,
-    net_revenue_per_visit=rev_visit, swb_target_per_visit=swb_target,
-    days_to_sign=days_sign, days_to_credential=days_cred, days_to_independent=days_ind,
-    monthly_attrition_rate=attrition,
-    turnover_replacement_cost_per_provider=turnover_rc,
-    burnout_penalty_per_red_month=burnout_pen,
+    annual_provider_cost_perm=perm_cost_i,
+    annual_provider_cost_flex=flex_cost_i,
+    net_revenue_per_visit=rev_visit,
+    swb_target_per_visit=swb_target,
+    support=support_cfg,
+    days_to_sign=days_sign,
+    days_to_credential=days_cred,
+    days_to_independent=days_ind,
+    annual_attrition_pct=annual_att,
+    turnover_replacement_pct=turnover_pct,
+    burnout_pct_per_red_month=burnout_pct,
     overstaff_penalty_per_fte_month=overstaff_pen,
     swb_violation_penalty=swb_pen,
 )
@@ -395,8 +479,8 @@ if not st.session_state.optimized:
     st.markdown("## DEMAND PREVIEW")
 
     si = cfg.seasonality_index
-    mv = [base_visits*si[m]*peak_factor + flu_uplift_vals[m] for m in range(12)]
-    mv_nf = [base_visits*si[m]*peak_factor for m in range(12)]
+    mv = [base_visits*si[m]*peak_factor for m in range(12)]
+    mv_nf = mv  # no flu uplift — seasonality IS the demand signal
     fr = [v/budget_ppp*cfg.fte_per_shift_slot for v in mv]
     bft = (base_visits/budget_ppp)*cfg.fte_per_shift_slot
 
@@ -409,8 +493,6 @@ if not st.session_state.optimized:
                           showarrow=False, font=dict(size=11, color=Q_COLORS[qi]),
                           bgcolor="rgba(255,255,255,0.9)", borderpad=3)
     fp.add_bar(x=MONTH_NAMES, y=mv_nf, name="Seasonal volume", marker_color=C_BARS)
-    fp.add_bar(x=MONTH_NAMES, y=[v-nf for v,nf in zip(mv,mv_nf)],
-               name="Flu uplift", marker_color=C_FLU, base=mv_nf)
     fp.add_scatter(x=MONTH_NAMES, y=fr, name="FTE Required", mode="lines+markers",
                    line=dict(color=C_DEMAND, width=3),
                    marker=dict(size=9, color=C_DEMAND, symbol="diamond",
@@ -453,8 +535,7 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp,
 
     visits_nf = [base_visits * cfg.seasonality_index[mo.calendar_month-1] * peak_factor
                  for mo in yr1]
-    visits_fl = [mo.demand_visits_per_day for mo in yr1]
-    flu_add   = [a - b for a, b in zip(visits_fl, visits_nf)]
+    visits_fl = visits_nf  # no separate flu uplift — seasonality IS the demand curve
 
     fte_req   = [mo.demand_fte_required for mo in yr1]
     paid_fte  = [mo.paid_fte            for mo in yr1]
@@ -477,9 +558,6 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp,
 
     fig.add_bar(x=labels, y=visits_nf, name="Seasonal volume",
                 marker_color=C_BARS, marker_line_width=0, row=1, col=1)
-    fig.add_bar(x=labels, y=flu_add, name="Flu uplift",
-                marker_color=C_FLU, marker_line_width=0,
-                base=visits_nf, row=1, col=1)
     fig.add_hline(y=base_visits, line_dash="dash", line_color=SLATE, line_width=1,
                   annotation_text=f"Base {base_visits:.0f}/day",
                   annotation_position="right",
@@ -911,10 +989,30 @@ with tabs[3]:
     pol = active_policy(); s2 = pol.summary; mos = pol.months
 
     st.markdown("## 3-YEAR COST BREAKDOWN")
-    lc = ["Permanent","Flex","Turnover","Lost Revenue","Burnout","Overstaff"]
-    vc = [s2["total_permanent_cost"], s2["total_flex_cost"], s2["total_turnover_cost"],
-          s2["total_lost_revenue"],   s2["total_burnout_penalty"], s2["total_overstaff_penalty"]]
-    pal = [NAVY, NAVY_LT, C_YELLOW, C_RED, "#7F1D1D", C_GREEN]
+    lc  = ["Permanent","Flex","Support Staff","Turnover","Lost Revenue","Burnout","Overstaff"]
+    vc  = [s2["total_permanent_cost"], s2["total_flex_cost"], s2["total_support_cost"],
+           s2["total_turnover_cost"],  s2["total_lost_revenue"],
+           s2["total_burnout_penalty"], s2["total_overstaff_penalty"]]
+    pal = [NAVY, NAVY_LT, "#4B8BBE", C_YELLOW, C_RED, "#7F1D1D", C_GREEN]
+
+    # SWB breakdown annotation
+    _swb_prov    = (s2["total_permanent_cost"] + s2["total_flex_cost"]) / 3
+    _swb_support = s2["total_support_cost"] / 3
+    _ann_visits  = s2["annual_visits"]
+    _swb_prov_v  = _swb_prov   / _ann_visits if _ann_visits else 0
+    _swb_supp_v  = _swb_support / _ann_visits if _ann_visits else 0
+    st.markdown(
+        f"<div style='background:#F0F6FF; border-left:3px solid {NAVY}; "
+        f"padding:0.7rem 1rem; border-radius:0 3px 3px 0; margin-bottom:1rem; "
+        f"font-size:0.82rem;'>"
+        f"<b>SWB/Visit breakdown:</b> &nbsp; "
+        f"Provider ${_swb_prov_v:.2f} &nbsp;+&nbsp; "
+        f"Support staff ${_swb_supp_v:.2f} &nbsp;=&nbsp; "
+        f"<b>${s2['annual_swb_per_visit']:.2f}</b> total &nbsp;·&nbsp; "
+        f"Target ${cfg.swb_target_per_visit:.2f}"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     cl, cr = st.columns([1.1, 0.9])
     with cl:
@@ -928,14 +1026,15 @@ with tabs[3]:
             x=0.5, y=0.5, showarrow=False,
             font=dict(family="Playfair Display, serif", size=17, color=INK),
         )
-        fp2.update_layout(**mk_layout(height=360, title="3-Year Cost Mix",
+        fp2.update_layout(**mk_layout(height=380, title="3-Year Cost Mix",
                            margin=dict(t=40,b=40,l=16,r=16),
                            legend=dict(orientation="v", x=1.02, y=0.5)))
         st.plotly_chart(fp2, use_container_width=True)
     with cr:
-        dfc = pd.DataFrame({"Component":lc,
-                             "3-Year ($)":[f"${v:,.0f}" for v in vc],
-                             "Annual Avg":[f"${v/3:,.0f}" for v in vc]})
+        dfc = pd.DataFrame({"Component": lc,
+                             "3-Year ($)": [f"${v:,.0f}" for v in vc],
+                             "Annual Avg": [f"${v/3:,.0f}" for v in vc],
+                             "$/Visit":    [f"${v/3/(_ann_visits or 1):.2f}" for v in vc]})
         st.dataframe(dfc, use_container_width=True, hide_index=True)
         st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
         r1,r2,r3 = st.columns(3)
@@ -944,13 +1043,14 @@ with tabs[3]:
         r3.metric("SWB/Visit",    f"${s2['annual_swb_per_visit']:.2f}")
 
     dfms = pd.DataFrame([{
-        "Month":mlabel(mo),"Permanent":mo.permanent_cost,"Flex":mo.flex_cost,
-        "Turnover":mo.turnover_cost,"Lost Revenue":mo.lost_revenue,"Burnout":mo.burnout_penalty,
+        "Month":mlabel(mo), "Permanent":mo.permanent_cost, "Flex":mo.flex_cost,
+        "Support":mo.support_cost, "Turnover":mo.turnover_cost,
+        "Lost Revenue":mo.lost_revenue, "Burnout":mo.burnout_penalty,
     } for mo in mos])
     fst = go.Figure()
-    for col_, col in zip(["Permanent","Flex","Turnover","Lost Revenue","Burnout"],
-                         [NAVY, NAVY_LT, C_YELLOW, C_RED, "#7F1D1D"]):
-        fst.add_bar(x=dfms["Month"], y=dfms[col_], name=col_, marker_color=col)
+    for col_, color in zip(["Permanent","Flex","Support","Turnover","Lost Revenue","Burnout"],
+                            [NAVY, NAVY_LT, "#4B8BBE", C_YELLOW, C_RED, "#7F1D1D"]):
+        fst.add_bar(x=dfms["Month"], y=dfms[col_], name=col_, marker_color=color)
     fst.update_layout(**mk_layout(height=340, barmode="stack",
                                   xaxis=dict(tickangle=-45), title="Monthly Cost Stack"))
     fst.update_yaxes(title_text="Cost ($)")
