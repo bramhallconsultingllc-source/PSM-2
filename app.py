@@ -187,7 +187,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.expander("BASE DEMAND", expanded=True):
-        base_visits = st.number_input("Visits / Day", 20.0, 300.0, 80.0, 5.0,
+        base_visits = st.number_input("Visits / Day", 20.0, 300.0, 32.0, 5.0,
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
         budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
             help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
@@ -241,23 +241,23 @@ with st.sidebar:
             help="The FTE value assigned to one APC contract. 0.9 = each APC counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
 
     with st.expander("STAFFING POLICY"):
-        flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=10,
+        flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=11,
                                          format_func=lambda x: MONTH_NAMES[x-1],
                                          help="The month by which you need fully independent APCs on floor. Drives requisition posting deadline calculation.")
         summer_shed_floor = 85  # removed from UI — load-band optimizer handles shed floor implicitly
 
     with st.expander("PROVIDER COMPENSATION"):
-        perm_cost_i = st.number_input("APC Annual Salary — Fully Loaded ($)", 100_000, 500_000, 200_000, 10_000, format="%d",
+        perm_cost_i = st.number_input("APC Annual Salary — Fully Loaded ($)", 100_000, 500_000, 175_000, 10_000, format="%d",
             help="Fully loaded annual cost per permanent APC — base salary, benefits, malpractice. Drives turnover replacement cost, burnout penalty, and optimizer score. Support staff rates are entered separately below.")
-        rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0,
+        rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 140.0, 5.0,
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
-        swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0,
+        swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 150.0, 85.0, 1.0,
             help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes APC + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
 
-        flex_cost_i = st.number_input("Premium / Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d",
+        flex_cost_i = st.number_input("Premium / Flex APC Cost/Year ($)", 100_000, 600_000, 225_000, 10_000, format="%d",
             help="Annualized cost of a flex or locum APC. Typically 30–50% above perm due to agency fees. Applied when load exceeds Yellow threshold and flex coverage is needed.")
 
         # ── 1. Comp multipliers ───────────────────────────────────────────────
@@ -318,12 +318,12 @@ with st.sidebar:
                        + (f"Supervisor **${_sm:,.0f}/mo**" if sup_admin_hrs > 0 else ""))
 
     with st.expander("HIRING PHYSICS"):
-        days_sign = st.number_input("Days to Sign", 7, 120, 30, 7,
+        days_sign = st.number_input("Days to Sign", 7, 180, 90, 7,
             help="Days from posting a requisition to signed offer letter. Includes sourcing, interviewing, and offer negotiation.")
-        days_cred = st.number_input("Days to Credential", 7, 180, 60, 7,
+        days_cred = st.number_input("Days to Credential", 7, 180, 90, 7,
             help="Days from signed offer to credentialed and cleared to see patients. Includes hospital/payer credentialing and state licensing.")
-        days_ind  = st.number_input("Days to Independence", 14, 180, 90, 7,
-            help="Days from first patient to working fully independently. Ramp period where productivity is reduced — modeled at 40%/70%/90% in months 1–3.")
+        days_ind  = st.number_input("Days to Onboard/Train", 7, 180, 30, 7,
+            help="Days from credentialed start date to working fully independently. Includes orientation, EMR training, and supervised shifts before solo practice.")
         annual_att = st.number_input("Annual Attrition Rate %", 1.0, 50.0, 18.0, 1.0,
             help="Expected annual turnover as % of total staff. 18% = roughly 1 in 6 APCs leaves per year. Divided by 12 for monthly simulation. Increases with overwork if Overload Attrition Factor > 0.")
         st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
