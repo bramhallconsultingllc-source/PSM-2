@@ -15,6 +15,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+try:
+    import anthropic as _anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _anthropic = None
+    _ANTHROPIC_AVAILABLE = False
 from plotly.subplots import make_subplots
 from simulation import (ClinicConfig, SupportStaffConfig, simulate_policy,
                         simulate_stress, compare_marginal_fte, optimize,
@@ -631,6 +637,7 @@ tabs = st.tabs([
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
     "Manual Override", "Policy Heatmap", "Req Timing", "Data Table",
+    "Executive Summary",
 ])
 
 # ── TAB 0: 36-Month Load ──────────────────────────────────────────────────────
@@ -1183,6 +1190,331 @@ with tabs[10]:
     def _szz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
     st.dataframe(dff.style.applymap(_szz,subset=["Zone"]),use_container_width=True,height=520)
     st.download_button("Download CSV",dff.to_csv(index=False),"psm_36month.csv","text/csv")
+
+
+
+# ── TAB 11: Executive Summary ────────────────────────────────────────────────
+with tabs[11]:
+    pol = active_policy()
+    s   = pol.summary
+    es  = pol.ebitda_summary
+    ma  = pol.marginal_analysis
+
+    st.markdown("## EXECUTIVE SUMMARY")
+    st.caption("AI-generated CFO-level memo based on current optimizer results. Regenerates each time you run the optimizer.")
+
+    # ── Build the context payload for Claude ─────────────────────────────────
+    MONTH_ABR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    hire_lines = []
+    for h in pol.hire_events[:12]:
+        tag = "[PER-DIEM]" if h.mode == "per_diem" else ""
+        hire_lines.append(
+            f"  • Y{h.year}-{MONTH_ABR[h.calendar_month-1]}: {h.fte_hired:.2f} FTE "
+            f"[{h.mode}] {tag} → independent Y{h.independent_year}-{MONTH_ABR[h.independent_month-1]} "
+            f"(post req by Y{h.post_by_year}-{MONTH_ABR[h.post_by_month-1]})"
+        )
+
+    zone_by_year = {}
+    for yr in [1,2,3]:
+        yr_mos = [mo for mo in pol.months if mo.year == yr]
+        zone_by_year[yr] = {
+            "G": sum(1 for m in yr_mos if m.zone=="Green"),
+            "Y": sum(1 for m in yr_mos if m.zone=="Yellow"),
+            "R": sum(1 for m in yr_mos if m.zone=="Red"),
+            "peak_load": max(m.patients_per_provider_per_shift for m in yr_mos),
+            "avg_load":  sum(m.patients_per_provider_per_shift for m in yr_mos)/len(yr_mos),
+        }
+
+    ma_lines = ""
+    if ma:
+        payback = ma.get("payback_months")
+        pb_str  = f"{payback:.0f} months" if payback and payback > 0 else ("immediate" if payback and payback <= 0 else "never")
+        ma_lines = (
+            f"Marginal +0.5 FTE analysis: Net annual impact ${ma.get('net_annual_impact',0):+,.0f} | "
+            f"Payback: {pb_str} | "
+            f"Saves {ma.get('red_months_saved',0)}R + {ma.get('yellow_months_saved',0)}Y months"
+        )
+
+    context = f"""
+CLINIC STAFFING MODEL — EXECUTIVE BRIEFING DATA
+================================================
+
+INPUTS:
+  Base visits/day: {cfg.base_visits_per_day:.0f}
+  Annual volume growth: {cfg.annual_growth_pct:.0f}%
+  Budgeted pts/APC/shift: {cfg.budgeted_patients_per_provider_per_day:.0f}
+  Load band: {cfg.load_band_lo:.0f}–{cfg.load_band_hi:.0f} pts/APC | Winter target: {cfg.load_winter_target:.0f}
+  Min coverage FTE: {cfg.min_coverage_fte:.2f}
+  APC annual cost (fully loaded): ${cfg.annual_provider_cost_perm:,.0f}
+  Flex/locum APC cost: ${cfg.annual_provider_cost_flex:,.0f}
+  Net revenue/visit: ${cfg.net_revenue_per_visit:.0f}
+  SWB target/visit: ${cfg.swb_target_per_visit:.0f}
+  Annual attrition: {cfg.annual_attrition_pct:.0f}%
+  Days to sign/credential/onboard: {cfg.days_to_sign}/{cfg.days_to_credential}/{cfg.days_to_independent}
+  Flu anchor month: {MONTH_ABR[cfg.flu_anchor_month-1]}
+  Monthly fixed overhead: ${cfg.monthly_fixed_overhead:,.0f}
+
+OPTIMIZER RESULT:
+  Starting FTE (demand-seeded): {pol.months[0].paid_fte:.2f}
+  Optimal base FTE: {pol.base_fte}
+  Optimal winter FTE floor: {pol.winter_fte}
+
+3-YEAR ZONE PERFORMANCE:
+  Year 1: {zone_by_year[1]['G']}G / {zone_by_year[1]['Y']}Y / {zone_by_year[1]['R']}R  |  Peak load: {zone_by_year[1]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[1]['avg_load']:.1f}
+  Year 2: {zone_by_year[2]['G']}G / {zone_by_year[2]['Y']}Y / {zone_by_year[2]['R']}R  |  Peak load: {zone_by_year[2]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[2]['avg_load']:.1f}
+  Year 3: {zone_by_year[3]['G']}G / {zone_by_year[3]['Y']}Y / {zone_by_year[3]['R']}R  |  Peak load: {zone_by_year[3]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[3]['avg_load']:.1f}
+  Total: {s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R over 36 months
+
+3-YEAR EBITDA WATERFALL:
+  Revenue captured:  ${es['revenue']:>12,.0f}  ({es['capture_rate']*100:.1f}% of demand)
+  − SWB cost:        ${es['swb']:>12,.0f}
+  − Flex premium:    ${es['flex']:>12,.0f}
+  − Turnover cost:   ${es['turnover']:>12,.0f}
+  − Burnout risk:    ${es['burnout']:>12,.0f}
+  − Fixed overhead:  ${es['fixed']:>12,.0f}
+  = EBITDA contrib:  ${es['ebitda']:>12,.0f}
+  SWB/visit (actual vs target): ${s['annual_swb_per_visit']:.2f} vs ${cfg.swb_target_per_visit:.0f}
+  SWB violation: {'YES — exceeds target' if s['swb_violation'] else 'No — within target'}
+
+TURNOVER & BURNOUT:
+  Total turnover events (36mo): {s['total_turnover_events']:.1f}
+  Annual avg turnover rate: {cfg.annual_attrition_pct:.0f}% base
+  Turnover replacement cost/APC: ${cfg.annual_provider_cost_perm * cfg.turnover_replacement_pct/100:,.0f}
+  Total burnout penalty: ${s['total_burnout_penalty']:,.0f}
+  Overload attrition events: {s['total_overload_attrition']:.2f} FTE (above baseline)
+
+HIRING CALENDAR ({len(pol.hire_events)} events):
+{chr(10).join(hire_lines)}
+
+MARGINAL APC SIGNAL:
+  {ma_lines}
+
+GROWTH TRAJECTORY:
+  Y1 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==1)/12:.1f}
+  Y2 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==2)/12:.1f}
+  Y3 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==3)/12:.1f}
+  3-year visit growth: {((sum(mo.demand_visits_per_day for mo in pol.months if mo.year==3)/12) / (sum(mo.demand_visits_per_day for mo in pol.months if mo.year==1)/12) - 1)*100:.1f}%
+"""
+
+    # ── System prompt ─────────────────────────────────────────────────────────
+    system_prompt = """You are a healthcare operations CFO and staffing strategist writing an executive summary memo for a clinic operator. Your tone is direct, specific, and analytical — like a McKinsey partner who also understands urgent care operations. 
+
+Write in clear prose paragraphs, not bullet points. Every claim must reference a specific number from the data. Be willing to make strong recommendations with dollar justification.
+
+Structure the memo with these exact sections using markdown headers:
+## Headline Verdict
+One punchy paragraph. What is the overall staffing health of this clinic? Lead with the EBITDA number and visit capture rate.
+
+## What Your Current Inputs Are Producing
+2-3 paragraphs interpreting the zone performance, SWB vs target, FTE trajectory, and what it means operationally. Be specific about which years are strong and where pressure is building.
+
+## Where Money Is Being Left On The Table  
+1-2 paragraphs. What is the single biggest financial leak? Quantify it. Reference burnout cost, turnover events, visit capture losses, or SWB drag specifically.
+
+## Recommended Actions
+3-5 numbered actions in priority order. Each must include: what to do, when, and the expected dollar impact. Reference the hire calendar dates specifically.
+
+## 3-Year Outlook
+1 paragraph on the growth trajectory. What does Year 3 look like and what does the operator need to do now to be ready for it?
+
+Keep the total memo under 600 words. Write like you're presenting to a board."""
+
+    # ── Generate button ───────────────────────────────────────────────────────
+    col_btn, col_info = st.columns([1, 3])
+    if not _ANTHROPIC_AVAILABLE:
+        st.warning("The `anthropic` package is required for this feature. "
+                   "Add `anthropic` to your requirements.txt and restart the app.", icon="⚠️")
+        gen_btn = False
+    else:
+        with col_btn:
+            gen_btn = st.button("Generate Executive Summary", type="primary", use_container_width=True)
+        with col_info:
+            st.caption("Calls Claude API · typically 15–25 seconds · regenerate after any optimizer run")
+
+    if gen_btn or ("exec_summary_text" in st.session_state and st.session_state.get("exec_summary_cfg_hash") == hash(str(cfg))):
+        if gen_btn:
+            # Fresh generation
+            with st.spinner("Claude is analyzing your staffing model..."):
+                try:
+                    _client = _anthropic.Anthropic()
+                    full_text = ""
+                    with _client.messages.stream(
+                        model="claude-opus-4-5",
+                        max_tokens=1200,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": f"Please write the executive summary memo based on this staffing model data:\n{context}"}]
+                    ) as stream:
+                        for text in stream.text_stream:
+                            full_text += text
+                    st.session_state["exec_summary_text"] = full_text
+                    st.session_state["exec_summary_cfg_hash"] = hash(str(cfg))
+                except Exception as e:
+                    st.error(f"API error: {e}")
+                    full_text = None
+        else:
+            full_text = st.session_state.get("exec_summary_text", "")
+
+        if full_text:
+            # ── Styled memo display ───────────────────────────────────────────
+            st.markdown("""
+<style>
+.exec-memo {
+    background: #0A1628;
+    border: 1px solid #1E3A5F;
+    border-radius: 6px;
+    padding: 2.5rem 3rem;
+    margin-top: 1rem;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    max-width: 860px;
+}
+.exec-memo h2 {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #4A7FA5;
+    border-bottom: 1px solid #1E3A5F;
+    padding-bottom: 0.4rem;
+    margin-top: 2rem;
+    margin-bottom: 0.8rem;
+}
+.exec-memo h2:first-child { margin-top: 0; }
+.exec-memo p {
+    font-size: 0.92rem;
+    line-height: 1.75;
+    color: #CBD5E1;
+    margin-bottom: 1rem;
+}
+.exec-memo strong { color: #E2E8F0; }
+.exec-memo ol {
+    color: #CBD5E1;
+    font-size: 0.92rem;
+    line-height: 1.75;
+    padding-left: 1.5rem;
+}
+.exec-memo li { margin-bottom: 0.6rem; }
+.memo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid #1E3A5F;
+}
+.memo-title {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #4A7FA5;
+}
+.memo-ebitda {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #4ADE80;
+    text-align: right;
+}
+.memo-ebitda-label {
+    font-size: 0.6rem;
+    color: #6A8FAA;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    text-align: right;
+}
+</style>
+""", unsafe_allow_html=True)
+
+            import datetime
+            ebitda_val = es['ebitda']
+            ebitda_color = "#4ADE80" if ebitda_val > 0 else "#F87171"
+
+            st.markdown(f"""
+<div class="exec-memo">
+  <div class="memo-header">
+    <div>
+      <div class="memo-title">Permanent Staffing Model — Executive Summary</div>
+      <div style="color:#6A8FAA;font-size:0.75rem;margin-top:0.3rem;font-family:'IBM Plex Sans',sans-serif;">
+        Generated {datetime.date.today().strftime("%B %d, %Y")} &nbsp;·&nbsp;
+        {cfg.base_visits_per_day:.0f} visits/day base &nbsp;·&nbsp;
+        {cfg.annual_growth_pct:.0f}% YoY growth &nbsp;·&nbsp;
+        36-month horizon
+      </div>
+    </div>
+    <div>
+      <div class="memo-ebitda" style="color:{ebitda_color}">${ebitda_val/1e6:.2f}M</div>
+      <div class="memo-ebitda-label">3-Year EBITDA Contribution</div>
+    </div>
+  </div>
+  <div id="memo-body"></div>
+</div>
+""", unsafe_allow_html=True)
+
+            # Render the markdown body inside the styled container
+            # Use a clean container for the actual text
+            memo_container = st.container()
+            with memo_container:
+                st.markdown(f"""
+<div class="exec-memo" style="margin-top:-1rem;border-top:none;border-radius:0 0 6px 6px;padding-top:0;">
+{full_text.replace("## ", '<h2>').replace("\n## ", '</p><h2>') if False else ""}
+</div>
+""", unsafe_allow_html=True)
+                # Clean markdown render inside the styled frame
+                st.markdown(
+                    f"<div class='exec-memo' style='margin-top:0.5rem'>" +
+                    full_text.replace("\n\n", "</p><p>") +
+                    "</div>",
+                    unsafe_allow_html=True
+                )
+
+            # ── KPI strip below memo ──────────────────────────────────────────
+            st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+            ek1,ek2,ek3,ek4,ek5 = st.columns(5)
+            ek1.metric("3-Yr EBITDA",       f"${es['ebitda']/1e6:.2f}M")
+            ek2.metric("Visit Capture",      f"{es['capture_rate']*100:.1f}%")
+            ek3.metric("Burnout Cost",        f"${s['total_burnout_penalty']/1e3:.0f}K")
+            ek4.metric("Turnover Events",     f"{s['total_turnover_events']:.1f}")
+            ek5.metric("SWB/Visit",           f"${s['annual_swb_per_visit']:.2f}",
+                       delta=f"Target ${cfg.swb_target_per_visit:.0f}",
+                       delta_color="inverse" if s['swb_violation'] else "normal")
+
+            # ── Export button placeholder ─────────────────────────────────────
+            st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+            st.info("📄 PDF export coming next — run 'Export to PDF' to generate a boardroom-ready document.", icon="📋")
+
+    else:
+        # Pre-generation state — show what will be analyzed
+        st.markdown(f"""
+<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:6px;padding:2rem 2.5rem;margin-top:1rem;'>
+  <div style='color:#4A7FA5;font-size:0.6rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:1.2rem;'>
+    MEMO WILL COVER
+  </div>
+  <div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>
+    <div style='color:#CBD5E1;font-size:0.85rem;line-height:1.6;'>
+      ✦ Headline EBITDA verdict with capture rate<br>
+      ✦ Zone performance by year (Green/Yellow/Red)<br>
+      ✦ SWB vs target analysis<br>
+      ✦ Burnout & turnover root cause
+    </div>
+    <div style='color:#CBD5E1;font-size:0.85rem;line-height:1.6;'>
+      ✦ Specific $ amounts being left on the table<br>
+      ✦ Prioritized action list with hire dates<br>
+      ✦ Year 3 growth readiness assessment<br>
+      ✦ Marginal APC signal interpretation
+    </div>
+  </div>
+  <div style='margin-top:1.5rem;padding-top:1rem;border-top:1px solid #1E3A5F;'>
+    <span style='color:#6A8FAA;font-size:0.78rem;'>
+      Based on: <strong style='color:#94A3B8'>{cfg.base_visits_per_day:.0f} visits/day</strong> &nbsp;·&nbsp;
+      <strong style='color:#4ADE80'>${es["ebitda"]/1e6:.2f}M EBITDA</strong> &nbsp;·&nbsp;
+      <strong style='color:#{"4ADE80" if s["red_months"]==0 else "F87171"}'>{s["green_months"]}G / {s["yellow_months"]}Y / {s["red_months"]}R zones</strong> &nbsp;·&nbsp;
+      <strong style='color:#94A3B8'>{len(pol.hire_events)} hire events</strong>
+    </span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
