@@ -216,9 +216,9 @@ with st.sidebar:
         st.caption("Optimizer targets a pts/APC range. FTE derived monthly from demand.")
         lb1, lb2c = st.columns(2)
         with lb1:  load_lo     = st.number_input("Band Floor (pts/APC)", 15.0, 50.0, 30.0, 1.0,
-            help="Hire more staff if load would drop below this. Prevents chronic overstaffing in slow months.")
+            help="Minimum acceptable load. If load drops BELOW this, the optimizer sheds or pauses hiring — you have more staff than demand requires. Set this to your comfortable lower utilization bound (e.g. 28 pts/APC).")
         with lb2c: load_hi     = st.number_input("Band Ceiling (pts/APC)", 20.0, 60.0, 38.0, 1.0,
-            help="Trigger flex coverage above this load. Sets the upper bound of acceptable utilization.")
+            help="Maximum acceptable load. If load rises ABOVE this, the optimizer adds flex coverage — demand is exceeding your permanent staff capacity. Set this to just below your Green ceiling (e.g. 36 pts/APC).")
         load_winter = st.number_input("Winter Load Target (pts/APC)", 15.0, 60.0, 36.0, 1.0,
         help="Target load during Nov–Feb flu season. Can be set tighter (lower) to ensure flu surge capacity, or at Green ceiling (36) for efficient use of winter hires.")
         use_band    = st.checkbox("Use Load Band Mode", value=True)
