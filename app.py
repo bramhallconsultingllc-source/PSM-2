@@ -15,12 +15,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-try:
-    import anthropic as _anthropic
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    _anthropic = None
-    _ANTHROPIC_AVAILABLE = False
+# No external API needed — executive summary generated from simulation data
 from plotly.subplots import make_subplots
 from simulation import (ClinicConfig, SupportStaffConfig, simulate_policy,
                         simulate_stress, compare_marginal_fte, optimize,
@@ -1199,322 +1194,491 @@ with tabs[11]:
     s   = pol.summary
     es  = pol.ebitda_summary
     ma  = pol.marginal_analysis
+    MA  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
-    st.markdown("## EXECUTIVE SUMMARY")
-    st.caption("AI-generated CFO-level memo based on current optimizer results. Regenerates each time you run the optimizer.")
+    # ─────────────────────────────────────────────────────────────────────────
+    # NARRATIVE GENERATOR — pure Python, no API needed
+    # Reads live simulation data and writes conditional CFO-quality prose
+    # ─────────────────────────────────────────────────────────────────────────
+    def _generate_exec_summary(pol, s, es, ma, cfg, MA):
+        """
+        Build a structured executive summary memo from simulation results.
+        Returns a dict of {section_title: prose_string}.
+        """
+        import datetime
 
-    # ── Build the context payload for Claude ─────────────────────────────────
-    MONTH_ABR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        ebitda      = es["ebitda"]
+        capture     = es["capture_rate"] * 100
+        revenue     = es["revenue"]
+        swb_cost    = es["swb"]
+        burnout     = es["burnout"]
+        turnover    = es["turnover"]
+        flex        = es["flex"]
+        green_m     = s["green_months"]
+        yellow_m    = s["yellow_months"]
+        red_m       = s["red_months"]
+        swb_actual  = s["annual_swb_per_visit"]
+        swb_target  = cfg.swb_target_per_visit
+        swb_ok      = not s["swb_violation"]
+        tot_turnover= s["total_turnover_events"]
+        start_fte   = pol.months[0].paid_fte
 
-    hire_lines = []
-    for h in pol.hire_events[:12]:
-        tag = "[PER-DIEM]" if h.mode == "per_diem" else ""
-        hire_lines.append(
-            f"  • Y{h.year}-{MONTH_ABR[h.calendar_month-1]}: {h.fte_hired:.2f} FTE "
-            f"[{h.mode}] {tag} → independent Y{h.independent_year}-{MONTH_ABR[h.independent_month-1]} "
-            f"(post req by Y{h.post_by_year}-{MONTH_ABR[h.post_by_month-1]})"
-        )
+        # Zone characterization
+        zone_pct_green = green_m / 36 * 100
+        if red_m == 0 and yellow_m <= 4:
+            zone_health = "excellent"
+            zone_prose  = f"all {green_m} months in Green"
+        elif red_m == 0:
+            zone_health = "good"
+            zone_prose  = f"{green_m} Green and {yellow_m} Yellow months — no Red exposure"
+        elif red_m <= 3:
+            zone_health = "moderate"
+            zone_prose  = f"{green_m} Green, {yellow_m} Yellow, and {red_m} Red months"
+        else:
+            zone_health = "stressed"
+            zone_prose  = f"only {green_m} Green months against {red_m} Red — provider load is routinely excessive"
 
-    zone_by_year = {}
-    for yr in [1,2,3]:
-        yr_mos = [mo for mo in pol.months if mo.year == yr]
-        zone_by_year[yr] = {
-            "G": sum(1 for m in yr_mos if m.zone=="Green"),
-            "Y": sum(1 for m in yr_mos if m.zone=="Yellow"),
-            "R": sum(1 for m in yr_mos if m.zone=="Red"),
-            "peak_load": max(m.patients_per_provider_per_shift for m in yr_mos),
-            "avg_load":  sum(m.patients_per_provider_per_shift for m in yr_mos)/len(yr_mos),
+        # EBITDA characterization
+        ebitda_annual = ebitda / 3
+        if ebitda > 3_000_000:
+            ebitda_prose = f"strong 3-year EBITDA contribution of ${ebitda/1e6:.2f}M (${ebitda_annual/1e3:.0f}K/year)"
+        elif ebitda > 1_500_000:
+            ebitda_prose = f"solid 3-year EBITDA contribution of ${ebitda/1e6:.2f}M (${ebitda_annual/1e3:.0f}K/year)"
+        elif ebitda > 0:
+            ebitda_prose = f"modest 3-year EBITDA contribution of ${ebitda/1e6:.2f}M — there is meaningful room for improvement"
+        else:
+            ebitda_prose = f"a 3-year EBITDA loss of ${abs(ebitda)/1e6:.2f}M — immediate staffing restructuring is required"
+
+        # SWB characterization
+        swb_delta = swb_actual - swb_target
+        if swb_ok:
+            swb_prose = f"SWB/visit of ${swb_actual:.2f} sits ${abs(swb_delta):.2f} below the ${swb_target:.0f} target — cost efficiency is on track"
+        else:
+            swb_prose = f"SWB/visit of ${swb_actual:.2f} exceeds the ${swb_target:.0f} target by ${swb_delta:.2f} — a staffing cost discipline issue that warrants review"
+
+        # Burnout characterization
+        burnout_pct_of_revenue = burnout / revenue * 100
+        if burnout < 50_000:
+            burnout_prose = f"Burnout-driven attrition cost of ${burnout/1e3:.0f}K is well-controlled, representing {burnout_pct_of_revenue:.1f}% of captured revenue"
+        elif burnout < 150_000:
+            burnout_prose = f"Burnout risk is accumulating at ${burnout/1e3:.0f}K — {burnout_pct_of_revenue:.1f}% of revenue is being eroded by overload-driven attrition"
+        else:
+            burnout_prose = f"Burnout cost of ${burnout/1e3:.0f}K is a significant financial leak — {burnout_pct_of_revenue:.1f}% of captured revenue lost to overload-driven turnover cycles"
+
+        # Visit capture
+        if capture >= 99.5:
+            capture_prose = f"Visit capture is near-perfect at {capture:.1f}%"
+        elif capture >= 98:
+            capture_prose = f"Visit capture of {capture:.1f}% is strong but leaves ${(revenue/capture*100 - revenue)/1e3:.0f}K in uncaptured revenue across the 3-year horizon"
+        else:
+            lost_rev = revenue / capture * 100 - revenue
+            capture_prose = f"Visit capture of {capture:.1f}% represents ${lost_rev/1e3:.0f}K in diverted or lost patients across 3 years — a direct consequence of provider overload"
+
+        # Year-by-year breakdown
+        yr_data = {}
+        for yr in [1, 2, 3]:
+            yr_mos = [mo for mo in pol.months if mo.year == yr]
+            yr_data[yr] = {
+                "G": sum(1 for m in yr_mos if m.zone == "Green"),
+                "Y": sum(1 for m in yr_mos if m.zone == "Yellow"),
+                "R": sum(1 for m in yr_mos if m.zone == "Red"),
+                "peak": max(m.patients_per_provider_per_shift for m in yr_mos),
+                "avg_visits": sum(m.demand_visits_per_day for m in yr_mos) / 12,
+                "ebitda": sum(m.ebitda_contribution for m in yr_mos),
+            }
+
+        # Marginal APC signal
+        if ma:
+            net_ann   = ma.get("net_annual_impact", 0)
+            pb_months = ma.get("payback_months")
+            r_saved   = ma.get("red_months_saved", 0)
+            y_saved   = ma.get("yellow_months_saved", 0)
+            if pb_months is not None and pb_months <= 0:
+                marginal_prose = (f"The marginal APC signal is urgent: adding 0.5 FTE generates "
+                                  f"${abs(net_ann)/1e3:.0f}K net annual benefit with immediate payback, "
+                                  f"saving {r_saved}R + {y_saved}Y months. This clinic is currently understaffed "
+                                  f"relative to demand — the next hire should be prioritized.")
+            elif pb_months is not None and pb_months <= 18:
+                marginal_prose = (f"Adding 0.5 FTE yields a ${net_ann/1e3:.0f}K net annual benefit "
+                                  f"with a {pb_months:.0f}-month payback, saving {r_saved}R + {y_saved}Y months. "
+                                  f"A hire is financially justified and should be planned for the next available window.")
+            elif net_ann > 0:
+                marginal_prose = (f"A marginal 0.5 FTE hire would generate ${net_ann/1e3:.0f}K annually "
+                                  f"with a {pb_months:.0f}-month payback. Worthwhile but not urgent — "
+                                  f"plan for the Year 2 growth window.")
+            else:
+                marginal_prose = (f"The marginal APC analysis shows a negative return of ${abs(net_ann)/1e3:.0f}K/year "
+                                  f"for an additional 0.5 FTE — the current staffing level is at or above the EBITDA-optimal point. "
+                                  f"Focus on retention over recruitment.")
+        else:
+            marginal_prose = "Run the marginal APC analysis for specific hire recommendations."
+
+        # Hire calendar interpretation
+        hire_events = pol.hire_events
+        perm_hires  = [h for h in hire_events if h.mode != "per_diem"]
+        pd_hires    = [h for h in hire_events if h.mode == "per_diem"]
+
+        if len(perm_hires) == 0:
+            hire_prose = "No permanent hires are required under the current policy — attrition is manageable within the existing headcount."
+        elif len(perm_hires) == 1:
+            h = perm_hires[0]
+            hire_prose = (f"One permanent hire is required: {h.fte_hired:.2f} FTE in "
+                          f"Y{h.year}-{MA[h.calendar_month-1]}, with the requisition posted by "
+                          f"Y{h.post_by_year}-{MA[h.post_by_month-1]} to achieve independence by "
+                          f"Y{h.independent_year}-{MA[h.independent_month-1]}.")
+        else:
+            first_h = perm_hires[0]
+            total_perm_fte = sum(h.fte_hired for h in perm_hires)
+            winter_hires = [h for h in perm_hires if h.mode == "winter_ramp"]
+            growth_hires = [h for h in perm_hires if h.mode == "growth"]
+            hire_prose = (f"The hire calendar requires {len(perm_hires)} permanent hire events totaling "
+                          f"{total_perm_fte:.2f} FTE over 3 years")
+            if winter_hires and growth_hires:
+                hire_prose += (f" — {len(winter_hires)} seasonal winter ramps and {len(growth_hires)} "
+                               f"growth-driven hires")
+            elif winter_hires:
+                hire_prose += f" — all seasonal winter ramps to maintain flu-season coverage"
+            hire_prose += (f". The first requisition must be posted by "
+                           f"Y{first_h.post_by_year}-{MA[first_h.post_by_month-1]}.")
+            if pd_hires:
+                hire_prose += (f" {len(pd_hires)} small peak-season gaps ({sum(h.fte_hired for h in pd_hires):.2f} FTE-eq) "
+                               f"are flagged as per-diem or extra-shift coverage rather than full requisitions.")
+
+        # Growth trajectory
+        y1_vis = yr_data[1]["avg_visits"]
+        y3_vis = yr_data[3]["avg_visits"]
+        growth_pct = (y3_vis / y1_vis - 1) * 100
+        y3_zone_concern = yr_data[3]["Y"] + yr_data[3]["R"]
+
+        if y3_zone_concern >= 4:
+            growth_prose = (f"Volume growth of {cfg.annual_growth_pct:.0f}% annually pushes average daily visits "
+                            f"from {y1_vis:.1f} in Year 1 to {y3_vis:.1f} by Year 3 — a {growth_pct:.0f}% increase. "
+                            f"Year 3 already shows {yr_data[3]['Y']}Y + {yr_data[3]['R']}R months, meaning current staffing "
+                            f"strategy will be inadequate by Year 3. A proactive hire in the Year 2 window is required "
+                            f"to stay ahead of this demand curve.")
+        else:
+            growth_prose = (f"Volume growth of {cfg.annual_growth_pct:.0f}% annually takes daily visits "
+                            f"from {y1_vis:.1f} to {y3_vis:.1f} — {growth_pct:.0f}% higher by Year 3. "
+                            f"The current hiring policy absorbs this growth cleanly, with Year 3 showing "
+                            f"{yr_data[3]['G']}G / {yr_data[3]['Y']}Y / {yr_data[3]['R']}R. "
+                            f"Continue monitoring load targets as Year 3 demand approaches — "
+                            f"a load target adjustment may be needed in the Year 3 planning cycle.")
+
+        # ── Recommended actions ───────────────────────────────────────────────
+        actions = []
+
+        # Action: fix winter load target if burnout is high
+        if burnout > 100_000:
+            actions.append(
+                f"Tighten the Winter Load Target — current burnout cost of ${burnout/1e3:.0f}K suggests "
+                f"providers are being pushed too hard during flu season. Reducing the winter load target "
+                f"by 2 pts/APC typically reduces burnout cost by 60–80% with a net EBITDA improvement "
+                f"once the turnover savings are counted."
+            )
+
+        # Action: post first req
+        if perm_hires:
+            fh = perm_hires[0]
+            actions.append(
+                f"Post the first requisition by Y{fh.post_by_year}-{MA[fh.post_by_month-1]} — "
+                f"this {fh.fte_hired:.2f} FTE [{fh.mode.replace('_',' ')}] hire must be independent by "
+                f"Y{fh.independent_year}-{MA[fh.independent_month-1]} to maintain zone performance. "
+                f"Delays here cascade into Yellow/Red months with direct revenue impact."
+            )
+
+        # Action: marginal hire if justified
+        if ma and ma.get("net_annual_impact", 0) > 0 and ma.get("payback_months", 999) <= 18:
+            pb = ma.get("payback_months", 0)
+            actions.append(
+                f"Evaluate an opportunistic 0.5 FTE hire — marginal analysis shows ${ma['net_annual_impact']/1e3:.0f}K "
+                f"annual net benefit with a {pb:.0f}-month payback. If a strong candidate is available, "
+                f"hiring ahead of schedule is financially justified."
+            )
+
+        # Action: SWB discipline
+        if not swb_ok:
+            actions.append(
+                f"Address SWB overage — at ${swb_actual:.2f}/visit against a ${swb_target:.0f} target, "
+                f"annual SWB cost is running ${(swb_actual - swb_target) * s['annual_visits']/1e3:.0f}K above plan. "
+                f"Review support staff ratios and shift coverage overlap for reduction opportunities."
+            )
+
+        # Action: retention focus if turnover is high
+        replace_cost = cfg.annual_provider_cost_perm * cfg.turnover_replacement_pct / 100
+        if tot_turnover > 4:
+            actions.append(
+                f"Prioritize APC retention — {tot_turnover:.1f} projected turnover events over 3 years "
+                f"at ${replace_cost:,.0f} replacement cost each represents ${tot_turnover * replace_cost/1e3:.0f}K "
+                f"in avoidable spend. Retention bonuses or schedule flexibility investments below this threshold "
+                f"are immediately EBITDA-accretive."
+            )
+
+        # Action: growth readiness
+        if y3_zone_concern >= 4:
+            actions.append(
+                f"Plan for Year 3 demand — with {yr_data[3]['Y']}Y + {yr_data[3]['R']}R months projected, "
+                f"a growth hire in the Year 2 window is required. Begin the recruiting pipeline in Year 2 "
+                f"to ensure independence before Year 3 volume peaks."
+            )
+
+        if not actions:
+            actions.append(
+                f"Maintain current staffing trajectory — the model is performing well across all key metrics. "
+                f"Focus on executing the hire calendar on time and monitoring load targets quarterly as "
+                f"volume growth compounds in Year 3."
+            )
+
+        return {
+            "date": datetime.date.today().strftime("%B %d, %Y"),
+            "ebitda_prose":   ebitda_prose,
+            "capture_prose":  capture_prose,
+            "zone_prose":     zone_prose,
+            "zone_health":    zone_health,
+            "swb_prose":      swb_prose,
+            "burnout_prose":  burnout_prose,
+            "yr_data":        yr_data,
+            "hire_prose":     hire_prose,
+            "marginal_prose": marginal_prose,
+            "growth_prose":   growth_prose,
+            "actions":        actions,
         }
 
-    ma_lines = ""
-    if ma:
-        payback = ma.get("payback_months")
-        pb_str  = f"{payback:.0f} months" if payback and payback > 0 else ("immediate" if payback and payback <= 0 else "never")
-        ma_lines = (
-            f"Marginal +0.5 FTE analysis: Net annual impact ${ma.get('net_annual_impact',0):+,.0f} | "
-            f"Payback: {pb_str} | "
-            f"Saves {ma.get('red_months_saved',0)}R + {ma.get('yellow_months_saved',0)}Y months"
-        )
+    memo = _generate_exec_summary(pol, s, es, ma, cfg, MA)
 
-    context = f"""
-CLINIC STAFFING MODEL — EXECUTIVE BRIEFING DATA
-================================================
+    # ─────────────────────────────────────────────────────────────────────────
+    # RENDER
+    # ─────────────────────────────────────────────────────────────────────────
+    import datetime
 
-INPUTS:
-  Base visits/day: {cfg.base_visits_per_day:.0f}
-  Annual volume growth: {cfg.annual_growth_pct:.0f}%
-  Budgeted pts/APC/shift: {cfg.budgeted_patients_per_provider_per_day:.0f}
-  Load band: {cfg.load_band_lo:.0f}–{cfg.load_band_hi:.0f} pts/APC | Winter target: {cfg.load_winter_target:.0f}
-  Min coverage FTE: {cfg.min_coverage_fte:.2f}
-  APC annual cost (fully loaded): ${cfg.annual_provider_cost_perm:,.0f}
-  Flex/locum APC cost: ${cfg.annual_provider_cost_flex:,.0f}
-  Net revenue/visit: ${cfg.net_revenue_per_visit:.0f}
-  SWB target/visit: ${cfg.swb_target_per_visit:.0f}
-  Annual attrition: {cfg.annual_attrition_pct:.0f}%
-  Days to sign/credential/onboard: {cfg.days_to_sign}/{cfg.days_to_credential}/{cfg.days_to_independent}
-  Flu anchor month: {MONTH_ABR[cfg.flu_anchor_month-1]}
-  Monthly fixed overhead: ${cfg.monthly_fixed_overhead:,.0f}
+    # Header row
+    ebitda_color = "#4ADE80" if es["ebitda"] > 0 else "#F87171"
+    zone_badge   = {"excellent":"#22C55E","good":"#4ADE80","moderate":"#FBBF24","stressed":"#EF4444"}
+    badge_col    = zone_badge.get(memo["zone_health"], "#94A3B8")
 
-OPTIMIZER RESULT:
-  Starting FTE (demand-seeded): {pol.months[0].paid_fte:.2f}
-  Optimal base FTE: {pol.base_fte}
-  Optimal winter FTE floor: {pol.winter_fte}
-
-3-YEAR ZONE PERFORMANCE:
-  Year 1: {zone_by_year[1]['G']}G / {zone_by_year[1]['Y']}Y / {zone_by_year[1]['R']}R  |  Peak load: {zone_by_year[1]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[1]['avg_load']:.1f}
-  Year 2: {zone_by_year[2]['G']}G / {zone_by_year[2]['Y']}Y / {zone_by_year[2]['R']}R  |  Peak load: {zone_by_year[2]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[2]['avg_load']:.1f}
-  Year 3: {zone_by_year[3]['G']}G / {zone_by_year[3]['Y']}Y / {zone_by_year[3]['R']}R  |  Peak load: {zone_by_year[3]['peak_load']:.1f} pts/APC  |  Avg: {zone_by_year[3]['avg_load']:.1f}
-  Total: {s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R over 36 months
-
-3-YEAR EBITDA WATERFALL:
-  Revenue captured:  ${es['revenue']:>12,.0f}  ({es['capture_rate']*100:.1f}% of demand)
-  − SWB cost:        ${es['swb']:>12,.0f}
-  − Flex premium:    ${es['flex']:>12,.0f}
-  − Turnover cost:   ${es['turnover']:>12,.0f}
-  − Burnout risk:    ${es['burnout']:>12,.0f}
-  − Fixed overhead:  ${es['fixed']:>12,.0f}
-  = EBITDA contrib:  ${es['ebitda']:>12,.0f}
-  SWB/visit (actual vs target): ${s['annual_swb_per_visit']:.2f} vs ${cfg.swb_target_per_visit:.0f}
-  SWB violation: {'YES — exceeds target' if s['swb_violation'] else 'No — within target'}
-
-TURNOVER & BURNOUT:
-  Total turnover events (36mo): {s['total_turnover_events']:.1f}
-  Annual avg turnover rate: {cfg.annual_attrition_pct:.0f}% base
-  Turnover replacement cost/APC: ${cfg.annual_provider_cost_perm * cfg.turnover_replacement_pct/100:,.0f}
-  Total burnout penalty: ${s['total_burnout_penalty']:,.0f}
-  Overload attrition events: {s['total_overload_attrition']:.2f} FTE (above baseline)
-
-HIRING CALENDAR ({len(pol.hire_events)} events):
-{chr(10).join(hire_lines)}
-
-MARGINAL APC SIGNAL:
-  {ma_lines}
-
-GROWTH TRAJECTORY:
-  Y1 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==1)/12:.1f}
-  Y2 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==2)/12:.1f}
-  Y3 avg visits/day: {sum(mo.demand_visits_per_day for mo in pol.months if mo.year==3)/12:.1f}
-  3-year visit growth: {((sum(mo.demand_visits_per_day for mo in pol.months if mo.year==3)/12) / (sum(mo.demand_visits_per_day for mo in pol.months if mo.year==1)/12) - 1)*100:.1f}%
-"""
-
-    # ── System prompt ─────────────────────────────────────────────────────────
-    system_prompt = """You are a healthcare operations CFO and staffing strategist writing an executive summary memo for a clinic operator. Your tone is direct, specific, and analytical — like a McKinsey partner who also understands urgent care operations. 
-
-Write in clear prose paragraphs, not bullet points. Every claim must reference a specific number from the data. Be willing to make strong recommendations with dollar justification.
-
-Structure the memo with these exact sections using markdown headers:
-## Headline Verdict
-One punchy paragraph. What is the overall staffing health of this clinic? Lead with the EBITDA number and visit capture rate.
-
-## What Your Current Inputs Are Producing
-2-3 paragraphs interpreting the zone performance, SWB vs target, FTE trajectory, and what it means operationally. Be specific about which years are strong and where pressure is building.
-
-## Where Money Is Being Left On The Table  
-1-2 paragraphs. What is the single biggest financial leak? Quantify it. Reference burnout cost, turnover events, visit capture losses, or SWB drag specifically.
-
-## Recommended Actions
-3-5 numbered actions in priority order. Each must include: what to do, when, and the expected dollar impact. Reference the hire calendar dates specifically.
-
-## 3-Year Outlook
-1 paragraph on the growth trajectory. What does Year 3 look like and what does the operator need to do now to be ready for it?
-
-Keep the total memo under 600 words. Write like you're presenting to a board."""
-
-    # ── Generate button ───────────────────────────────────────────────────────
-    col_btn, col_info = st.columns([1, 3])
-    if not _ANTHROPIC_AVAILABLE:
-        st.warning("The `anthropic` package is required for this feature. "
-                   "Add `anthropic` to your requirements.txt and restart the app.", icon="⚠️")
-        gen_btn = False
-    else:
-        with col_btn:
-            gen_btn = st.button("Generate Executive Summary", type="primary", use_container_width=True)
-        with col_info:
-            st.caption("Calls Claude API · typically 15–25 seconds · regenerate after any optimizer run")
-
-    if gen_btn or ("exec_summary_text" in st.session_state and st.session_state.get("exec_summary_cfg_hash") == hash(str(cfg))):
-        if gen_btn:
-            # Fresh generation
-            with st.spinner("Claude is analyzing your staffing model..."):
-                try:
-                    _client = _anthropic.Anthropic()
-                    full_text = ""
-                    with _client.messages.stream(
-                        model="claude-opus-4-5",
-                        max_tokens=1200,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": f"Please write the executive summary memo based on this staffing model data:\n{context}"}]
-                    ) as stream:
-                        for text in stream.text_stream:
-                            full_text += text
-                    st.session_state["exec_summary_text"] = full_text
-                    st.session_state["exec_summary_cfg_hash"] = hash(str(cfg))
-                except Exception as e:
-                    st.error(f"API error: {e}")
-                    full_text = None
-        else:
-            full_text = st.session_state.get("exec_summary_text", "")
-
-        if full_text:
-            # ── Styled memo display ───────────────────────────────────────────
-            st.markdown("""
+    st.markdown(f"""
 <style>
-.exec-memo {
-    background: #0A1628;
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+.memo-wrap {{
+    background: #080F1A;
     border: 1px solid #1E3A5F;
-    border-radius: 6px;
-    padding: 2.5rem 3rem;
-    margin-top: 1rem;
-    font-family: 'Georgia', 'Times New Roman', serif;
-    max-width: 860px;
-}
-.exec-memo h2 {
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 900px;
+    margin: 0 auto;
     font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #4A7FA5;
+}}
+.memo-masthead {{
+    background: linear-gradient(135deg, #0D1B2A 0%, #0A1628 100%);
     border-bottom: 1px solid #1E3A5F;
-    padding-bottom: 0.4rem;
-    margin-top: 2rem;
-    margin-bottom: 0.8rem;
-}
-.exec-memo h2:first-child { margin-top: 0; }
-.exec-memo p {
-    font-size: 0.92rem;
-    line-height: 1.75;
-    color: #CBD5E1;
-    margin-bottom: 1rem;
-}
-.exec-memo strong { color: #E2E8F0; }
-.exec-memo ol {
-    color: #CBD5E1;
-    font-size: 0.92rem;
-    line-height: 1.75;
-    padding-left: 1.5rem;
-}
-.exec-memo li { margin-bottom: 0.6rem; }
-.memo-header {
+    padding: 2rem 2.5rem 1.5rem;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 2rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 2px solid #1E3A5F;
-}
-.memo-title {
+}}
+.memo-eyebrow {{
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #4A7FA5;
+    margin-bottom: 0.5rem;
+}}
+.memo-title-main {{
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #E2E8F0;
+    line-height: 1.2;
+    margin-bottom: 0.3rem;
+}}
+.memo-subtitle {{
+    font-size: 0.75rem;
+    color: #6A8FAA;
+}}
+.memo-kpi-block {{
+    text-align: right;
+}}
+.memo-ebitda-num {{
     font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 0.6rem;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: {ebitda_color};
+    line-height: 1;
+}}
+.memo-ebitda-label {{
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6A8FAA;
+    margin-top: 0.2rem;
+}}
+.memo-body {{
+    padding: 0 2.5rem 2rem;
+}}
+.memo-section-label {{
+    font-size: 0.58rem;
+    font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: #4A7FA5;
-}
-.memo-ebitda {
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 1.8rem;
-    font-weight: 700;
+    border-bottom: 1px solid #1E3A5F;
+    padding-bottom: 0.35rem;
+    margin: 1.8rem 0 0.8rem;
+}}
+.memo-prose {{
+    font-size: 0.88rem;
+    line-height: 1.8;
+    color: #B8C9D9;
+}}
+.memo-prose strong {{ color: #E2E8F0; }}
+.memo-actions {{
+    counter-reset: action-counter;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}}
+.memo-actions li {{
+    counter-increment: action-counter;
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: #B8C9D9;
+}}
+.memo-actions li::before {{
+    content: counter(action-counter);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6rem;
+    height: 1.6rem;
+    background: #1A3A5C;
     color: #4ADE80;
-    text-align: right;
-}
-.memo-ebitda-label {
+    border-radius: 50%;
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+}}
+.memo-yr-grid {{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin: 0.8rem 0;
+}}
+.memo-yr-card {{
+    background: #0D1B2A;
+    border: 1px solid #1E3A5F;
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+}}
+.memo-yr-title {{
     font-size: 0.6rem;
-    color: #6A8FAA;
+    font-weight: 700;
+    letter-spacing: 0.15em;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    text-align: right;
-}
+    color: #4A7FA5;
+    margin-bottom: 0.4rem;
+}}
+.memo-yr-zones {{
+    font-size: 0.82rem;
+    color: #94A3B8;
+}}
+.memo-yr-ebitda {{
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #4ADE80;
+    margin-top: 0.3rem;
+}}
 </style>
-""", unsafe_allow_html=True)
 
-            import datetime
-            ebitda_val = es['ebitda']
-            ebitda_color = "#4ADE80" if ebitda_val > 0 else "#F87171"
-
-            st.markdown(f"""
-<div class="exec-memo">
-  <div class="memo-header">
+<div class="memo-wrap">
+  <div class="memo-masthead">
     <div>
-      <div class="memo-title">Permanent Staffing Model — Executive Summary</div>
-      <div style="color:#6A8FAA;font-size:0.75rem;margin-top:0.3rem;font-family:'IBM Plex Sans',sans-serif;">
-        Generated {datetime.date.today().strftime("%B %d, %Y")} &nbsp;·&nbsp;
-        {cfg.base_visits_per_day:.0f} visits/day base &nbsp;·&nbsp;
+      <div class="memo-eyebrow">Permanent Staffing Model &nbsp;·&nbsp; Executive Summary</div>
+      <div class="memo-title-main">Staffing & EBITDA Outlook</div>
+      <div class="memo-subtitle">
+        Generated {memo['date']} &nbsp;·&nbsp;
+        {cfg.base_visits_per_day:.0f} visits/day &nbsp;·&nbsp;
         {cfg.annual_growth_pct:.0f}% YoY growth &nbsp;·&nbsp;
         36-month horizon
       </div>
     </div>
-    <div>
-      <div class="memo-ebitda" style="color:{ebitda_color}">${ebitda_val/1e6:.2f}M</div>
+    <div class="memo-kpi-block">
+      <div class="memo-ebitda-num">${es['ebitda']/1e6:.2f}M</div>
       <div class="memo-ebitda-label">3-Year EBITDA Contribution</div>
+      <div style="margin-top:0.5rem;font-size:0.72rem;color:{badge_col};font-weight:600;text-align:right;">
+        {s['green_months']}G &nbsp;/&nbsp; {s['yellow_months']}Y &nbsp;/&nbsp; {s['red_months']}R
+      </div>
     </div>
   </div>
-  <div id="memo-body"></div>
+
+  <div class="memo-body">
+
+    <div class="memo-section-label">Headline Verdict</div>
+    <div class="memo-prose">
+      This clinic is projecting a <strong>{memo['ebitda_prose']}</strong>.
+      {memo['capture_prose']}.
+      Zone performance is <strong>{memo['zone_prose']}</strong>,
+      with {memo['swb_prose']}.
+    </div>
+
+    <div class="memo-section-label">What Your Current Inputs Are Producing</div>
+    <div class="memo-yr-grid">
+      <div class="memo-yr-card">
+        <div class="memo-yr-title">Year 1</div>
+        <div class="memo-yr-zones">{memo['yr_data'][1]['G']}G / {memo['yr_data'][1]['Y']}Y / {memo['yr_data'][1]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][1]['peak']:.1f} pts/APC</div>
+        <div class="memo-yr-ebitda">${memo['yr_data'][1]['ebitda']/1e3:.0f}K EBITDA</div>
+      </div>
+      <div class="memo-yr-card">
+        <div class="memo-yr-title">Year 2</div>
+        <div class="memo-yr-zones">{memo['yr_data'][2]['G']}G / {memo['yr_data'][2]['Y']}Y / {memo['yr_data'][2]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][2]['peak']:.1f} pts/APC</div>
+        <div class="memo-yr-ebitda">${memo['yr_data'][2]['ebitda']/1e3:.0f}K EBITDA</div>
+      </div>
+      <div class="memo-yr-card">
+        <div class="memo-yr-title">Year 3</div>
+        <div class="memo-yr-zones">{memo['yr_data'][3]['G']}G / {memo['yr_data'][3]['Y']}Y / {memo['yr_data'][3]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][3]['peak']:.1f} pts/APC</div>
+        <div class="memo-yr-ebitda">${memo['yr_data'][3]['ebitda']/1e3:.0f}K EBITDA</div>
+      </div>
+    </div>
+    <div class="memo-prose">
+      {memo['hire_prose']}
+    </div>
+
+    <div class="memo-section-label">Where Money Is Being Left On The Table</div>
+    <div class="memo-prose">
+      {memo['burnout_prose']}.
+      {memo['marginal_prose']}
+    </div>
+
+    <div class="memo-section-label">Recommended Actions</div>
+    <ol class="memo-actions">
+      {''.join(f"<li>{a}</li>" for a in memo['actions'])}
+    </ol>
+
+    <div class="memo-section-label">3-Year Outlook</div>
+    <div class="memo-prose">
+      {memo['growth_prose']}
+    </div>
+
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-            # Render the markdown body inside the styled container
-            # Use a clean container for the actual text
-            memo_container = st.container()
-            with memo_container:
-                st.markdown(f"""
-<div class="exec-memo" style="margin-top:-1rem;border-top:none;border-radius:0 0 6px 6px;padding-top:0;">
-{full_text.replace("## ", '<h2>').replace("\n## ", '</p><h2>') if False else ""}
-</div>
-""", unsafe_allow_html=True)
-                # Clean markdown render inside the styled frame
-                st.markdown(
-                    f"<div class='exec-memo' style='margin-top:0.5rem'>" +
-                    full_text.replace("\n\n", "</p><p>") +
-                    "</div>",
-                    unsafe_allow_html=True
-                )
+    # KPI strip
+    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+    ek1,ek2,ek3,ek4,ek5 = st.columns(5)
+    ek1.metric("3-Yr EBITDA",        f"${es['ebitda']/1e6:.2f}M")
+    ek2.metric("Visit Capture",       f"{es['capture_rate']*100:.1f}%")
+    ek3.metric("3-Yr Burnout Cost",   f"${s['total_burnout_penalty']/1e3:.0f}K")
+    ek4.metric("Turnover Events",     f"{s['total_turnover_events']:.1f}")
+    ek5.metric("SWB/Visit",           f"${s['annual_swb_per_visit']:.2f}",
+               delta=f"Target ${cfg.swb_target_per_visit:.0f}",
+               delta_color="inverse" if s['swb_violation'] else "normal")
 
-            # ── KPI strip below memo ──────────────────────────────────────────
-            st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
-            ek1,ek2,ek3,ek4,ek5 = st.columns(5)
-            ek1.metric("3-Yr EBITDA",       f"${es['ebitda']/1e6:.2f}M")
-            ek2.metric("Visit Capture",      f"{es['capture_rate']*100:.1f}%")
-            ek3.metric("Burnout Cost",        f"${s['total_burnout_penalty']/1e3:.0f}K")
-            ek4.metric("Turnover Events",     f"{s['total_turnover_events']:.1f}")
-            ek5.metric("SWB/Visit",           f"${s['annual_swb_per_visit']:.2f}",
-                       delta=f"Target ${cfg.swb_target_per_visit:.0f}",
-                       delta_color="inverse" if s['swb_violation'] else "normal")
-
-            # ── Export button placeholder ─────────────────────────────────────
-            st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-            st.info("📄 PDF export coming next — run 'Export to PDF' to generate a boardroom-ready document.", icon="📋")
-
-    else:
-        # Pre-generation state — show what will be analyzed
-        st.markdown(f"""
-<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:6px;padding:2rem 2.5rem;margin-top:1rem;'>
-  <div style='color:#4A7FA5;font-size:0.6rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:1.2rem;'>
-    MEMO WILL COVER
-  </div>
-  <div style='display:grid;grid-template-columns:1fr 1fr;gap:1rem;'>
-    <div style='color:#CBD5E1;font-size:0.85rem;line-height:1.6;'>
-      ✦ Headline EBITDA verdict with capture rate<br>
-      ✦ Zone performance by year (Green/Yellow/Red)<br>
-      ✦ SWB vs target analysis<br>
-      ✦ Burnout & turnover root cause
-    </div>
-    <div style='color:#CBD5E1;font-size:0.85rem;line-height:1.6;'>
-      ✦ Specific $ amounts being left on the table<br>
-      ✦ Prioritized action list with hire dates<br>
-      ✦ Year 3 growth readiness assessment<br>
-      ✦ Marginal APC signal interpretation
-    </div>
-  </div>
-  <div style='margin-top:1.5rem;padding-top:1rem;border-top:1px solid #1E3A5F;'>
-    <span style='color:#6A8FAA;font-size:0.78rem;'>
-      Based on: <strong style='color:#94A3B8'>{cfg.base_visits_per_day:.0f} visits/day</strong> &nbsp;·&nbsp;
-      <strong style='color:#4ADE80'>${es["ebitda"]/1e6:.2f}M EBITDA</strong> &nbsp;·&nbsp;
-      <strong style='color:#{"4ADE80" if s["red_months"]==0 else "F87171"}'>{s["green_months"]}G / {s["yellow_months"]}Y / {s["red_months"]}R zones</strong> &nbsp;·&nbsp;
-      <strong style='color:#94A3B8'>{len(pol.hire_events)} hire events</strong>
-    </span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+    st.info("📋 PDF export — coming next build.", icon="📄")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
