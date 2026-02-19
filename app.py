@@ -235,14 +235,14 @@ with st.sidebar:
                     "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
                     "HOURLY RATES  (base, before multiplier)</div>", unsafe_allow_html=True)
         r1,r2 = st.columns(2)
-        with r1: phys_rate = st.number_input("Physician",  50.0, 300.0, 135.79, 1.0, format="$%.2f")
-        with r2: app_rate  = st.number_input("APC",        30.0, 200.0,  62.00, 1.0, format="$%.2f")
+        with r1: phys_rate = st.number_input("Physician ($/hr)",  50.0, 300.0, 135.79, 1.0)
+        with r2: app_rate  = st.number_input("APC ($/hr)",        30.0, 200.0,  62.00, 1.0)
         r3,r4 = st.columns(2)
-        with r3: ma_rate   = st.number_input("MA",          8.0,  60.0,  24.14, 0.25,format="$%.2f")
-        with r4: psr_rate  = st.number_input("PSR",         8.0,  60.0,  21.23, 0.25,format="$%.2f")
+        with r3: ma_rate   = st.number_input("MA ($/hr)",          8.0,  60.0,  24.14, 0.25)
+        with r4: psr_rate  = st.number_input("PSR ($/hr)",         8.0,  60.0,  21.23, 0.25)
         r5,r6 = st.columns(2)
-        with r5: rt_rate   = st.number_input("Rad Tech",    8.0,  80.0,  31.36, 0.25,format="$%.2f")
-        with r6: sup_rate  = st.number_input("Supervisor",  8.0,  80.0,  28.25, 0.25,format="$%.2f")
+        with r5: rt_rate   = st.number_input("Rad Tech ($/hr)",    8.0,  80.0,  31.36, 0.25)
+        with r6: sup_rate  = st.number_input("Supervisor ($/hr)",  8.0,  80.0,  28.25, 0.25)
 
         # ── 3. Staffing ratios ────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
