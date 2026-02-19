@@ -191,8 +191,7 @@ with st.sidebar:
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
         budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
             help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
-        peak_factor = st.slider("Peak Factor", 1.00, 1.30, 1.10, 0.01,
-            help="Multiplier applied to base visits to account for daily/intra-shift peaks. 1.10 = plan for 10% above average.")
+        peak_factor = 1.0  # removed from UI — use quarterly seasonality for volume adjustments
 
     with st.expander("QUARTERLY SEASONALITY", expanded=True):
         c1, c2 = st.columns(2); c3, c4 = st.columns(2)
@@ -245,14 +244,11 @@ with st.sidebar:
         flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=10,
                                          format_func=lambda x: MONTH_NAMES[x-1],
                                          help="The month by which you need fully independent APCs on floor. Drives requisition posting deadline calculation.")
-        summer_shed_floor = st.slider("Summer Shed Floor (% of Base)", 60, 100, 85, 5,
-            help="Minimum FTE floor during Q3 summer. At 85%, a Base FTE of 6.0 won't shed below 5.1. Prevents over-shedding into a hole you can't recover from before flu season.")
+        summer_shed_floor = 85  # removed from UI — load-band optimizer handles shed floor implicitly
 
     with st.expander("PROVIDER COMPENSATION"):
-        perm_cost_i = st.number_input("Perm APC Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d",
-            help="Fully loaded annual cost per permanent APC — salary, benefits, malpractice. Used for perm staffing cost and turnover replacement calculations.")
-        flex_cost_i = st.number_input("Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d",
-            help="Annualized cost of a flex/locum APC. Typically 30–50% above perm due to agency fees and lack of benefits offset. Applied when load exceeds Yellow threshold.")
+        perm_cost_i = st.number_input("APC Annual Salary — Fully Loaded ($)", 100_000, 500_000, 200_000, 10_000, format="%d",
+            help="Fully loaded annual cost per permanent APC — base salary, benefits, malpractice. Drives turnover replacement cost, burnout penalty, and optimizer score. Support staff rates are entered separately below.")
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0,
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0,
@@ -260,6 +256,9 @@ with st.sidebar:
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
+
+        flex_cost_i = st.number_input("Premium / Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d",
+            help="Annualized cost of a flex or locum APC. Typically 30–50% above perm due to agency fees. Applied when load exceeds Yellow threshold and flex coverage is needed.")
 
         # ── 1. Comp multipliers ───────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
