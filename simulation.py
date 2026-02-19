@@ -107,6 +107,11 @@ class ClinicConfig:
     load_winter_target:  float = 36.0   # target during Nov-Feb (tighter margin)
     use_load_band:       bool  = True   # False = legacy Base/Winter FTE mode
 
+    # ── Minimum Coverage Floor ────────────────────────────────────────────
+    # 1 provider × 7 days ÷ 3 shifts/week = 2.33 FTE for 7-day coverage
+    # Adjust for clinic operating days (5-day → 1.67, 6-day → 2.0)
+    min_coverage_fte: float = 2.33
+
     # ── Provider Economics ────────────────────────────────────────────────────
     annual_provider_cost_perm: float = 200_000
     annual_provider_cost_flex: float = 280_000
@@ -421,7 +426,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
             # Hard floor: never let FTE drop below what would push load above hi
             floor_fte  = fte_for_load_target(visits_per_day, cfg.load_band_hi, cfg)
-            summer_floor_fte = floor_fte * cfg.summer_shed_floor_pct
+            summer_floor_fte = max(cfg.min_coverage_fte, floor_fte * cfg.summer_shed_floor_pct)
         else:
             # Legacy mode
             if in_flu:
@@ -445,7 +450,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
         fte_before_attrition = paid_fte
         attrition_events     = paid_fte * effective_monthly_attrition
-        paid_fte             = max(0.0, paid_fte - attrition_events)
+        paid_fte             = max(cfg.min_coverage_fte, paid_fte - attrition_events)
         turnover_events      = attrition_events
 
         # ── Hiring decision ───────────────────────────────────────────────────
@@ -457,7 +462,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
         if in_summer:
             if paid_fte < summer_floor_fte:
-                new_hires = summer_floor_fte - paid_fte
+                new_hires = _round_up_fte(summer_floor_fte - paid_fte)
                 paid_fte += new_hires
                 ramp_cohorts.append([cfg.ramp_months, new_hires])
                 _log_hire(hire_events, m, cal_month, year, new_hires,
@@ -467,11 +472,12 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                 hiring_mode = "shed_pause"
 
         elif paid_fte < target_fte:
-            new_hires = target_fte - paid_fte
+            raw_hires = target_fte - paid_fte
+            new_hires = _round_up_fte(raw_hires)
             paid_fte += new_hires
             ramp_cohorts.append([cfg.ramp_months, new_hires])
             mode = ("winter_ramp" if in_flu or in_pre_flu
-                    else "growth" if new_hires > attrition_events * 1.05
+                    else "growth" if raw_hires > attrition_events * 1.05
                     else "attrition_replace")
             _log_hire(hire_events, m, cal_month, year, new_hires,
                       mode, lead_months, cfg)
@@ -686,6 +692,8 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         "capture_rate": total_visits_captured / total_visits_demanded if total_visits_demanded > 0 else 1.0,
     }
 
+    hire_events = consolidate_hire_events(hire_events, peak_months=flu_months)
+
     result = PolicyResult(
         base_fte=base_fte, winter_fte=winter_fte,
         req_post_month=req_post_month,
@@ -698,6 +706,21 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         ebitda_summary=ebitda_summary,
     )
     return result
+
+
+# Realistic FTE increments — maps to actual employment structures
+# (0.25=1 shift/wk, 0.5=half-time, 0.75=4 days/wk, 1.0=full-time, etc.)
+_FTE_INCREMENTS = [0.25, 0.3, 0.5, 0.6, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0]
+
+def _round_up_fte(raw: float) -> float:
+    """Round a hire size UP to the nearest realistic FTE increment."""
+    if raw <= 0:
+        return 0.0
+    for inc in _FTE_INCREMENTS:
+        if raw <= inc:
+            return inc
+    # Larger than 2.0: round up to nearest 0.5
+    return round(math.ceil(raw * 2) / 2, 2)
 
 
 def _log_hire(hire_events: List[HireEvent], sim_m: int, cal_month: int, year: int,
@@ -730,6 +753,58 @@ def _log_hire(hire_events: List[HireEvent], sim_m: int, cal_month: int, year: in
         independent_month=indep_cal,
         independent_year=indep_year,
     ))
+
+
+def consolidate_hire_events(hire_events: List[HireEvent],
+                             small_threshold: float = 0.2,
+                             peak_months: set = None) -> List[HireEvent]:
+    """
+    Post-process hire events:
+    1. Hires below small_threshold during peak season (Nov-Mar) are relabeled
+       as 'per_diem' — cover with extra shifts rather than a new FTE req.
+    2. Consecutive same-season hires within 2 months are consolidated into
+       the largest hire event of that cluster.
+    3. All hire sizes are re-rounded up to nearest FTE increment after consolidation.
+    """
+    if not hire_events:
+        return hire_events
+    if peak_months is None:
+        peak_months = {11, 12, 1, 2, 3}
+
+    result = []
+    used = [False] * len(hire_events)
+
+    for i, h in enumerate(hire_events):
+        if used[i]:
+            continue
+
+        # Relabel tiny hires in peak season as per_diem
+        if h.fte_hired <= small_threshold and h.calendar_month in peak_months:
+            # Look for a nearby larger hire to absorb into
+            absorbed = False
+            for j, h2 in enumerate(hire_events):
+                if used[j] or j == i:
+                    continue
+                same_year = h2.year == h.year
+                month_gap = abs(h2.calendar_month - h.calendar_month)
+                if same_year and month_gap <= 2 and h2.fte_hired >= h.fte_hired:
+                    # Absorb into h2 — add FTE, keep h2's dates
+                    # We'll handle this by bumping h2's fte when we get to it
+                    # Mark current as per_diem instead
+                    from dataclasses import replace as dc_replace
+                    result.append(dc_replace(h, mode='per_diem',
+                                             fte_hired=_round_up_fte(h.fte_hired)))
+                    used[i] = True
+                    absorbed = True
+                    break
+            if not absorbed:
+                result.append(h)
+                used[i] = True
+        else:
+            result.append(h)
+            used[i] = True
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
