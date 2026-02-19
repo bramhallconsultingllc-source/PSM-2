@@ -84,6 +84,7 @@ class ClinicConfig:
     peak_factor: float = 1.10
     quarterly_volume_impact: List[float] = field(
         default_factory=lambda: [0.20, 0.0, -0.10, 0.05])
+    annual_growth_pct:  float = 10.0   # % YoY volume growth (compounded monthly)
 
     # ── Shift Coverage ────────────────────────────────────────────────────────
     operating_days_per_week: int   = 7
@@ -285,10 +286,12 @@ def compute_demand(month_idx: int, cfg: ClinicConfig,
     """
     Returns (visits_per_day, seasonal_multiplier, providers_per_shift, fte_required).
     volume_shock: fractional additive shock (0.15 = +15% for stress test).
+    Growth is compounded monthly: (1 + annual_rate)^(month/12).
     """
     cal = month_idx % 12
     seasonal_mult = cfg.seasonality_index[cal]
-    visits = cfg.base_visits_per_day * seasonal_mult * cfg.peak_factor * (1.0 + volume_shock)
+    growth_mult = (1.0 + cfg.annual_growth_pct / 100.0) ** (month_idx / 12.0)
+    visits = cfg.base_visits_per_day * seasonal_mult * cfg.peak_factor * growth_mult * (1.0 + volume_shock)
     providers_per_shift = visits / cfg.budgeted_patients_per_provider_per_day
     fte_required = providers_per_shift * cfg.fte_per_shift_slot
     return visits, seasonal_mult, providers_per_shift, fte_required
@@ -350,7 +353,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         _, _, _, fte_base_seed   = compute_demand(6, cfg)   # July (low demand)
         _, _, _, fte_winter_seed = compute_demand(0, cfg)   # Jan  (high demand)
         paid_fte = fte_for_load_target(
-            cfg.base_visits_per_day * cfg.seasonality_index[6] * cfg.peak_factor,
+            cfg.base_visits_per_day * cfg.seasonality_index[6] * cfg.peak_factor * ((1.0 + cfg.annual_growth_pct/100.0) ** (sim_month/12.0)),
             cfg.load_band_lo + (cfg.load_band_hi - cfg.load_band_lo) * 0.5,
             cfg
         )
