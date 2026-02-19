@@ -375,16 +375,14 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     #
     # If the simulation starts in a flu month → seed at winter_fte (already
     # staffed for peak season).  Otherwise seed at base_fte.
-    # In load-band mode the optimizer auto-derives base/winter from demand, so
-    # we seed at the appropriate load-band derived value for month 0.
-    # Seed FTE from actual month-0 demand so the hire calendar shows the full
-    # journey from current state. Optimizer finds the policy maximizing EBITDA.
+    # Seed from actual month-0 demand at midband load — always decoupled from
+    # base_fte/winter_fte so the hire calendar shows the full journey from day 1.
     _start_visits, _, _, _ = compute_demand(0, cfg)
-    if cfg.use_load_band and base_fte == 0 and winter_fte == 0:
-        _mid = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
+    if cfg.use_load_band:
+        _mid     = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
         paid_fte = fte_for_load_target(_start_visits, _mid, cfg)
     else:
-        paid_fte = base_fte
+        paid_fte = base_fte   # legacy explicit-policy mode
 
     summer_floor_fte = paid_fte * cfg.summer_shed_floor_pct  # updated below
 
@@ -406,9 +404,12 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
         # ── Determine FTE target ──────────────────────────────────────────────
         if cfg.use_load_band:
-            if in_flu:
-                # During flu: target winter load (tighter, more efficient)
-                target_fte = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
+            if in_flu or in_pre_flu:
+                # Pre-flu + flu: hire to winter load target — this is the key
+                # seasonal lever. Higher load_winter_target = less staff, lower = more.
+                # winter_fte acts as an explicit minimum floor if set.
+                band_target = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
+                target_fte  = max(band_target, winter_fte) if winter_fte > 0 else band_target
             elif in_summer:
                 # Summer: aim for midband — comfortable, not overstaffed
                 mid_load   = (cfg.load_band_lo + cfg.load_band_hi) / 2
@@ -448,45 +449,14 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         turnover_events      = attrition_events
 
         # ── Hiring decision ───────────────────────────────────────────────────
+        # Simple rule: hire to target every month except summer (allow natural shed).
+        # The load-band target already encodes seasonality — flu months get a
+        # tighter/higher target via load_winter_target.
+        # No freeze, no pre-flu window — demand-responsive hiring every month.
         hiring_mode = "none"
 
-        if in_pre_flu:
-            # Pre-flu window: proactively hire to winter target so APCs are
-            # independent BY the flu anchor month, not ramping DURING it.
-            # Project what flu-season demand will be and staff ahead of it.
-            flu_visits, _, _, flu_fte_required = compute_demand(
-                m + lead_months, cfg)
-            if cfg.use_load_band:
-                flu_target_fte = fte_for_load_target(flu_visits, cfg.load_winter_target, cfg)
-            else:
-                flu_target_fte = winter_fte
-            if paid_fte < flu_target_fte:
-                new_hires = flu_target_fte - paid_fte
-                paid_fte += new_hires
-                ramp_cohorts.append([cfg.ramp_months, new_hires])
-                _log_hire(hire_events, m, cal_month, year, new_hires,
-                          "winter_ramp", lead_months, cfg)
-                hiring_mode = "winter_ramp"
-            else:
-                hiring_mode = "freeze_flu"
-
-        elif in_flu:
-            # Flu season: freeze hiring — team should already be in place.
-            # Only backfill attrition to prevent erosion during peak.
-            if paid_fte < fte_before_attrition * 0.97:
-                # More than 3% attrition erosion — backfill
-                new_hires = fte_before_attrition - paid_fte
-                paid_fte += new_hires
-                ramp_cohorts.append([cfg.ramp_months, new_hires])
-                _log_hire(hire_events, m, cal_month, year, new_hires,
-                          "attrition_replace", lead_months, cfg)
-                hiring_mode = "attrition_replace"
-            else:
-                hiring_mode = "freeze_flu"
-
-        elif in_summer:
+        if in_summer:
             if paid_fte < summer_floor_fte:
-                # Below absolute floor — protect against falling into red
                 new_hires = summer_floor_fte - paid_fte
                 paid_fte += new_hires
                 ramp_cohorts.append([cfg.ramp_months, new_hires])
@@ -494,22 +464,26 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                           "floor_protect", lead_months, cfg)
                 hiring_mode = "floor_protect"
             else:
-                # Natural shed in progress — do nothing
                 hiring_mode = "shed_pause"
 
+        elif paid_fte < target_fte:
+            new_hires = target_fte - paid_fte
+            paid_fte += new_hires
+            ramp_cohorts.append([cfg.ramp_months, new_hires])
+            mode = ("winter_ramp" if in_flu or in_pre_flu
+                    else "growth" if new_hires > attrition_events * 1.05
+                    else "attrition_replace")
+            _log_hire(hire_events, m, cal_month, year, new_hires,
+                      mode, lead_months, cfg)
+            hiring_mode = mode
+
+        elif paid_fte > target_fte * 1.05 and not in_flu:
+            # Modest passive shed outside flu season — don't force layoffs,
+            # just let attrition bring it down
+            hiring_mode = "shed_passive"
+
         else:
-            # Normal months
-            if paid_fte < target_fte:
-                new_hires = target_fte - paid_fte
-                paid_fte += new_hires
-                ramp_cohorts.append([cfg.ramp_months, new_hires])
-                mode = ("growth" if new_hires > attrition_events * 1.05
-                        else "attrition_replace")
-                _log_hire(hire_events, m, cal_month, year, new_hires,
-                          mode, lead_months, cfg)
-                hiring_mode = mode
-            elif paid_fte < fte_before_attrition:
-                hiring_mode = "shed_passive"
+            hiring_mode = "maintain"
 
         # ── Ramp drag ─────────────────────────────────────────────────────────
         ramp_drag = 0.0
@@ -836,22 +810,30 @@ def optimize(cfg: ClinicConfig,
              w_range_above:   Tuple[float, float, float] = (0,   10,  0.5),
              horizon_months:  int = 36) -> Tuple[PolicyResult, List[PolicyResult]]:
     """
-    Grid search over (base_fte, winter_fte).
-    When cfg.use_load_band=True, treats b/w as load-band anchor seeds and
-    still iterates over the grid to find minimum-score policy.
+    Grid search that maximizes 3-year EBITDA contribution:
+        Revenue Captured − SWB − Flex − Turnover − Burnout − Fixed
+
+    In load-band mode the simulation derives FTE targets from demand each month,
+    so base_fte/winter_fte are used as the flu-season hiring floor — the optimizer
+    searches over how aggressively to staff for the flu season.  Higher winter_fte
+    = better flu coverage but higher SWB; the EBITDA objective finds the sweet spot.
+
+    In legacy mode (use_load_band=False) the grid search over (base_fte, winter_fte)
+    controls staffing levels directly.
     """
     b_vals = np.arange(b_range[0], b_range[1] + b_range[2], b_range[2])
     all_policies: List[PolicyResult] = []
     best_policy:  Optional[PolicyResult] = None
-    best_score    = float("inf")
+    best_ebitda   = float("-inf")
 
     for b in b_vals:
         w_vals = np.arange(b, b + w_range_above[1] + w_range_above[2], w_range_above[2])
         for w in w_vals:
             p = simulate_policy(float(round(b, 2)), float(round(w, 2)), cfg, horizon_months)
             all_policies.append(p)
-            if p.total_score < best_score:
-                best_score  = p.total_score
+            ebitda = p.ebitda_summary["ebitda"] if p.ebitda_summary else -p.total_score
+            if ebitda > best_ebitda:
+                best_ebitda = ebitda
                 best_policy = p
 
     # Attach marginal analysis to best policy
