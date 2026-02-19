@@ -98,20 +98,35 @@ html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; backgrou
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
     background: #1E3A52 !important;
     border: 1px solid #3A6080 !important;
-    color: #F0F6FF !important;
-    -webkit-text-fill-color: #F0F6FF !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
     border-radius: 3px;
-    font-size: 0.92rem !important;
-    font-weight: 500 !important; }}
+    font-size: 0.95rem !important;
+    font-weight: 600 !important; }}
 [data-testid="stSidebar"] input::placeholder {{
     color: #6A8FAA !important;
     -webkit-text-fill-color: #6A8FAA !important; }}
 [data-testid="stSidebar"] input:focus, [data-testid="stSidebar"] select:focus {{
     background: #1E3A52 !important;
     border-color: #5A9FCA !important;
-    color: #F0F6FF !important;
-    -webkit-text-fill-color: #F0F6FF !important;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
     outline: none !important; }}
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input {{
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important; }}
+[data-testid="stSidebar"] [data-baseweb="input"] input,
+[data-testid="stSidebar"] [data-baseweb="select"] input,
+[data-testid="stSidebar"] [data-baseweb="base-input"] input {{
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+    background: #1E3A52 !important; }}
+[data-testid="stSidebar"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-baseweb="base-input"] {{
+    background: #1E3A52 !important;
+    border-color: #3A6080 !important; }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stExpander summary p {{
     font-size: 0.68rem !important; font-weight: 600 !important; text-transform: uppercase !important;
     letter-spacing: 0.10em !important; color: #8FAABB !important; }}
