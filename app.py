@@ -1450,10 +1450,33 @@ with tabs[11]:
     # ─────────────────────────────────────────────────────────────────────────
     import datetime
 
-    # Header row
-    ebitda_color = "#4ADE80" if es["ebitda"] > 0 else "#F87171"
-    zone_badge   = {"excellent":"#22C55E","good":"#4ADE80","moderate":"#FBBF24","stressed":"#EF4444"}
-    badge_col    = zone_badge.get(memo["zone_health"], "#94A3B8")
+    # Pre-build all dynamic HTML fragments — must be done BEFORE the f-string
+    # so Python doesn't try to evaluate nested quotes/braces as f-string syntax
+    ebitda_color  = "#4ADE80" if es["ebitda"] > 0 else "#F87171"
+    zone_badge    = {"excellent":"#22C55E","good":"#4ADE80","moderate":"#FBBF24","stressed":"#EF4444"}
+    badge_col     = zone_badge.get(memo["zone_health"], "#94A3B8")
+    actions_html  = "".join(f"<li>{a}</li>" for a in memo["actions"])
+    yr1 = memo["yr_data"][1]; yr2 = memo["yr_data"][2]; yr3 = memo["yr_data"][3]
+    ebitda_3yr_fmt= f"${es['ebitda']/1e6:.2f}M"
+    ebitda_lbl    = "3-Year EBITDA Contribution"
+    zones_fmt     = f"{s['green_months']}G &nbsp;/&nbsp; {s['yellow_months']}Y &nbsp;/&nbsp; {s['red_months']}R"
+    gen_date      = memo['date']
+    base_vis      = f"{cfg.base_visits_per_day:.0f}"
+    growth_pct    = f"{cfg.annual_growth_pct:.0f}"
+    headline_ebitda   = memo['ebitda_prose']
+    headline_capture  = memo['capture_prose']
+    headline_zone     = memo['zone_prose']
+    headline_swb      = memo['swb_prose']
+    yr1_zones     = f"{yr1['G']}G / {yr1['Y']}Y / {yr1['R']}R &nbsp;&middot;&nbsp; Peak {yr1['peak']:.1f} pts/APC"
+    yr2_zones     = f"{yr2['G']}G / {yr2['Y']}Y / {yr2['R']}R &nbsp;&middot;&nbsp; Peak {yr2['peak']:.1f} pts/APC"
+    yr3_zones     = f"{yr3['G']}G / {yr3['Y']}Y / {yr3['R']}R &nbsp;&middot;&nbsp; Peak {yr3['peak']:.1f} pts/APC"
+    yr1_ebitda    = f"${yr1['ebitda']/1e3:.0f}K EBITDA"
+    yr2_ebitda    = f"${yr2['ebitda']/1e3:.0f}K EBITDA"
+    yr3_ebitda    = f"${yr3['ebitda']/1e3:.0f}K EBITDA"
+    hire_txt      = memo['hire_prose']
+    burnout_txt   = memo['burnout_prose']
+    marginal_txt  = memo['marginal_prose']
+    growth_txt    = memo['growth_prose']
 
     st.markdown(f"""
 <style>
@@ -1599,17 +1622,17 @@ with tabs[11]:
       <div class="memo-eyebrow">Permanent Staffing Model &nbsp;·&nbsp; Executive Summary</div>
       <div class="memo-title-main">Staffing & EBITDA Outlook</div>
       <div class="memo-subtitle">
-        Generated {memo['date']} &nbsp;·&nbsp;
-        {cfg.base_visits_per_day:.0f} visits/day &nbsp;·&nbsp;
-        {cfg.annual_growth_pct:.0f}% YoY growth &nbsp;·&nbsp;
+        Generated {gen_date} &nbsp;·&nbsp;
+        {base_vis} visits/day &nbsp;·&nbsp;
+        {growth_pct}% YoY growth &nbsp;·&nbsp;
         36-month horizon
       </div>
     </div>
     <div class="memo-kpi-block">
-      <div class="memo-ebitda-num">${es['ebitda']/1e6:.2f}M</div>
-      <div class="memo-ebitda-label">3-Year EBITDA Contribution</div>
+      <div class="memo-ebitda-num">{ebitda_3yr_fmt}</div>
+      <div class="memo-ebitda-label">{ebitda_lbl}</div>
       <div style="margin-top:0.5rem;font-size:0.72rem;color:{badge_col};font-weight:600;text-align:right;">
-        {s['green_months']}G &nbsp;/&nbsp; {s['yellow_months']}Y &nbsp;/&nbsp; {s['red_months']}R
+        {zones_fmt}
       </div>
     </div>
   </div>
@@ -1618,48 +1641,48 @@ with tabs[11]:
 
     <div class="memo-section-label">Headline Verdict</div>
     <div class="memo-prose">
-      This clinic is projecting a <strong>{memo['ebitda_prose']}</strong>.
-      {memo['capture_prose']}.
-      Zone performance is <strong>{memo['zone_prose']}</strong>,
-      with {memo['swb_prose']}.
+      This clinic is projecting a <strong>{headline_ebitda}</strong>.
+      {headline_capture}.
+      Zone performance is <strong>{headline_zone}</strong>,
+      with {headline_swb}.
     </div>
 
     <div class="memo-section-label">What Your Current Inputs Are Producing</div>
     <div class="memo-yr-grid">
       <div class="memo-yr-card">
         <div class="memo-yr-title">Year 1</div>
-        <div class="memo-yr-zones">{memo['yr_data'][1]['G']}G / {memo['yr_data'][1]['Y']}Y / {memo['yr_data'][1]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][1]['peak']:.1f} pts/APC</div>
-        <div class="memo-yr-ebitda">${memo['yr_data'][1]['ebitda']/1e3:.0f}K EBITDA</div>
+        <div class="memo-yr-zones">{yr1_zones}</div>
+        <div class="memo-yr-ebitda">{yr1_ebitda}</div>
       </div>
       <div class="memo-yr-card">
         <div class="memo-yr-title">Year 2</div>
-        <div class="memo-yr-zones">{memo['yr_data'][2]['G']}G / {memo['yr_data'][2]['Y']}Y / {memo['yr_data'][2]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][2]['peak']:.1f} pts/APC</div>
-        <div class="memo-yr-ebitda">${memo['yr_data'][2]['ebitda']/1e3:.0f}K EBITDA</div>
+        <div class="memo-yr-zones">{yr2_zones}</div>
+        <div class="memo-yr-ebitda">{yr2_ebitda}</div>
       </div>
       <div class="memo-yr-card">
         <div class="memo-yr-title">Year 3</div>
-        <div class="memo-yr-zones">{memo['yr_data'][3]['G']}G / {memo['yr_data'][3]['Y']}Y / {memo['yr_data'][3]['R']}R &nbsp;·&nbsp; Peak {memo['yr_data'][3]['peak']:.1f} pts/APC</div>
-        <div class="memo-yr-ebitda">${memo['yr_data'][3]['ebitda']/1e3:.0f}K EBITDA</div>
+        <div class="memo-yr-zones">{yr3_zones}</div>
+        <div class="memo-yr-ebitda">{yr3_ebitda}</div>
       </div>
     </div>
     <div class="memo-prose">
-      {memo['hire_prose']}
+      {hire_txt}
     </div>
 
     <div class="memo-section-label">Where Money Is Being Left On The Table</div>
     <div class="memo-prose">
-      {memo['burnout_prose']}.
-      {memo['marginal_prose']}
+      {burnout_txt}.
+      {marginal_txt}
     </div>
 
     <div class="memo-section-label">Recommended Actions</div>
     <ol class="memo-actions">
-      {''.join(f"<li>{a}</li>" for a in memo['actions'])}
+      {actions_html}
     </ol>
 
     <div class="memo-section-label">3-Year Outlook</div>
     <div class="memo-prose">
-      {memo['growth_prose']}
+      {growth_txt}
     </div>
 
   </div>
