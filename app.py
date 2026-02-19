@@ -222,8 +222,10 @@ with st.sidebar:
         load_winter = st.number_input("Winter Load Target (pts/APC)", 15.0, 60.0, 36.0, 1.0,
         help="Target load during Nov–Feb flu season. Can be set tighter (lower) to ensure flu surge capacity, or at Green ceiling (36) for efficient use of winter hires.")
         use_band    = st.checkbox("Use Load Band Mode", value=True)
+        min_coverage = st.number_input("Minimum Coverage FTE", 0.5, 10.0, 2.33, 0.1,
+            help="FTE floor enforced at all times — clinic never drops below this. Default 2.33 = 1 provider × 7 days ÷ 3 shifts/week for 7-day coverage. Use 1.67 for 5-day, 2.0 for 6-day.")
         if use_band:
-            st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/APC  |  Winter: **{load_winter:.0f}**")
+            st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/APC  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
 
     with st.expander("SHIFT STRUCTURE"):
         op_days   = st.number_input("Operating Days/Week", 1, 7, 7,
@@ -374,6 +376,7 @@ cfg = ClinicConfig(
     operating_days_per_week=int(op_days), shifts_per_day=int(shifts_day),
     shift_hours=shift_hrs, fte_shifts_per_week=fte_shifts, fte_fraction=fte_frac,
     load_band_lo=load_lo, load_band_hi=load_hi, load_winter_target=load_winter, use_load_band=use_band,
+    min_coverage_fte=min_coverage,
     flu_anchor_month=flu_anchor, summer_shed_floor_pct=summer_shed_floor/100,
     annual_provider_cost_perm=perm_cost_i, annual_provider_cost_flex=flex_cost_i,
     net_revenue_per_visit=rev_visit, swb_target_per_visit=swb_target, support=support_cfg,
@@ -707,28 +710,39 @@ with tabs[1]:
     if not hevs:
         st.info("No hire events in this policy.")
     else:
-        total_hires   = sum(h.fte_hired for h in hevs)
+        _perm_hevs   = [h for h in hevs if h.mode != "per_diem"]
+        _pd_hevs     = [h for h in hevs if h.mode == "per_diem"]
+        total_hires   = sum(h.fte_hired for h in _perm_hevs)
         growth_hires  = sum(h.fte_hired for h in hevs if h.mode=="growth")
         winter_hires  = sum(h.fte_hired for h in hevs if h.mode=="winter_ramp")
-        replace_hires = sum(h.fte_hired for h in hevs if h.mode=="attrition_replace")
+        perdiem_hires = sum(h.fte_hired for h in _pd_hevs)
         hc1,hc2,hc3,hc4=st.columns(4)
-        hc1.metric("Total FTE Hired (36mo)", f"{total_hires:.1f}")
+        hc1.metric("Perm FTE Hired (36mo)",  f"{total_hires:.1f}")
         hc2.metric("Growth Hires",           f"{growth_hires:.1f}")
         hc3.metric("Winter Ramp Hires",      f"{winter_hires:.1f}")
-        hc4.metric("Attrition Backfill",     f"{replace_hires:.1f}")
+        hc4.metric("Per-Diem / Extra Shifts",f"{perdiem_hires:.1f} FTE-eq")
 
-        mode_c={"growth":NAVY,"attrition_replace":NAVY_LT,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW}
+        mode_c={"growth":NAVY,"attrition_replace":NAVY_LT,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW,"per_diem":"#9CA3AF"}
         fhc=go.Figure()
         for h in hevs:
             lbl=f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}"
             post_l=f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}"
             indep_l=f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}"
             col=mode_c.get(h.mode,SLATE)
-            fhc.add_bar(x=[h.fte_hired],y=[lbl],orientation="h",base=[0],name=h.mode,
-                        marker_color=col,showlegend=False,
-                        text=f" {h.fte_hired:.2f} FTE [{h.mode}]  post by {post_l} -> indep {indep_l}",
+            _mode_label = ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
+                          else h.mode.replace("_"," ").title())
+            _bar_text   = (f" {h.fte_hired:.2f} FTE-eq  [Per-Diem]  {lbl}"
+                          if h.mode=="per_diem"
+                          else f" {h.fte_hired:.2f} FTE [{h.mode}]  post by {post_l} -> indep {indep_l}")
+            _bar_pattern = "x" if h.mode=="per_diem" else ""
+            fhc.add_bar(x=[h.fte_hired],y=[lbl],orientation="h",base=[0],name=_mode_label,
+                        marker_color=col,marker_pattern_shape=_bar_pattern,
+                        showlegend=False,
+                        text=_bar_text,
                         textposition="inside",textfont=dict(color="white",size=10),
-                        hovertemplate=f"<b>{lbl}</b><br>FTE: {h.fte_hired:.2f}<br>Mode: {h.mode}<br>Post by: {post_l}<br>Independent: {indep_l}<extra></extra>")
+                        hovertemplate=(f"<b>{lbl}</b><br>{_mode_label}<br>FTE-equiv: {h.fte_hired:.2f}<br>Cover with extra shifts / per-diem agreements<extra></extra>"
+                                      if h.mode=="per_diem" else
+                                      f"<b>{lbl}</b><br>FTE: {h.fte_hired:.2f}<br>Mode: {h.mode}<br>Post by: {post_l}<br>Independent: {indep_l}<extra></extra>"))
         fhc.update_layout(**mk_layout(height=max(280,len(hevs)*28+60),barmode="stack",title="Hire Events",
                            xaxis=dict(title="FTE Hired"),yaxis=dict(autorange="reversed",tickfont=dict(size=10)),
                            margin=dict(t=52,b=60,l=110,r=48)))
@@ -736,7 +750,9 @@ with tabs[1]:
 
         df_hc=pd.DataFrame([{
             "Hire Month": f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}",
-            "FTE": round(h.fte_hired,2), "Mode": h.mode,
+            "FTE": round(h.fte_hired,2),
+            "Type": ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
+                     else h.mode.replace("_"," ").title()),
             "Post Req By": f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}",
             "Independent By": f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}",
         } for h in hevs])
