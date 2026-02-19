@@ -165,16 +165,23 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.expander("BASE DEMAND", expanded=True):
-        base_visits = st.number_input("Visits / Day", 20.0, 300.0, 80.0, 5.0)
-        budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0)
-        peak_factor = st.slider("Peak Factor", 1.00, 1.30, 1.10, 0.01)
+        base_visits = st.number_input("Visits / Day", 20.0, 300.0, 80.0, 5.0,
+            help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
+        budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
+            help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
+        peak_factor = st.slider("Peak Factor", 1.00, 1.30, 1.10, 0.01,
+            help="Multiplier applied to base visits to account for daily/intra-shift peaks. 1.10 = plan for 10% above average.")
 
     with st.expander("QUARTERLY SEASONALITY", expanded=True):
         c1, c2 = st.columns(2); c3, c4 = st.columns(2)
-        with c1: q1 = st.number_input("Q1 Jan-Mar %", -50, 100, 20, 5, key="q1")
-        with c2: q2 = st.number_input("Q2 Apr-Jun %", -50, 100,  0, 5, key="q2")
-        with c3: q3 = st.number_input("Q3 Jul-Sep %", -50, 100,-10, 5, key="q3")
-        with c4: q4 = st.number_input("Q4 Oct-Dec %", -50, 100,  5, 5, key="q4")
+        with c1: q1 = st.number_input("Q1 Jan-Mar %", -50, 100, 20, 5, key="q1",
+                help="Volume adjustment vs base for Jan–Mar. +20 = flu season drives 20% more visits.")
+        with c2: q2 = st.number_input("Q2 Apr-Jun %", -50, 100,  0, 5, key="q2",
+                help="Volume adjustment vs base for Apr–Jun. 0 = baseline volume.")
+        with c3: q3 = st.number_input("Q3 Jul-Sep %", -50, 100,-10, 5, key="q3",
+                help="Volume adjustment vs base for Jul–Sep. -10 = summer slowdown, natural shed opportunity.")
+        with c4: q4 = st.number_input("Q4 Oct-Dec %", -50, 100,  5, 5, key="q4",
+                help="Volume adjustment vs base for Oct–Dec. +5 = early flu ramp before peak.")
         quarterly_impacts = [q1/100, q2/100, q3/100, q4/100]
         s_idx = [1.0 + quarterly_impacts[MONTH_TO_QUARTER[m]] for m in range(12)]
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
@@ -183,16 +190,21 @@ with st.sidebar:
     with st.expander("LOAD BAND TARGET", expanded=True):
         st.caption("Optimizer targets a pts/APC range. FTE derived monthly from demand.")
         lb1, lb2c = st.columns(2)
-        with lb1:  load_lo     = st.number_input("Band Floor (pts/APC)", 15.0, 50.0, 30.0, 1.0)
-        with lb2c: load_hi     = st.number_input("Band Ceiling (pts/APC)", 20.0, 60.0, 38.0, 1.0)
-        load_winter = st.number_input("Winter Load Target (pts/APC)", 15.0, 60.0, 36.0, 1.0)
+        with lb1:  load_lo     = st.number_input("Band Floor (pts/APC)", 15.0, 50.0, 30.0, 1.0,
+            help="Hire more staff if load would drop below this. Prevents chronic overstaffing in slow months.")
+        with lb2c: load_hi     = st.number_input("Band Ceiling (pts/APC)", 20.0, 60.0, 38.0, 1.0,
+            help="Trigger flex coverage above this load. Sets the upper bound of acceptable utilization.")
+        load_winter = st.number_input("Winter Load Target (pts/APC)", 15.0, 60.0, 36.0, 1.0,
+        help="Target load during Nov–Feb flu season. Can be set tighter (lower) to ensure flu surge capacity, or at Green ceiling (36) for efficient use of winter hires.")
         use_band    = st.checkbox("Use Load Band Mode", value=True)
         if use_band:
             st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/APC  |  Winter: **{load_winter:.0f}**")
 
     with st.expander("SHIFT STRUCTURE"):
-        op_days   = st.number_input("Operating Days/Week", 1, 7, 7)
-        shift_hrs = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5)
+        op_days   = st.number_input("Operating Days/Week", 1, 7, 7,
+            help="Days per week the clinic is open. Drives total shift slots and FTE-per-slot conversion.")
+        shift_hrs = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5,
+            help="Length of each clinical shift in hours. Used to calculate support staff hours and shifts-per-day default.")
         import math as _math
         _auto_shifts = max(1, min(3, _math.ceil(12.0 / shift_hrs)))
         _shift_key   = f"shifts_day_{shift_hrs}"
@@ -202,19 +214,27 @@ with st.sidebar:
                                      value=st.session_state[_shift_key], step=1,
                                      help=f"Auto: ceil(12/{shift_hrs:.0f}) = {_auto_shifts}",
                                      key=_shift_key)
-        fte_shifts = st.number_input("Shifts/Week per APC", 1.0, 7.0, 3.0, 0.5)
-        fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05)
+        fte_shifts = st.number_input("Shifts/Week per APC", 1.0, 7.0, 3.0, 0.5,
+            help="How many shifts per week each APC is contracted to work. Key driver of FTE-per-slot: 7 days / 3 shifts = 2.33 FTE needed per concurrent slot.")
+        fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05,
+            help="The FTE value assigned to one APC contract. 0.9 = each APC counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
 
     with st.expander("STAFFING POLICY"):
         flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=10,
-                                         format_func=lambda x: MONTH_NAMES[x-1])
-        summer_shed_floor = st.slider("Summer Shed Floor (% of Base)", 60, 100, 85, 5)
+                                         format_func=lambda x: MONTH_NAMES[x-1],
+                                         help="The month by which you need fully independent APCs on floor. Drives requisition posting deadline calculation.")
+        summer_shed_floor = st.slider("Summer Shed Floor (% of Base)", 60, 100, 85, 5,
+            help="Minimum FTE floor during Q3 summer. At 85%, a Base FTE of 6.0 won't shed below 5.1. Prevents over-shedding into a hole you can't recover from before flu season.")
 
     with st.expander("PROVIDER COMPENSATION"):
-        perm_cost_i = st.number_input("Perm APC Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d")
-        flex_cost_i = st.number_input("Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d")
-        rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0)
-        swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0)
+        perm_cost_i = st.number_input("Perm APC Cost/Year ($)", 100_000, 500_000, 200_000, 10_000, format="%d",
+            help="Fully loaded annual cost per permanent APC — salary, benefits, malpractice. Used for perm staffing cost and turnover replacement calculations.")
+        flex_cost_i = st.number_input("Flex APC Cost/Year ($)", 100_000, 600_000, 280_000, 10_000, format="%d",
+            help="Annualized cost of a flex/locum APC. Typically 30–50% above perm due to agency fees and lack of benefits offset. Applied when load exceeds Yellow threshold.")
+        rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 110.0, 5.0,
+            help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
+        swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0,
+            help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes APC + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
@@ -224,9 +244,12 @@ with st.sidebar:
                     "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
                     "COMPENSATION MULTIPLIERS</div>", unsafe_allow_html=True)
         sm1,sm2,sm3=st.columns(3)
-        with sm1: benefits_load = st.number_input("Benefits %", 0.0, 60.0, 30.0, 1.0)
-        with sm2: bonus_pct_ss  = st.number_input("Bonus %",    0.0, 30.0, 10.0, 1.0)
-        with sm3: ot_sick_pct   = st.number_input("OT+Sick %",  0.0, 20.0,  4.0, 0.5)
+        with sm1: benefits_load = st.number_input("Benefits %", 0.0, 60.0, 30.0, 1.0,
+            help="Benefits load as % of base wages. Includes health insurance, retirement, PTO accrual. Typically 25–35%.")
+        with sm2: bonus_pct_ss  = st.number_input("Bonus %", 0.0, 30.0, 10.0, 1.0,
+            help="Annual bonus as % of base wages. Applied uniformly across all support staff roles.")
+        with sm3: ot_sick_pct   = st.number_input("OT+Sick %", 0.0, 20.0, 4.0, 0.5,
+            help="Overtime and sick leave premium as % of base wages. Accounts for unplanned coverage costs.")
         _mult_preview = 1 + benefits_load/100 + bonus_pct_ss/100 + ot_sick_pct/100
         st.caption(f"Total multiplier: **{_mult_preview:.2f}×** applied to all hourly rates")
 
@@ -249,18 +272,22 @@ with st.sidebar:
                     "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
                     "STAFFING RATIOS  (per APC on floor)</div>", unsafe_allow_html=True)
         ra1,ra2 = st.columns(2)
-        with ra1: ma_ratio  = st.number_input("MA per APC",  0.0, 4.0, 1.0, 0.25)
-        with ra2: psr_ratio = st.number_input("PSR per APC", 0.0, 4.0, 1.0, 0.25)
-        rt_flat = st.number_input("Rad Tech FTE (flat per shift, regardless of APC count)",
-                                  0.0, 4.0, 1.0, 0.5)
+        with ra1: ma_ratio  = st.number_input("MA per APC", 0.0, 4.0, 1.0, 0.25,
+            help="Medical assistants per APC on floor per shift. 1.0 = one MA for every APC. Scales with concurrent APC count each month.")
+        with ra2: psr_ratio = st.number_input("PSR per APC", 0.0, 4.0, 1.0, 0.25,
+            help="Patient service reps (front desk) per APC on floor. 1.0 = one PSR per APC. Scales with concurrent APC count.")
+        rt_flat = st.number_input("Rad Tech FTE (flat per shift)", 0.0, 4.0, 1.0, 0.5,
+            help="Rad tech FTE per shift — flat cost regardless of how many APCs are on floor. 1.0 = one RT always present when clinic is open.")
 
         # ── 4. Supervision ────────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
                     "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
                     "SUPERVISION  (cost added only when hrs > 0)</div>", unsafe_allow_html=True)
         sv1,sv2 = st.columns(2)
-        with sv1: phys_sup_hrs  = st.number_input("Physician sup (hrs/mo)",  0.0, 200.0, 0.0, 5.0)
-        with sv2: sup_admin_hrs = st.number_input("Supervisor admin (hrs/mo)",0.0, 200.0, 0.0, 5.0)
+        with sv1: phys_sup_hrs  = st.number_input("Physician sup (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
+            help="Hours/month a supervising physician is on-site or available. Cost = physician rate × hours × multiplier. Leave at 0 if APCs practice independently.")
+        with sv2: sup_admin_hrs = st.number_input("Supervisor admin (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
+            help="Hours/month for an operations supervisor or clinical lead. Cost = supervisor rate × hours × multiplier. Leave at 0 if not applicable.")
         if phys_sup_hrs > 0 or sup_admin_hrs > 0:
             _pm = phys_sup_hrs  * phys_rate * _mult_preview if phys_sup_hrs  > 0 else 0
             _sm = sup_admin_hrs * sup_rate  * _mult_preview if sup_admin_hrs > 0 else 0
@@ -270,15 +297,20 @@ with st.sidebar:
                        + (f"Supervisor **${_sm:,.0f}/mo**" if sup_admin_hrs > 0 else ""))
 
     with st.expander("HIRING PHYSICS"):
-        days_sign = st.number_input("Days to Sign",         7, 120,  30, 7)
-        days_cred = st.number_input("Days to Credential",   7, 180,  60, 7)
-        days_ind  = st.number_input("Days to Independence", 14,180,  90, 7)
-        annual_att = st.number_input("Annual Attrition Rate %", 1.0, 50.0, 18.0, 1.0)
+        days_sign = st.number_input("Days to Sign", 7, 120, 30, 7,
+            help="Days from posting a requisition to signed offer letter. Includes sourcing, interviewing, and offer negotiation.")
+        days_cred = st.number_input("Days to Credential", 7, 180, 60, 7,
+            help="Days from signed offer to credentialed and cleared to see patients. Includes hospital/payer credentialing and state licensing.")
+        days_ind  = st.number_input("Days to Independence", 14, 180, 90, 7,
+            help="Days from first patient to working fully independently. Ramp period where productivity is reduced — modeled at 40%/70%/90% in months 1–3.")
+        annual_att = st.number_input("Annual Attrition Rate %", 1.0, 50.0, 18.0, 1.0,
+            help="Expected annual turnover as % of total staff. 18% = roughly 1 in 6 APCs leaves per year. Divided by 12 for monthly simulation. Increases with overwork if Overload Attrition Factor > 0.")
         st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
 
     with st.expander("ATTRITION SENSITIVITY"):
         st.caption("Overwork amplifies attrition. 20% overload x factor=1.5 adds 30% to base rate.")
-        overload_att_factor = st.slider("Overload Attrition Factor", 0.0, 5.0, 1.5, 0.1)
+        overload_att_factor = st.slider("Overload Attrition Factor", 0.0, 5.0, 1.5, 0.1,
+            help="How much overwork amplifies attrition. Formula: effective_rate = base_rate × (1 + factor × excess_load%). At 1.5: running 20% over budget multiplies attrition by 1.30×. Set to 0 to disable.")
         _ex_mult = 1 + overload_att_factor * 0.20
         st.caption(f"At 20% overload: base rate x **{_ex_mult:.2f}**  |  "
                    f"{annual_att:.1f}%/yr -> **{annual_att * _ex_mult:.1f}%/yr**")
@@ -286,10 +318,14 @@ with st.sidebar:
     with st.expander("TURNOVER & PENALTY RATES"):
         st.caption("Costs as % of annual APC salary.")
         tp1,tp2=st.columns(2); tp3,tp4=st.columns(2)
-        with tp1: turnover_pct  = st.number_input("Replacement Cost (% salary)", 10.0,150.0,40.0,5.0)
-        with tp2: burnout_pct   = st.number_input("Burnout Penalty (% sal/red mo)", 5.0,100.0,25.0,5.0)
-        with tp3: overstaff_pen = st.number_input("Overstaff ($/FTE-mo)", 500,20_000,3_000,500, format="%d")
-        with tp4: swb_pen       = st.number_input("SWB Violation ($)", 50_000,2_000_000,500_000,50_000, format="%d")
+        with tp1: turnover_pct  = st.number_input("Replacement Cost (% salary)", 10.0, 150.0, 40.0, 5.0,
+            help="Cost to replace one departing APC as % of annual salary. Includes recruiting, onboarding, and lost productivity during ramp. 40% of $200k = $80k per departure.")
+        with tp2: burnout_pct   = st.number_input("Burnout Penalty (% sal/red mo)", 5.0, 100.0, 25.0, 5.0,
+            help="Economic penalty per Red zone month as % of annual APC salary. Represents risk of accelerated attrition, reduced quality, and provider wellbeing costs. 25% of $200k = $50k per Red month.")
+        with tp3: overstaff_pen = st.number_input("Overstaff ($/FTE-mo)", 500, 20_000, 3_000, 500, format="%d",
+            help="Penalty per FTE-month of overstaffing. Represents idle cost, scheduling friction, and opportunity cost of excess headcount. Keeps optimizer from over-hiring.")
+        with tp4: swb_pen       = st.number_input("SWB Violation ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d",
+            help="One-time penalty added to the optimizer score if annual SWB/visit exceeds your target. Large value forces optimizer to treat SWB compliance as a near-hard constraint.")
         st.caption(f"Replacement: **${perm_cost_i*turnover_pct/100:,.0f}**  |  Burnout/red mo: **${perm_cost_i*burnout_pct/100:,.0f}**")
 
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
