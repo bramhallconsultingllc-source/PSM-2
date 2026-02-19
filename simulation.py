@@ -327,7 +327,19 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     lead_months     = int(np.ceil(total_lead_days / 30))
     req_post_month  = max(1, cfg.flu_anchor_month - lead_months)
 
-    flu_months    = {11, 12, 1, 2}
+    # Flu season: anchor month + 3 months forward
+    flu_months = set()
+    for offset in range(4):
+        flu_months.add(((cfg.flu_anchor_month - 1 + offset) % 12) + 1)
+
+    # Pre-flu window: ramp_months before flu anchor so new hires are
+    # independent BY the flu anchor month. Uses ramp_months (not lead_months)
+    # because lead time is for req posting; ramp is the onboarding period.
+    # e.g. anchor=Dec, ramp=1 month → pre-flu fires in November only.
+    pre_flu_months = set()
+    for offset in range(1, cfg.ramp_months + 1):
+        pre_flu_months.add(((cfg.flu_anchor_month - 1 - offset) % 12) + 1)
+
     summer_months = {7, 8, 9}
 
     months:       List[MonthResult] = []
@@ -346,19 +358,30 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     budget                    = cfg.budgeted_patients_per_provider_per_day
     fte_per_slot              = cfg.fte_per_shift_slot
 
-    # Derive effective base/winter from load band if enabled
-    # We'll use a preview of year-1 demand to set initial FTE seeds
+    # Initialize paid_fte based on the starting calendar month and the policy
+    # being tested.  The optimizer searches over (base_fte, winter_fte) — use
+    # those values directly as the initial condition rather than recomputing.
+    #
+    # If the simulation starts in a flu month → seed at winter_fte (already
+    # staffed for peak season).  Otherwise seed at base_fte.
+    # In load-band mode the optimizer auto-derives base/winter from demand, so
+    # we seed at the appropriate load-band derived value for month 0.
+    # Simulation always starts at month index 0 = January (cal month 1).
+    # Seed paid_fte based on whether January is a flu month.
+    _start_cal = 1  # January
     if cfg.use_load_band and base_fte == 0 and winter_fte == 0:
-        # Compute demand at base and winter to set seeds
-        _, _, _, fte_base_seed   = compute_demand(6, cfg)   # July (low demand)
-        _, _, _, fte_winter_seed = compute_demand(0, cfg)   # Jan  (high demand)
-        paid_fte = fte_for_load_target(
-            cfg.base_visits_per_day * cfg.seasonality_index[6] * cfg.peak_factor * ((1.0 + cfg.annual_growth_pct/100.0) ** (sim_month/12.0)),
-            cfg.load_band_lo + (cfg.load_band_hi - cfg.load_band_lo) * 0.5,
-            cfg
-        )
+        _start_visits, _, _, _ = compute_demand(0, cfg)
+        if _start_cal in flu_months:
+            paid_fte = fte_for_load_target(_start_visits, cfg.load_winter_target, cfg)
+        else:
+            _mid = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
+            paid_fte = fte_for_load_target(_start_visits, _mid, cfg)
     else:
-        paid_fte = base_fte
+        # Explicit policy: use winter_fte if starting in flu season, else base
+        if _start_cal in flu_months and winter_fte > 0:
+            paid_fte = winter_fte
+        else:
+            paid_fte = base_fte
 
     summer_floor_fte = paid_fte * cfg.summer_shed_floor_pct  # updated below
 
@@ -367,8 +390,9 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         year      = (m // 12) + 1
         quarter   = MONTH_TO_QUARTER[cal_month - 1] + 1
 
-        in_flu    = cal_month in flu_months
-        in_summer = cal_month in summer_months
+        in_flu     = cal_month in flu_months
+        in_pre_flu = cal_month in pre_flu_months
+        in_summer  = cal_month in summer_months
 
         # Volume shock for stress testing
         shock = volume_shocks.get(m + 1, 0.0)
@@ -423,17 +447,37 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         # ── Hiring decision ───────────────────────────────────────────────────
         hiring_mode = "none"
 
-        if in_flu:
-            # Flu season: hire to winter target (covers demand smoothly)
-            if paid_fte < target_fte:
-                new_hires = target_fte - paid_fte
+        if in_pre_flu:
+            # Pre-flu window: proactively hire to winter target so APCs are
+            # independent BY the flu anchor month, not ramping DURING it.
+            # Project what flu-season demand will be and staff ahead of it.
+            flu_visits, _, _, flu_fte_required = compute_demand(
+                m + lead_months, cfg)
+            if cfg.use_load_band:
+                flu_target_fte = fte_for_load_target(flu_visits, cfg.load_winter_target, cfg)
+            else:
+                flu_target_fte = winter_fte
+            if paid_fte < flu_target_fte:
+                new_hires = flu_target_fte - paid_fte
                 paid_fte += new_hires
                 ramp_cohorts.append([cfg.ramp_months, new_hires])
                 _log_hire(hire_events, m, cal_month, year, new_hires,
                           "winter_ramp", lead_months, cfg)
                 hiring_mode = "winter_ramp"
-            elif paid_fte < fte_before_attrition:
-                hiring_mode = "shed_passive"
+            else:
+                hiring_mode = "freeze_flu"
+
+        elif in_flu:
+            # Flu season: freeze hiring — team should already be in place.
+            # Only backfill attrition to prevent erosion during peak.
+            if paid_fte < fte_before_attrition * 0.97:
+                # More than 3% attrition erosion — backfill
+                new_hires = fte_before_attrition - paid_fte
+                paid_fte += new_hires
+                ramp_cohorts.append([cfg.ramp_months, new_hires])
+                _log_hire(hire_events, m, cal_month, year, new_hires,
+                          "attrition_replace", lead_months, cfg)
+                hiring_mode = "attrition_replace"
             else:
                 hiring_mode = "freeze_flu"
 
