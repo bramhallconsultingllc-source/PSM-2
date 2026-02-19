@@ -191,7 +191,11 @@ with st.sidebar:
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
         budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
             help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
+        annual_growth = st.slider("Annual Volume Growth %", 0.0, 30.0, 10.0, 0.5,
+            help="Expected year-over-year visit growth, compounded monthly. Drives rising FTE demand in years 2-3, and increases the cost of understaffing since more visits are at risk in later years.")
         peak_factor = 1.0  # removed from UI — use quarterly seasonality for volume adjustments
+        _y3_visits = base_visits * (1 + annual_growth/100) ** 2
+        st.caption(f"Y1 baseline: **{base_visits:.0f}**/day  →  Y3 projected: **{_y3_visits:.0f}**/day")
 
     with st.expander("QUARTERLY SEASONALITY", expanded=True):
         c1, c2 = st.columns(2); c3, c4 = st.columns(2)
@@ -364,6 +368,7 @@ support_cfg = SupportStaffConfig(
 cfg = ClinicConfig(
     base_visits_per_day=base_visits, budgeted_patients_per_provider_per_day=budget_ppp,
     peak_factor=peak_factor, quarterly_volume_impact=quarterly_impacts,
+    annual_growth_pct=annual_growth,
     operating_days_per_week=int(op_days), shifts_per_day=int(shifts_day),
     shift_hours=shift_hrs, fte_shifts_per_week=fte_shifts, fte_fraction=fte_frac,
     load_band_lo=load_lo, load_band_hi=load_hi, load_winter_target=load_winter, use_load_band=use_band,
@@ -395,7 +400,8 @@ if not st.session_state.optimized:
     st.info("Configure your clinic profile in the sidebar, then click **RUN OPTIMIZER**.")
     st.markdown("## DEMAND PREVIEW")
     si  = cfg.seasonality_index
-    mv  = [base_visits * si[m] * peak_factor for m in range(12)]
+    mv  = [base_visits * si[m] * peak_factor * (1 + annual_growth/100)**(m/12) for m in range(12)]
+    mv_y3 = [base_visits * si[m] * peak_factor * (1 + annual_growth/100)**((24+m)/12) for m in range(12)]
     fr  = [v / budget_ppp * cfg.fte_per_shift_slot for v in mv]
     bft = (base_visits / budget_ppp) * cfg.fte_per_shift_slot
     fp  = make_subplots(specs=[[{"secondary_y": True}]])
@@ -414,6 +420,13 @@ if not st.session_state.optimized:
     fp.add_hline(y=bft,line_dash="dash",line_color=SLATE,line_width=1.5,
                  annotation_text=f"Baseline FTE {bft:.1f}",
                  annotation_font=dict(size=10,color=SLATE),secondary_y=True)
+    if annual_growth > 0:
+        fr_y3 = [v / budget_ppp * cfg.fte_per_shift_slot for v in mv_y3]
+        fp.add_bar(x=MONTH_NAMES, y=mv_y3, name="Y3 projected volume",
+                   marker_color="rgba(200,75,17,0.18)", secondary_y=False)
+        fp.add_scatter(x=MONTH_NAMES, y=fr_y3, name="FTE Required (Y3)",
+                       line=dict(color=C_ACTUAL, width=2, dash="dash"), mode="lines",
+                       opacity=0.6, secondary_y=True)
     fp.update_layout(**mk_layout(height=400,barmode="stack",title="Annual Volume & FTE Requirement"))
     fp.update_yaxes(title_text="Visits / Day",secondary_y=False)
     fp.update_yaxes(title_text="FTE Required",secondary_y=True,showgrid=False)
