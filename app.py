@@ -257,6 +257,8 @@ with st.sidebar:
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 150.0, 85.0, 1.0,
             help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes APC + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
+        fixed_overhead = st.number_input("Monthly Fixed Overhead ($)", 0, 500_000, 0, 5_000, format="%d",
+            help="Optional: rent, non-clinical staff, equipment, etc. When $0, output is EBITDA Contribution from Staffing. When > $0, reflects full EBITDA. Does not affect FTE optimizer.")
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
@@ -379,6 +381,7 @@ cfg = ClinicConfig(
     annual_attrition_pct=annual_att, overload_attrition_factor=overload_att_factor,
     turnover_replacement_pct=turnover_pct, burnout_pct_per_red_month=burnout_pct,
     overstaff_penalty_per_fte_month=overstaff_pen, swb_violation_penalty=swb_pen,
+    monthly_fixed_overhead=fixed_overhead,
 )
 
 if run_opt:
@@ -558,6 +561,28 @@ else:
 z1,z2,z3,z4,_ = st.columns([1,1,1,1,2])
 z1.metric("Green",  s["green_months"])
 z2.metric("Yellow", s["yellow_months"])
+
+# EBITDA formula banner
+_es = best.ebitda_summary
+_elabel_b = "EBITDA CONTRIBUTION FROM STAFFING" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
+_fhtml = (f"  −  <span style='color:#F87171'>Fixed ${_es['fixed']/1e3:.0f}K</span>"
+          if cfg.monthly_fixed_overhead > 0 else "")
+st.markdown(
+    f"<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:4px;"
+    f"padding:0.7rem 1.2rem;margin:0.5rem 0;font-size:0.82rem;'>"
+    f"<span style='color:#6A8FAA;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.12em;'>3-YEAR {_elabel_b}</span><br>"
+    f"<span style='color:#4ADE80;font-weight:700'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
+    f"  −  <span style='color:#F87171'>SWB ${_es['swb']/1e6:.2f}M</span>"
+    f"  −  <span style='color:#F87171'>Flex ${_es['flex']/1e3:.0f}K</span>"
+    f"  −  <span style='color:#F87171'>Turnover ${_es['turnover']/1e3:.0f}K</span>"
+    f"  −  <span style='color:#F87171'>Burnout ${_es['burnout']/1e3:.0f}K</span>"
+    f"{_fhtml}"
+    f"  =  <span style='color:#4ADE80;font-size:1.1rem;font-weight:700'>"
+    f"${_es['ebitda']/1e6:.2f}M</span>"
+    f"  <span style='color:#6A8FAA;font-size:0.75rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
+    f"</div>", unsafe_allow_html=True
+)
 z3.metric("Red",    s["red_months"])
 _oa = s.get("total_overload_attrition", 0)
 z4.metric("Overload Attrition", f"{_oa:.1f} FTE")
@@ -828,6 +853,50 @@ with tabs[3]:
 with tabs[4]:
     pol=active_policy(); s2=pol.summary; mos=pol.months
     st.markdown("## 3-YEAR COST BREAKDOWN")
+
+    # ── EBITDA waterfall ────────────────────────────────────────────────
+    _es2 = pol.ebitda_summary
+    _elabel2 = "EBITDA Contribution" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
+    wf_labels = ["Revenue Captured","SWB Cost","Flex Premium","Turnover Cost","Burnout Risk"]
+    wf_raw    = [_es2["revenue"], _es2["swb"], _es2["flex"], _es2["turnover"], _es2["burnout"]]
+    if cfg.monthly_fixed_overhead > 0:
+        wf_labels.append("Fixed Overhead"); wf_raw.append(_es2["fixed"])
+    wf_labels.append(_elabel2); wf_raw.append(_es2["ebitda"])
+    wf_vals   = [v if i==0 or i==len(wf_raw)-1 else -v for i,v in enumerate(wf_raw)]
+    wf_colors = ["#22C55E" if i==0 else ("#1A6FD4" if i==len(wf_vals)-1 else "#EF4444") for i in range(len(wf_vals))]
+    fw = go.Figure(go.Bar(x=[v/1e6 for v in wf_vals], y=wf_labels, orientation="h",
+                         marker_color=wf_colors,
+                         text=[f"${abs(v)/1e6:.2f}M" for v in wf_vals], textposition="outside"))
+    fw.update_layout(**mk_layout(height=320, title=f"3-Year {_elabel2} Waterfall"))
+    fw.update_xaxes(title_text="$ Millions")
+    st.plotly_chart(fw, use_container_width=True)
+
+    # ── Monthly EBITDA trajectory ────────────────────────────────────────
+    _me_x   = [f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1][:3]}" for mo in pol.months]
+    _me_bar = [mo.ebitda_contribution/1e3 for mo in pol.months]
+    _me_cum = [mo.cumulative_ebitda/1e3   for mo in pol.months]
+    _vc_pct = [mo.throughput_factor*100   for mo in pol.months]
+    fig_me  = go.Figure()
+    fig_me.add_bar(x=_me_x, y=_me_bar,
+                   marker_color=[C_GREEN if v>=0 else C_RED for v in _me_bar],
+                   name="Monthly EBITDA ($K)", opacity=0.75)
+    fig_me.add_scatter(x=_me_x, y=_me_cum, mode="lines",
+                       line=dict(color=C_ACTUAL, width=2.5), name="Cumulative ($K)")
+    fig_me.update_layout(**mk_layout(height=280, title="Monthly EBITDA & Cumulative Trajectory"))
+    fig_me.update_yaxes(title_text="$K")
+    st.plotly_chart(fig_me, use_container_width=True)
+
+    # ── Visit capture rate ───────────────────────────────────────────────
+    fig_vc = go.Figure(go.Bar(x=_me_x, y=_vc_pct,
+        marker_color=[C_GREEN if v==100 else (C_YELLOW if v==95 else C_RED) for v in _vc_pct],
+        name="Visit Capture %"))
+    fig_vc.add_hline(y=100, line_dash="dash", line_color=SLATE, line_width=1)
+    fig_vc.update_layout(**mk_layout(height=200,
+        title="Monthly Visit Capture Rate — 100% Green | 95% Yellow | 85% Red"))
+    fig_vc.update_yaxes(range=[80, 102])
+    st.plotly_chart(fig_vc, use_container_width=True)
+
+    st.divider()
     lc=["Permanent","Flex","Support Staff","Turnover","Lost Revenue","Burnout","Overstaff"]
     vc=[s2["total_permanent_cost"],s2["total_flex_cost"],s2["total_support_cost"],
         s2["total_turnover_cost"],s2["total_lost_revenue"],s2["total_burnout_penalty"],s2["total_overstaff_penalty"]]
@@ -948,7 +1017,7 @@ with tabs[6]:
     st1.metric("Red Months (base)",   f"{ss0['red_months']}",delta=f"+{ss['red_months']-ss0['red_months']} shock",delta_color="inverse")
     st2.metric("Yellow Months",       f"{ss0['yellow_months']}",delta=f"+{ss['yellow_months']-ss0['yellow_months']} shock",delta_color="inverse")
     st3.metric("SWB/Visit",           f"${ss0['annual_swb_per_visit']:.2f}",delta=f"+${ss['annual_swb_per_visit']-ss0['annual_swb_per_visit']:.2f}",delta_color="inverse")
-    st4.metric("3-Year Score",        f"${ss0['total_score']/1e6:.2f}M",delta=f"+${(ss['total_score']-ss0['total_score'])/1e6:.2f}M",delta_color="inverse")
+    st4.metric("3-Yr EBITDA",         f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(ss.get('total_ebitda_3yr',0)-ss0.get('total_ebitda_3yr',0))/1e6:+.2f}M")
     st5.metric("Extra Turnover",      f"{ss['total_turnover_events']-ss0['total_turnover_events']:.1f} FTE")
 
     if ss["red_months"]>ss0["red_months"]:
@@ -1004,7 +1073,7 @@ with tabs[7]:
 
     st.markdown("## IMPACT vs OPTIMAL")
     m1,m2,m3,m4,m5=st.columns(5)
-    m1.metric("Policy Score",f"${man_pol.total_score/1e6:.2f}M",delta=f"${(man_pol.total_score-s['total_score'])/1e6:+.2f}M",delta_color="inverse")
+    m1.metric("EBITDA Contribution",f"${man_pol.summary.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(man_pol.summary.get('total_ebitda_3yr',0)-s.get('total_ebitda_3yr',0))/1e6:+.2f}M")
     m2.metric("Red Months",ms["red_months"],delta=f"{ms['red_months']-s['red_months']:+d}",delta_color="inverse")
     m3.metric("SWB/Visit",f"${ms['annual_swb_per_visit']:.2f}",delta="Exceeds" if ms["swb_violation"] else "On target")
     m4.metric("Summer Floor",f"{manual_b*cfg.summer_shed_floor_pct:.1f} FTE")
@@ -1040,7 +1109,7 @@ with tabs[8]:
         mat=np.full((len(wv),len(bv)),np.nan)
         for p in all_p:
             b2=bi.get(round(p.base_fte,1)); w2=wi.get(round(p.winter_fte,1))
-            if b2 is not None and w2 is not None: mat[w2][b2]=p.total_score
+            if b2 is not None and w2 is not None: mat[w2][b2]=p.summary.get('total_ebitda_3yr', -p.total_score)
         vmin,vmax=np.nanmin(mat),np.nanpercentile(mat,95)
         fh=go.Figure(go.Heatmap(z=mat,x=[str(v) for v in bv],y=[str(v) for v in wv],
                                  colorscale=[[0,C_GREEN],[0.5,"#FFFBEB"],[1,C_RED]],zmin=vmin,zmax=vmax,
