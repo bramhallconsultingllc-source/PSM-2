@@ -95,6 +95,14 @@ html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; backgrou
 [data-testid="stSidebar"] {{ background: {INK} !important; border-right: none; }}
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
 [data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
+[data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"],
+[data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"] svg,
+[data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"] path,
+[data-testid="stSidebar"] .stTooltipIcon,
+[data-testid="stSidebar"] .stTooltipIcon svg {{
+    color: #7AAFD4 !important;
+    fill: #7AAFD4 !important;
+    opacity: 1 !important; }}
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
     background: #E8F0F8 !important;
     border: 1px solid #4A7A9B !important;
