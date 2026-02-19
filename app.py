@@ -96,37 +96,36 @@ html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; backgrou
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
 [data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
-    background: #1E3A52 !important;
-    border: 1px solid #3A6080 !important;
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important;
+    background: #E8F0F8 !important;
+    border: 1px solid #4A7A9B !important;
+    color: #0D1B2A !important;
+    -webkit-text-fill-color: #0D1B2A !important;
     border-radius: 3px;
     font-size: 0.95rem !important;
     font-weight: 600 !important; }}
 [data-testid="stSidebar"] input::placeholder {{
-    color: #6A8FAA !important;
-    -webkit-text-fill-color: #6A8FAA !important; }}
+    color: #7A9AB8 !important;
+    -webkit-text-fill-color: #7A9AB8 !important; }}
 [data-testid="stSidebar"] input:focus, [data-testid="stSidebar"] select:focus {{
-    background: #1E3A52 !important;
-    border-color: #5A9FCA !important;
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important;
+    background: #F0F6FF !important;
+    border-color: #1A3A5C !important;
+    color: #0D1B2A !important;
+    -webkit-text-fill-color: #0D1B2A !important;
     outline: none !important; }}
-[data-testid="stSidebar"] [data-testid="stNumberInput"] input {{
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important;
-    font-size: 0.95rem !important;
-    font-weight: 600 !important; }}
-[data-testid="stSidebar"] [data-baseweb="input"] input,
-[data-testid="stSidebar"] [data-baseweb="select"] input,
-[data-testid="stSidebar"] [data-baseweb="base-input"] input {{
-    color: #FFFFFF !important;
-    -webkit-text-fill-color: #FFFFFF !important;
-    background: #1E3A52 !important; }}
 [data-testid="stSidebar"] [data-baseweb="input"],
-[data-testid="stSidebar"] [data-baseweb="base-input"] {{
-    background: #1E3A52 !important;
-    border-color: #3A6080 !important; }}
+[data-testid="stSidebar"] [data-baseweb="base-input"],
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] [data-baseweb="base-input"] > div {{
+    background: #E8F0F8 !important; }}
+[data-testid="stSidebar"] [data-baseweb="input"] input,
+[data-testid="stSidebar"] [data-baseweb="base-input"] input,
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+[data-testid="stSidebar"] div[class*="InputContainer"] input,
+[data-testid="stSidebar"] div[class*="stNumberInput"] input {{
+    background: #E8F0F8 !important;
+    color: #0D1B2A !important;
+    -webkit-text-fill-color: #0D1B2A !important;
+    font-weight: 600 !important; }}
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stExpander summary p {{
     font-size: 0.68rem !important; font-weight: 600 !important; text-transform: uppercase !important;
     letter-spacing: 0.10em !important; color: #8FAABB !important; }}
