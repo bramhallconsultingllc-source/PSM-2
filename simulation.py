@@ -139,6 +139,9 @@ class ClinicConfig:
     ramp_months:       int = 3
     ramp_productivity: List[float] = field(default_factory=lambda: [0.4, 0.7, 0.9])
 
+    # ── Fixed Overhead ───────────────────────────────────────────────────────
+    monthly_fixed_overhead: float = 0.0   # optional: rent, non-clinical, etc.
+
     # ── Penalty Weights ───────────────────────────────────────────────────────
     burnout_pct_per_red_month:       float = 25.0
     overstaff_penalty_per_fte_month: float = 3_000
@@ -260,6 +263,12 @@ class MonthResult:
     turnover_events:   float
     turnover_cost:     float
     cumulative_score:  float
+    # EBITDA fields
+    revenue_captured:    float
+    visits_captured:     float
+    throughput_factor:   float
+    ebitda_contribution: float
+    cumulative_ebitda:   float
 
 
 @dataclass
@@ -274,6 +283,7 @@ class PolicyResult:
     swb_violation:    bool
     summary:          Dict
 
+    ebitda_summary:    Optional[Dict] = None
     # Marginal analysis (NEW) — populated by compare_marginal_fte()
     marginal_analysis: Optional[Dict] = None
 
@@ -351,6 +361,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     total_score            = 0.0
     total_swb_cost         = 0.0
     total_simulated_visits = 0.0
+    total_ebitda           = 0.0
 
     base_monthly_attrition    = cfg.monthly_attrition_rate
     turnover_replace_cost     = cfg.turnover_replacement_cost_per_provider
@@ -366,22 +377,14 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     # staffed for peak season).  Otherwise seed at base_fte.
     # In load-band mode the optimizer auto-derives base/winter from demand, so
     # we seed at the appropriate load-band derived value for month 0.
-    # Simulation always starts at month index 0 = January (cal month 1).
-    # Seed paid_fte based on whether January is a flu month.
-    _start_cal = 1  # January
+    # Seed FTE from actual month-0 demand so the hire calendar shows the full
+    # journey from current state. Optimizer finds the policy maximizing EBITDA.
+    _start_visits, _, _, _ = compute_demand(0, cfg)
     if cfg.use_load_band and base_fte == 0 and winter_fte == 0:
-        _start_visits, _, _, _ = compute_demand(0, cfg)
-        if _start_cal in flu_months:
-            paid_fte = fte_for_load_target(_start_visits, cfg.load_winter_target, cfg)
-        else:
-            _mid = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
-            paid_fte = fte_for_load_target(_start_visits, _mid, cfg)
+        _mid = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
+        paid_fte = fte_for_load_target(_start_visits, _mid, cfg)
     else:
-        # Explicit policy: use winter_fte if starting in flu season, else base
-        if _start_cal in flu_months and winter_fte > 0:
-            paid_fte = winter_fte
-        else:
-            paid_fte = base_fte
+        paid_fte = base_fte
 
     summer_floor_fte = paid_fte * cfg.summer_shed_floor_pct  # updated below
 
@@ -564,16 +567,34 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
         overstaff_pen = overstaff_providers * fte_per_slot * cfg.overstaff_penalty_per_fte_month
 
-        if zone == "Red":
-            lost_visit_frac = min(0.3, overload_pts * 0.03)
-            lost_revenue    = lost_visit_frac * visits_per_day * 30 * cfg.net_revenue_per_visit
+        # ── Throughput degradation & revenue captured ───────────────────────
+        if zone == "Green":
+            throughput_factor = 1.00
+        elif zone == "Yellow":
+            throughput_factor = 0.95
         else:
-            lost_revenue = 0.0
+            throughput_factor = 0.85
 
+        visits_captured  = visits_per_day * 30 * throughput_factor
+        revenue_captured = visits_captured * cfg.net_revenue_per_visit
+        lost_revenue     = (visits_per_day * 30 - visits_captured) * cfg.net_revenue_per_visit
+
+        # ── Turnover cost ─────────────────────────────────────────────────────
         turnover_cost = turnover_events * turnover_replace_cost
         if zone in ("Yellow", "Red"):
             turnover_cost *= 1.3
 
+        # ── EBITDA contribution: Revenue − SWB − Flex − Turnover − Burnout − Fixed
+        fixed_cost     = cfg.monthly_fixed_overhead
+        ebitda_month   = (revenue_captured
+                          - (perm_cost + support_cost)
+                          - flex_cost
+                          - turnover_cost
+                          - burnout_pen
+                          - fixed_cost)
+        total_ebitda  += ebitda_month
+
+        # ── Legacy score (optimizer still minimizes cost for heatmap) ────────
         month_score = (perm_cost + flex_cost + support_cost + burnout_pen
                        + overstaff_pen + lost_revenue + turnover_cost)
         total_score += month_score
@@ -609,6 +630,11 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             turnover_events=turnover_events,
             turnover_cost=turnover_cost,
             cumulative_score=total_score,
+            revenue_captured=revenue_captured,
+            visits_captured=visits_captured,
+            throughput_factor=throughput_factor,
+            ebitda_contribution=ebitda_month,
+            cumulative_ebitda=total_ebitda,
         ))
 
     # ── SWB ───────────────────────────────────────────────────────────────────
@@ -622,6 +648,16 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     red_m    = sum(1 for mo in months if mo.zone == "Red")
     yellow_m = sum(1 for mo in months if mo.zone == "Yellow")
     green_m  = sum(1 for mo in months if mo.zone == "Green")
+
+    # EBITDA waterfall
+    total_revenue_captured = sum(mo.revenue_captured for mo in months)
+    total_swb_3yr          = sum(mo.permanent_cost + mo.support_cost for mo in months)
+    total_flex_3yr         = sum(mo.flex_cost for mo in months)
+    total_turnover_3yr     = sum(mo.turnover_cost for mo in months)
+    total_burnout_3yr      = sum(mo.burnout_penalty for mo in months)
+    total_fixed_3yr        = cfg.monthly_fixed_overhead * 36
+    total_visits_captured  = sum(mo.visits_captured for mo in months)
+    total_visits_demanded  = sum(mo.demand_visits_per_day * 30 for mo in months)
 
     summary = {
         "total_score":              total_score,
@@ -643,6 +679,16 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         "total_overstaff_penalty":  sum(mo.overstaff_penalty for mo in months),
         "total_overload_attrition": sum(mo.overload_attrition_delta for mo in months),
         "pct_months_in_band":       sum(1 for mo in months if mo.within_band) / len(months) * 100,
+        "total_ebitda_3yr":         total_ebitda,
+        "total_revenue_captured":   total_revenue_captured,
+        "total_swb_3yr":            total_swb_3yr,
+        "total_flex_3yr":           total_flex_3yr,
+        "total_turnover_3yr":       total_turnover_3yr,
+        "total_burnout_3yr":        total_burnout_3yr,
+        "total_fixed_3yr":          total_fixed_3yr,
+        "total_visits_captured":    total_visits_captured,
+        "total_visits_demanded":    total_visits_demanded,
+        "visit_capture_rate":       total_visits_captured / total_visits_demanded if total_visits_demanded > 0 else 1.0,
         "q_avg_visits": {
             q: float(np.mean([mo.demand_visits_per_day for mo in months
                                if mo.year == 1 and mo.quarter == q]))
@@ -655,6 +701,17 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         },
     }
 
+    ebitda_summary = {
+        "revenue":      total_revenue_captured,
+        "swb":          total_swb_3yr,
+        "flex":         total_flex_3yr,
+        "turnover":     total_turnover_3yr,
+        "burnout":      total_burnout_3yr,
+        "fixed":        total_fixed_3yr,
+        "ebitda":       total_ebitda,
+        "capture_rate": total_visits_captured / total_visits_demanded if total_visits_demanded > 0 else 1.0,
+    }
+
     result = PolicyResult(
         base_fte=base_fte, winter_fte=winter_fte,
         req_post_month=req_post_month,
@@ -664,6 +721,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         annual_swb_per_visit=annual_swb,
         swb_violation=swb_violation,
         summary=summary,
+        ebitda_summary=ebitda_summary,
     )
     return result
 
