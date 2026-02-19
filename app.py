@@ -12,6 +12,7 @@ New in v6:
 """
 
 import streamlit as st
+import streamlit.components.v1 as _components
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -1478,7 +1479,7 @@ with tabs[11]:
     marginal_txt  = memo['marginal_prose']
     growth_txt    = memo['growth_prose']
 
-    st.markdown(f"""
+    _memo_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px 0;background:#0A0F1A;">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 .memo-wrap {{
@@ -1687,7 +1688,9 @@ with tabs[11]:
 
   </div>
 </div>
-""", unsafe_allow_html=True)
+</body></html>"""
+    _memo_height = 900 + len(memo["actions"]) * 80
+    _components.html(_memo_html, height=_memo_height, scrolling=False)
 
     # KPI strip
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
