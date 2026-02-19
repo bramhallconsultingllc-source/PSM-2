@@ -217,25 +217,57 @@ with st.sidebar:
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 100.0, 32.0, 1.0)
 
     with st.expander("SUPPORT STAFF  (SWB only)"):
-        st.caption("Scales with APCs on floor each month.")
+        st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
+
+        # ── 1. Comp multipliers ───────────────────────────────────────────────
+        st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "COMPENSATION MULTIPLIERS</div>", unsafe_allow_html=True)
         sm1,sm2,sm3=st.columns(3)
-        with sm1: benefits_load = st.number_input("Benefits Load %", 0.0, 60.0, 30.0, 1.0)
-        with sm2: bonus_pct_ss  = st.number_input("Bonus %",         0.0, 30.0, 10.0, 1.0)
-        with sm3: ot_sick_pct   = st.number_input("OT+Sick %",       0.0, 20.0,  4.0, 0.5)
-        r1,r2=st.columns(2); r3,r4=st.columns(2); r5,r6=st.columns(2)
-        with r1: phys_rate = st.number_input("Physician ($/hr)", 50.0,300.0,135.79,1.0)
-        with r2: psr_rate  = st.number_input("PSR ($/hr)",        8.0, 60.0, 21.23,0.25)
-        with r3: app_rate  = st.number_input("APC ($/hr)",       30.0,200.0, 62.00,1.0)
-        with r4: rt_rate   = st.number_input("RT ($/hr)",         8.0, 80.0, 31.36,0.25)
-        with r5: ma_rate   = st.number_input("MA ($/hr)",         8.0, 60.0, 24.14,0.25)
-        with r6: sup_rate  = st.number_input("Supervisor ($/hr)", 8.0, 80.0, 28.25,0.25)
-        ra1,ra2=st.columns(2)
-        with ra1: ma_ratio  = st.number_input("MA : APC",  0.0,4.0,1.0,0.25)
-        with ra2: psr_ratio = st.number_input("PSR : APC", 0.0,4.0,1.0,0.25)
-        rt_flat = st.number_input("RT FTE (flat/shift)", 0.0,4.0,1.0,0.5)
-        sv1,sv2=st.columns(2)
-        with sv1: phys_sup_hrs  = st.number_input("Physician Sup (hrs/mo)", 0.0,200.0,0.0,5.0)
-        with sv2: sup_admin_hrs = st.number_input("Supervisor Admin (hrs/mo)", 0.0,200.0,0.0,5.0)
+        with sm1: benefits_load = st.number_input("Benefits %", 0.0, 60.0, 30.0, 1.0)
+        with sm2: bonus_pct_ss  = st.number_input("Bonus %",    0.0, 30.0, 10.0, 1.0)
+        with sm3: ot_sick_pct   = st.number_input("OT+Sick %",  0.0, 20.0,  4.0, 0.5)
+        _mult_preview = 1 + benefits_load/100 + bonus_pct_ss/100 + ot_sick_pct/100
+        st.caption(f"Total multiplier: **{_mult_preview:.2f}×** applied to all hourly rates")
+
+        # ── 2. Hourly rates ───────────────────────────────────────────────────
+        st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "HOURLY RATES  (base, before multiplier)</div>", unsafe_allow_html=True)
+        r1,r2 = st.columns(2)
+        with r1: phys_rate = st.number_input("Physician",  50.0, 300.0, 135.79, 1.0, format="$%.2f")
+        with r2: app_rate  = st.number_input("APC",        30.0, 200.0,  62.00, 1.0, format="$%.2f")
+        r3,r4 = st.columns(2)
+        with r3: ma_rate   = st.number_input("MA",          8.0,  60.0,  24.14, 0.25,format="$%.2f")
+        with r4: psr_rate  = st.number_input("PSR",         8.0,  60.0,  21.23, 0.25,format="$%.2f")
+        r5,r6 = st.columns(2)
+        with r5: rt_rate   = st.number_input("Rad Tech",    8.0,  80.0,  31.36, 0.25,format="$%.2f")
+        with r6: sup_rate  = st.number_input("Supervisor",  8.0,  80.0,  28.25, 0.25,format="$%.2f")
+
+        # ── 3. Staffing ratios ────────────────────────────────────────────────
+        st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "STAFFING RATIOS  (per APC on floor)</div>", unsafe_allow_html=True)
+        ra1,ra2 = st.columns(2)
+        with ra1: ma_ratio  = st.number_input("MA per APC",  0.0, 4.0, 1.0, 0.25)
+        with ra2: psr_ratio = st.number_input("PSR per APC", 0.0, 4.0, 1.0, 0.25)
+        rt_flat = st.number_input("Rad Tech FTE (flat per shift, regardless of APC count)",
+                                  0.0, 4.0, 1.0, 0.5)
+
+        # ── 4. Supervision ────────────────────────────────────────────────────
+        st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "SUPERVISION  (cost added only when hrs > 0)</div>", unsafe_allow_html=True)
+        sv1,sv2 = st.columns(2)
+        with sv1: phys_sup_hrs  = st.number_input("Physician sup (hrs/mo)",  0.0, 200.0, 0.0, 5.0)
+        with sv2: sup_admin_hrs = st.number_input("Supervisor admin (hrs/mo)",0.0, 200.0, 0.0, 5.0)
+        if phys_sup_hrs > 0 or sup_admin_hrs > 0:
+            _pm = phys_sup_hrs  * phys_rate * _mult_preview if phys_sup_hrs  > 0 else 0
+            _sm = sup_admin_hrs * sup_rate  * _mult_preview if sup_admin_hrs > 0 else 0
+            st.caption(f"Supervision cost: "
+                       + (f"Physician **${_pm:,.0f}/mo**" if phys_sup_hrs > 0 else "")
+                       + (" · " if phys_sup_hrs > 0 and sup_admin_hrs > 0 else "")
+                       + (f"Supervisor **${_sm:,.0f}/mo**" if sup_admin_hrs > 0 else ""))
 
     with st.expander("HIRING PHYSICS"):
         days_sign = st.number_input("Days to Sign",         7, 120,  30, 7)
