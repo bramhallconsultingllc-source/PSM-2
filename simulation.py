@@ -1055,6 +1055,28 @@ def optimize(cfg: ClinicConfig,
                 best_ebitda = ebitda
                 best_policy = p
 
+    # In load-band mode, the optimizer's base/winter FTE floors often collapse
+    # to the same minimum value because demand-driven logic handles actual hiring.
+    # Derive meaningful displayed values from the simulation's actual demand:
+    #   base_fte   = demand_fte for a typical non-flu month (Y1-Apr, Q2 midpoint)
+    #   winter_fte = demand_fte for the flu-season peak (Y1-Jan)
+    # This ensures winter_fte > base_fte whenever seasonal demand warrants it.
+    if best_policy is not None and cfg.use_load_band:
+        flu_months_set = set()
+        for _off in range(4):
+            flu_months_set.add(((cfg.flu_anchor_month - 1 + _off) % 12) + 1)
+        # Y1 flu peak = max demand_fte_required in Dec-Mar of year 1
+        _flu_mos  = [mo for mo in best_policy.months
+                     if mo.calendar_month in flu_months_set and mo.year == 1]
+        # Y1 base = demand_fte_required in Apr (first full post-flu, pre-summer month)
+        _base_mos = [mo for mo in best_policy.months
+                     if mo.calendar_month == 4 and mo.year == 1]
+        if _flu_mos and _base_mos:
+            _winter_fte = math.ceil(max(mo.demand_fte_required for mo in _flu_mos) * 4) / 4
+            _base_fte   = math.ceil(max(mo.demand_fte_required for mo in _base_mos) * 4) / 4
+            best_policy.base_fte   = _base_fte
+            best_policy.winter_fte = max(_winter_fte, _base_fte)
+
     # Attach marginal analysis to best policy
     if best_policy is not None:
         best_policy.marginal_analysis = compare_marginal_fte(best_policy, cfg)
