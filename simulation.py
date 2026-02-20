@@ -356,14 +356,17 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
     summer_months = {7, 8}  # Jul/Aug only — true summer shed
 
-    # Active pre-flu window: the SINGLE month that is exactly lead_months before
-    # the flu anchor. This is the optimal hire month — fires at precisely the right
-    # time for the APC to be fully independent by flu season start.
-    # e.g. lead_months=3, anchor=Dec → hire in Sep (independent by Dec)
-    #      lead_months=7, anchor=Dec → hire in May (independent by Dec)
-    # We use a 2-month window (optimal month + 1 shoulder) to allow for slight
-    # demand timing variation, excluding summer shed months.
-    _optimal_hire_month = ((cfg.flu_anchor_month - 1 - lead_months) % 12) + 1
+    # Active pre-flu window: the months where we HIRE so the APC is independent
+    # by flu season start.
+    #
+    # KEY: the simulation fires a hire in month M meaning the APC STARTS month M.
+    # lead_months is only used to back-calculate the posting date for display.
+    # The hire timing is driven by ramp_months alone:
+    #   optimal_hire = flu_anchor - ramp_months
+    #   e.g. anchor=Dec, ramp=3 → hire Sep → indep Dec
+    #   Post date displayed: Sep - lead_months (e.g. -7 → Feb)
+    # We use a 2-month window (optimal + shoulder) to handle slight demand variation.
+    _optimal_hire_month = ((cfg.flu_anchor_month - 1 - cfg.ramp_months) % 12) + 1
     _shoulder_month     = ((_optimal_hire_month - 1 + 1) % 12) + 1  # one month later
     active_pre_flu = set()
     for m_val in [_optimal_hire_month, _shoulder_month]:
