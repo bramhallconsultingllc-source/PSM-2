@@ -141,8 +141,11 @@ class ClinicConfig:
     summer_shed_floor_pct: float = 0.85
 
     # ── Ramp Productivity ────────────────────────────────────────────────────
-    ramp_months:       int = 3
-    ramp_productivity: List[float] = field(default_factory=lambda: [0.4, 0.7, 0.9])
+    ramp_months:       int = 0
+    ramp_productivity: List[float] = field(default_factory=lambda: [])
+    # APCs are credentialed before start date — on day 1 they are fully independent.
+    # There is no partial productivity ramp. The lead time pipeline (days_to_sign +
+    # days_to_credential + days_to_independent) accounts for all pre-work.
 
     # ── Fixed Overhead ───────────────────────────────────────────────────────
     monthly_fixed_overhead: float = 0.0   # optional: rent, non-clinical, etc.
@@ -356,22 +359,21 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
     summer_months = {7, 8}  # Jul/Aug only — true summer shed
 
-    # Active pre-flu window: the months where we HIRE so the APC is independent
-    # by flu season start.
-    #
-    # KEY: the simulation fires a hire in month M meaning the APC STARTS month M.
-    # lead_months is only used to back-calculate the posting date for display.
-    # The hire timing is driven by ramp_months alone:
-    #   optimal_hire = flu_anchor - ramp_months
-    #   e.g. anchor=Dec, ramp=3 → hire Sep → indep Dec
-    #   Post date displayed: Sep - lead_months (e.g. -7 → Feb)
-    # We use a 2-month window (optimal + shoulder) to handle slight demand variation.
-    _optimal_hire_month = ((cfg.flu_anchor_month - 1 - cfg.ramp_months) % 12) + 1
-    _shoulder_month     = ((_optimal_hire_month - 1 + 1) % 12) + 1  # one month later
+    # Pre-flu look-ahead window: Sep/Oct/Nov (3 months before flu anchor Dec).
+    # In these months the simulation LOOKS AHEAD to December demand and decides
+    # whether a new APC needs to START in December. If so, a hire event is
+    # scheduled with start_month = December and the FTE is added to paid_fte
+    # only when December arrives (not now). This separates the decision month
+    # from the start month.
+    # active_pre_flu = {Sep, Oct, Nov} — the 3 months before flu anchor
     active_pre_flu = set()
-    for m_val in [_optimal_hire_month, _shoulder_month]:
-        if m_val not in summer_months and m_val not in flu_months:
-            active_pre_flu.add(m_val)
+    for _offset in range(1, 4):
+        _m = ((cfg.flu_anchor_month - 1 - _offset) % 12) + 1
+        if _m not in summer_months:
+            active_pre_flu.add(_m)
+    # scheduled_dec_hires: FTE committed to start in anchor month, not yet added
+    # to paid_fte. Keyed by simulation year so each year's decision is independent.
+    scheduled_anchor_hires: dict = {}  # year → fte amount
 
     months:       List[MonthResult] = []
     hire_events:  List[HireEvent]   = []
@@ -443,30 +445,56 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         # base_fte: non-flu hiring floor. Optimizer searches this too.
 
         if cfg.use_load_band:
-            # Flu/pre-flu: hire to whichever is higher — demand need at WLT, or
-            # the explicit winter_fte floor the optimizer chose.
-            # In active_pre_flu months: look ahead to PEAK flu demand and add an
-            # attrition buffer (lead_months × monthly_rate) so the hire placed
-            # NOW is still adequate at flu-season peak without reactive Jan hires.
+            # Pre-flu months (Sep/Oct/Nov): look ahead to December demand and
+            # size the FTE needed ON DECEMBER 1st (binary — no ramp).
+            # Attrition buffer covers months from now until end of flu season
+            # (anchor + flu_season_length - 1) so the Dec cohort stays adequate
+            # through March without reactive hires.
             if cal_month in active_pre_flu:
-                # Size the pre-flu hire to cover the ENTIRE flu season,
-                # not just the anchor month. Peak demand is in Jan/Feb/Mar
-                # (anchor + 1-3 months forward). Attrition buffer must cover
-                # months from NOW until the END of flu season so FTE stays
-                # adequate through Mar without reactive hires.
-                flu_season_length = 4   # anchor + 3 months forward
+                flu_season_length = 4   # Dec + Jan + Feb + Mar
                 months_to_anchor  = (cfg.flu_anchor_month - cal_month) % 12
                 months_to_flu_end = months_to_anchor + flu_season_length - 1
-                # Look at only the flu season window (anchor through anchor+3)
                 flu_peak_demand = max(
                     compute_demand(m + offset, cfg)[0]
                     for offset in range(months_to_anchor, months_to_anchor + flu_season_length)
                 )
                 band_winter = fte_for_load_target(flu_peak_demand, cfg.load_winter_target, cfg)
-                # Buffer covers attrition from now until flu season END (not just anchor)
-                att_buffer = band_winter * cfg.monthly_attrition_rate * months_to_flu_end
-                target_fte = max(band_winter + att_buffer, winter_fte, cfg.min_coverage_fte)
+                att_buffer  = band_winter * cfg.monthly_attrition_rate * months_to_flu_end
+                # target_fte = what paid_fte needs to be ON December 1st
+                target_fte  = max(band_winter + att_buffer, winter_fte, cfg.min_coverage_fte)
+                # Bridge check: current paid_fte bleeds via attrition through Oct/Nov
+                # before the Dec APC arrives. For each bridge month offset k,
+                # need paid_fte * (1-rate)^k >= demand[k]
+                # → min starting FTE = max over k of demand[k] / (1-rate)^k
+                _rate = 1.0 - cfg.monthly_attrition_rate
+                bridge_min_fte = max(
+                    (compute_demand(m + off, cfg)[3] / (_rate ** off)  # [3]=fte_required
+                     for off in range(1, months_to_anchor)),
+                    default=0.0
+                )
+                if paid_fte < bridge_min_fte:
+                    _bridge_hires = _round_up_fte(bridge_min_fte - paid_fte)
+                    paid_fte += _bridge_hires
+                    ramp_cohorts.append([cfg.ramp_months, _bridge_hires])
+                    _log_hire(hire_events, m, cal_month, year, _bridge_hires,
+                              "growth", lead_months, cfg)
+
+                # Already-scheduled anchor hires count toward Dec target
+                already_scheduled = scheduled_anchor_hires.get(year, 0.0)
+                fte_at_anchor     = paid_fte * ((1 - cfg.monthly_attrition_rate) ** months_to_anchor)
+                effective_dec_fte  = fte_at_anchor + already_scheduled
+                if effective_dec_fte < target_fte:
+                    needed = target_fte - effective_dec_fte
+                    new_hires = _round_up_fte(needed)
+                    scheduled_anchor_hires[year] = already_scheduled + new_hires
+                    # Log the hire with start_month = flu_anchor_month
+                    _log_hire(hire_events, m, cfg.flu_anchor_month, year, new_hires,
+                              "winter_ramp", lead_months, cfg)
+                # Skip the hiring-decision block this month — Dec hire already scheduled
+                _pre_flu_handled = True
+                target_fte = paid_fte
             else:
+                _pre_flu_handled = False
                 band_winter = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
                 target_fte  = max(band_winter, winter_fte, cfg.min_coverage_fte)
 
@@ -516,15 +544,22 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         paid_fte             = max(cfg.min_coverage_fte, paid_fte - attrition_events)
         turnover_events      = attrition_events
 
+        # ── Apply scheduled anchor hires (start = flu anchor month) ──────────
+        # APCs scheduled during Sep/Oct/Nov look-ahead now start work.
+        if cal_month == cfg.flu_anchor_month and year in scheduled_anchor_hires:
+            anchor_fte = scheduled_anchor_hires.pop(year)
+            paid_fte  += anchor_fte
+
         # ── Hiring decision ───────────────────────────────────────────────────
-        # Flu months: defer non-emergency hires to April (post-flu).
-        # A hire placed in Jan won't be independent until ~Jun-Aug (with 7-month
-        # lead) — it won't help this flu season. Defer unless we're below min
-        # coverage (emergency). Pre-flu window should have pre-positioned enough.
-        # Summer: shed naturally to floor. All other months: hire to target.
+        # Skip in active_pre_flu months — Dec hire already scheduled above.
+        # Flu months: defer unless emergency (below min_coverage_fte).
+        # Summer: shed to floor. All other months: hire to target.
         hiring_mode = "none"
 
-        if in_summer:
+        if _pre_flu_handled:
+            hiring_mode = "winter_ramp"  # APC starting December — decision already made
+
+        elif in_summer:
             if paid_fte < summer_floor_fte:
                 new_hires = _round_up_fte(summer_floor_fte - paid_fte)
                 paid_fte += new_hires
