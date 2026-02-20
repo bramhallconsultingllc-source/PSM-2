@@ -1024,17 +1024,23 @@ def optimize(cfg: ClinicConfig,
     Grid search that maximizes 3-year EBITDA contribution:
         Revenue Captured − SWB − Flex − Turnover − Burnout − Fixed
 
-    In load-band mode, cfg.load_winter_target IS the primary hiring lever:
-      - Lower value (e.g. 32) = more staff hired for winter = lower burnout, higher SWB
-      - Higher value (e.g. 38) = leaner winter = higher burnout risk, lower SWB
-    The optimizer runs a single simulation with cfg.load_winter_target as-is,
-    finding the best base/winter FTE policy for the user's chosen load target.
-    The heatmap and stress test sweep other parameters independently.
-
-    In legacy mode (use_load_band=False) the grid search over (base_fte, winter_fte)
-    controls staffing levels directly.
+    The search floor is anchored to the shift coverage model's own calculation:
+      baseline_fte = (base_visits / budget) * fte_per_shift_slot
+    This ensures the optimizer never recommends fewer FTEs than needed to
+    physically staff the floor at baseline volume.
     """
-    b_vals = np.arange(b_range[0], b_range[1] + b_range[2], b_range[2])
+    # Anchor the search floor to the Shift Coverage Model's own "Baseline FTE Needed":
+    #   (base_visits_per_day / budget_ppp) * fte_per_shift_slot
+    # This is the minimum FTE to physically staff the floor at base volume.
+    # Round up to nearest 0.25 FTE increment.
+    _baseline_fte_raw = (
+        (cfg.base_visits_per_day / cfg.budgeted_patients_per_provider_per_day)
+        * cfg.fte_per_shift_slot
+    )
+    _baseline_fte = math.ceil(_baseline_fte_raw * 4) / 4
+
+    b_start = max(b_range[0], _baseline_fte)
+    b_vals  = np.arange(b_start, b_range[1] + b_range[2], b_range[2])
     all_policies: List[PolicyResult] = []
     best_policy:  Optional[PolicyResult] = None
     best_ebitda   = float("-inf")
