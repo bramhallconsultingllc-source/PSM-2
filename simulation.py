@@ -347,30 +347,32 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     for offset in range(4):
         flu_months.add(((cfg.flu_anchor_month - 1 + offset) % 12) + 1)
 
-    # Pre-flu proactive window: the months where hiring NOW will produce
-    # an APC who is independent BY flu season start.
-    # With lead_months=7 and anchor=Dec: technically May-Nov are all "pre-flu"
-    # but we only want to hire in the shoulder months (Oct, Nov) just before
-    # flu season — not in May/Jun when we're supposed to be shedding.
-    # Rule: pre-flu hiring fires in the 3 months immediately before flu anchor,
-    # excluding any summer shed months.
+    # Pre-flu window: all months where a hire placed NOW will be independent
+    # by the flu anchor month. Computed directly from lead_months — no hardcoded window.
+    # e.g. lead_months=7, anchor=Dec: May through Nov are all pre-flu.
     pre_flu_months = set()
     for offset in range(1, lead_months + 1):
         pre_flu_months.add(((cfg.flu_anchor_month - 1 - offset) % 12) + 1)
 
-    summer_months = {7, 8, 9}
-    # Active pre-flu window: only the 3 months immediately before flu anchor,
-    # excluding summer. For anchor=Dec: Sep(maybe), Oct, Nov.
-    # May/Jun are intentionally excluded — too early, leads to over-hiring
-    # that wipes out WLT sensitivity. Oct/Nov is the correct operational window.
+    summer_months = {7, 8}  # Jul/Aug only — true summer shed
+
+    # Active pre-flu window: the SINGLE month that is exactly lead_months before
+    # the flu anchor. This is the optimal hire month — fires at precisely the right
+    # time for the APC to be fully independent by flu season start.
+    # e.g. lead_months=3, anchor=Dec → hire in Sep (independent by Dec)
+    #      lead_months=7, anchor=Dec → hire in May (independent by Dec)
+    # We use a 2-month window (optimal month + 1 shoulder) to allow for slight
+    # demand timing variation, excluding summer shed months.
+    _optimal_hire_month = ((cfg.flu_anchor_month - 1 - lead_months) % 12) + 1
+    _shoulder_month     = ((_optimal_hire_month - 1 + 1) % 12) + 1  # one month later
     active_pre_flu = set()
-    for offset in range(1, 4):
-        m_val = ((cfg.flu_anchor_month - 1 - offset) % 12) + 1
-        if m_val not in summer_months:
+    for m_val in [_optimal_hire_month, _shoulder_month]:
+        if m_val not in summer_months and m_val not in flu_months:
             active_pre_flu.add(m_val)
 
     months:       List[MonthResult] = []
     hire_events:  List[HireEvent]   = []
+    deferred_fte: float = 0.0  # flu-month hires deferred to first post-flu month
 
     paid_fte      = base_fte
     ramp_cohorts: List[List] = []   # [[months_remaining, fte_size], ...]
@@ -412,9 +414,10 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         year      = (m // 12) + 1
         quarter   = MONTH_TO_QUARTER[cal_month - 1] + 1
 
-        in_flu     = cal_month in flu_months
-        in_pre_flu = cal_month in pre_flu_months
-        in_summer  = cal_month in summer_months
+        in_flu            = cal_month in flu_months
+        in_pre_flu        = cal_month in pre_flu_months
+        in_active_pre_flu = cal_month in active_pre_flu
+        in_summer         = cal_month in summer_months
 
         # Volume shock for stress testing
         shock = volume_shocks.get(m + 1, 0.0)
@@ -443,20 +446,22 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             # attrition buffer (lead_months × monthly_rate) so the hire placed
             # NOW is still adequate at flu-season peak without reactive Jan hires.
             if cal_month in active_pre_flu:
-                # Look ahead through the FULL upcoming flu season:
-                # lead_months ahead (to when this hire becomes independent)
-                # PLUS flu_season_length (anchor + 3 months forward = 4).
-                # This ensures hires placed in Oct/Nov are sized for peak
-                # flu demand even after growth compounds into Jan/Feb/Mar.
-                flu_season_length = 4  # Dec + Jan + Feb + Mar
-                lookahead = lead_months + flu_season_length
+                # Size the pre-flu hire to cover the ENTIRE flu season,
+                # not just the anchor month. Peak demand is in Jan/Feb/Mar
+                # (anchor + 1-3 months forward). Attrition buffer must cover
+                # months from NOW until the END of flu season so FTE stays
+                # adequate through Mar without reactive hires.
+                flu_season_length = 4   # anchor + 3 months forward
+                months_to_anchor  = (cfg.flu_anchor_month - cal_month) % 12
+                months_to_flu_end = months_to_anchor + flu_season_length - 1
+                # Look at only the flu season window (anchor through anchor+3)
                 flu_peak_demand = max(
                     compute_demand(m + offset, cfg)[0]
-                    for offset in range(1, lookahead + 1)
+                    for offset in range(months_to_anchor, months_to_anchor + flu_season_length)
                 )
                 band_winter = fte_for_load_target(flu_peak_demand, cfg.load_winter_target, cfg)
-                # Attrition buffer: cover FTE lost between now and flu peak
-                att_buffer = band_winter * cfg.monthly_attrition_rate * lead_months
+                # Buffer covers attrition from now until flu season END (not just anchor)
+                att_buffer = band_winter * cfg.monthly_attrition_rate * months_to_flu_end
                 target_fte = max(band_winter + att_buffer, winter_fte, cfg.min_coverage_fte)
             else:
                 band_winter = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
@@ -509,10 +514,11 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         turnover_events      = attrition_events
 
         # ── Hiring decision ───────────────────────────────────────────────────
-        # Flu months: FREEZE. Hires started in Jan won't be independent until
-        # August — useless for current flu season. Pre-flu window (Oct/Nov with
-        # attrition buffer) should have already hired the right amount.
-        # Summer: shed naturally down to floor. All other months: hire to target.
+        # Flu months: defer non-emergency hires to April (post-flu).
+        # A hire placed in Jan won't be independent until ~Jun-Aug (with 7-month
+        # lead) — it won't help this flu season. Defer unless we're below min
+        # coverage (emergency). Pre-flu window should have pre-positioned enough.
+        # Summer: shed naturally to floor. All other months: hire to target.
         hiring_mode = "none"
 
         if in_summer:
@@ -526,27 +532,52 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             else:
                 hiring_mode = "shed_pause"
 
-        elif paid_fte < target_fte and not in_flu:
-            # Flu freeze: no new requisitions during flu season.
-            # A hire placed in Jan won't be independent until ~Jul — useless
-            # for the current flu season. The pre-flu window (Oct/Nov) must
-            # have hired enough to carry through Mar without reactive hires.
-            raw_hires = target_fte - paid_fte
-            new_hires = _round_up_fte(raw_hires)
-            paid_fte += new_hires
-            ramp_cohorts.append([cfg.ramp_months, new_hires])
-            mode = ("winter_ramp" if in_pre_flu
-                    else "growth" if raw_hires > attrition_events * 1.05
-                    else "attrition_replace")
-            _log_hire(hire_events, m, cal_month, year, new_hires,
-                      mode, lead_months, cfg)
-            hiring_mode = mode
+        elif paid_fte < target_fte:
+            # In flu months: defer non-emergency growth/attrition hires.
+            # Emergency = below min_coverage_fte floor.
+            _flu_emergency = in_flu and paid_fte < cfg.min_coverage_fte * 1.05
+            if in_flu and not _flu_emergency:
+                # Defer: accumulate in deferred_fte; will hire in first post-flu month
+                deferred_fte = max(deferred_fte, target_fte - paid_fte)
+                hiring_mode = "deferred"
+            else:
+                raw_hires = max(target_fte - paid_fte, deferred_fte)
+                deferred_fte = 0.0  # consume deferred amount
+                new_hires = _round_up_fte(raw_hires)
+                paid_fte += new_hires
+                ramp_cohorts.append([cfg.ramp_months, new_hires])
+                mode = ("winter_ramp" if in_active_pre_flu
+                        else "growth" if raw_hires > attrition_events * 1.05
+                        else "attrition_replace")
+                _log_hire(hire_events, m, cal_month, year, new_hires,
+                          mode, lead_months, cfg)
+                hiring_mode = mode
 
         elif paid_fte > target_fte * 1.05 and not in_flu:
-            hiring_mode = "shed_passive"
+            # Consume any deferred flu-month hires even when overstaffed relative
+            # to current target — deferred hires are for growth, not current demand
+            if deferred_fte > 0 and not in_flu:
+                new_hires = _round_up_fte(deferred_fte)
+                deferred_fte = 0.0
+                paid_fte += new_hires
+                ramp_cohorts.append([cfg.ramp_months, new_hires])
+                _log_hire(hire_events, m, cal_month, year, new_hires,
+                          "growth", lead_months, cfg)
+                hiring_mode = "growth"
+            else:
+                hiring_mode = "shed_passive"
 
         else:
-            hiring_mode = "maintain"
+            if deferred_fte > 0 and not in_flu:
+                new_hires = _round_up_fte(deferred_fte)
+                deferred_fte = 0.0
+                paid_fte += new_hires
+                ramp_cohorts.append([cfg.ramp_months, new_hires])
+                _log_hire(hire_events, m, cal_month, year, new_hires,
+                          "growth", lead_months, cfg)
+                hiring_mode = "growth"
+            else:
+                hiring_mode = "maintain"
 
         # ── Ramp drag ─────────────────────────────────────────────────────────
         ramp_drag = 0.0
