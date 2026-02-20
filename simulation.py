@@ -125,7 +125,7 @@ class ClinicConfig:
     days_to_sign:        int = 30
     days_to_credential:  int = 60
     days_to_independent: int = 90
-    flu_anchor_month:    int = 11
+    flu_anchor_month:    int = 12
 
     # ── Attrition & Turnover ─────────────────────────────────────────────────
     annual_attrition_pct:     float = 18.0
@@ -403,6 +403,10 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
     summer_floor_fte = paid_fte * cfg.summer_shed_floor_pct  # updated below
 
+    # Days per month — consistent with support staff hours formula.
+    # Both revenue and cost use the same operating calendar.
+    operating_days_mo = cfg.operating_days_per_week * (52.0 / 12.0)
+
     for m in range(horizon_months):
         cal_month = (m % 12) + 1
         year      = (m // 12) + 1
@@ -435,11 +439,28 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         if cfg.use_load_band:
             # Flu/pre-flu: hire to whichever is higher — demand need at WLT, or
             # the explicit winter_fte floor the optimizer chose.
-            # In pre-flu months, add a 4-month attrition buffer so the hire made
-            # NOW sustains adequate staffing through the full flu season without
-            # triggering reactive re-hires in Jan/Feb.
-            band_winter = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
-            target_fte  = max(band_winter, winter_fte, cfg.min_coverage_fte)
+            # In active_pre_flu months: look ahead to PEAK flu demand and add an
+            # attrition buffer (lead_months × monthly_rate) so the hire placed
+            # NOW is still adequate at flu-season peak without reactive Jan hires.
+            if cal_month in active_pre_flu:
+                # Look ahead through the FULL upcoming flu season:
+                # lead_months ahead (to when this hire becomes independent)
+                # PLUS flu_season_length (anchor + 3 months forward = 4).
+                # This ensures hires placed in Oct/Nov are sized for peak
+                # flu demand even after growth compounds into Jan/Feb/Mar.
+                flu_season_length = 4  # Dec + Jan + Feb + Mar
+                lookahead = lead_months + flu_season_length
+                flu_peak_demand = max(
+                    compute_demand(m + offset, cfg)[0]
+                    for offset in range(1, lookahead + 1)
+                )
+                band_winter = fte_for_load_target(flu_peak_demand, cfg.load_winter_target, cfg)
+                # Attrition buffer: cover FTE lost between now and flu peak
+                att_buffer = band_winter * cfg.monthly_attrition_rate * lead_months
+                target_fte = max(band_winter + att_buffer, winter_fte, cfg.min_coverage_fte)
+            else:
+                band_winter = fte_for_load_target(visits_per_day, cfg.load_winter_target, cfg)
+                target_fte  = max(band_winter, winter_fte, cfg.min_coverage_fte)
 
             # Summer floor
             floor_fte        = fte_for_load_target(visits_per_day, cfg.load_band_hi, cfg)
@@ -464,7 +485,17 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             summer_floor_fte = base_fte * cfg.summer_shed_floor_pct
 
         # ── Attrition (overload-responsive) ──────────────────────────────────
-        current_providers = (paid_fte / fte_per_slot) if fte_per_slot > 0 else 0
+        # Use effective_fte (post-ramp) to measure load — paid_fte overstates
+        # capacity during ramp months, understating actual load on active providers.
+        # Compute prospective ramp drag from existing cohorts (before this month's
+        # new hires are added) so we can estimate effective_fte pre-attrition.
+        _prospective_drag = sum(
+            size * (1.0 - cfg.ramp_productivity[cfg.ramp_months - months_left])
+            for months_left, size in ramp_cohorts
+            if (cfg.ramp_months - months_left) < len(cfg.ramp_productivity)
+        )
+        _effective_fte_for_att = max(0.0, paid_fte - _prospective_drag)
+        current_providers = (_effective_fte_for_att / fte_per_slot) if fte_per_slot > 0 else 0
         current_load      = (visits_per_day / current_providers) if current_providers > 0 else budget
         excess_pct        = max(0.0, (current_load - budget) / budget)
         effective_monthly_attrition = base_monthly_attrition * (
@@ -495,7 +526,11 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             else:
                 hiring_mode = "shed_pause"
 
-        elif paid_fte < target_fte:
+        elif paid_fte < target_fte and not in_flu:
+            # Flu freeze: no new requisitions during flu season.
+            # A hire placed in Jan won't be independent until ~Jul — useless
+            # for the current flu season. The pre-flu window (Oct/Nov) must
+            # have hired enough to carry through Mar without reactive hires.
             raw_hires = target_fte - paid_fte
             new_hires = _round_up_fte(raw_hires)
             paid_fte += new_hires
@@ -559,11 +594,17 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         support_cost = cfg.support.monthly_support_cost(
             providers_on_floor, cfg.shift_hours, cfg.operating_days_per_week)
 
-        if zone == "Red":
+        # Progressive burnout curve — continuous quadratic from the moment
+        # load exceeds budget. No zone-based step: the same formula that
+        # previously applied only in Red now starts at the Green/Yellow
+        # boundary and scales smoothly.
+        #   burnout = base × (overload_pts / red_threshold)²
+        # At load=budget: 0.  At load=budget+red_threshold: base×1 = $43,750.
+        # At load=budget+red_threshold×2: base×4, etc.
+        # Replaces: Yellow flat 0.2× ($8,750) + Red (1+severity²) step.
+        if overload_pts > 0:
             severity    = overload_pts / max(cfg.red_threshold_above, 1)
-            burnout_pen = burnout_per_red * (1 + severity ** 2)
-        elif zone == "Yellow":
-            burnout_pen = burnout_per_red * 0.2
+            burnout_pen = burnout_per_red * (severity ** 2)
         else:
             burnout_pen = 0.0
 
@@ -577,9 +618,9 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         else:
             throughput_factor = 0.85
 
-        visits_captured  = visits_per_day * 30 * throughput_factor
+        visits_captured  = visits_per_day * operating_days_mo * throughput_factor
         revenue_captured = visits_captured * cfg.net_revenue_per_visit
-        lost_revenue     = (visits_per_day * 30 - visits_captured) * cfg.net_revenue_per_visit
+        lost_revenue     = (visits_per_day * operating_days_mo - visits_captured) * cfg.net_revenue_per_visit
 
         # ── Turnover cost ─────────────────────────────────────────────────────
         turnover_cost = turnover_events * turnover_replace_cost
@@ -602,7 +643,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         total_score += month_score
 
         total_swb_cost         += perm_cost + support_cost   # flex tracked separately
-        total_simulated_visits += visits_per_day * 30
+        total_simulated_visits += visits_per_day * operating_days_mo
 
         months.append(MonthResult(
             month=m+1, calendar_month=cal_month, year=year, quarter=quarter,
@@ -663,7 +704,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     total_burnout_3yr      = sum(mo.burnout_penalty for mo in months)
     total_fixed_3yr        = cfg.monthly_fixed_overhead * 36
     total_visits_captured  = sum(mo.visits_captured for mo in months)
-    total_visits_demanded  = sum(mo.demand_visits_per_day * 30 for mo in months)
+    total_visits_demanded  = sum(mo.demand_visits_per_day * operating_days_mo for mo in months)
 
     summary = {
         "total_score":              total_score,
