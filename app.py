@@ -545,16 +545,29 @@ st.markdown(f"<p style='font-size:0.87rem;color:{SLATE};margin-top:-0.5rem;margi
 st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.5rem;'>",unsafe_allow_html=True)
 
 st.markdown("## RECOMMENDED POLICY")
+
+# EBITDA Impact = SWB/visit variance × annual visits (annualized)
+# Negative delta = under budget = favourable (green); positive = over budget (red)
+_swb_actual     = s["annual_swb_per_visit"]
+_swb_target     = cfg.swb_target_per_visit
+_swb_delta_pv   = _swb_actual - _swb_target          # neg = favourable
+_ann_visits_kpi = s["annual_visits"]
+_ebitda_impact  = -_swb_delta_pv * _ann_visits_kpi   # flip sign: fav = positive $
+_impact_str     = f"${abs(_ebitda_impact)/1e3:.0f}K/yr {'▲ contribution' if _ebitda_impact >= 0 else '▼ detraction'}"
+_impact_delta   = f"{'▼' if _swb_delta_pv <= 0 else '▲'} ${abs(_swb_delta_pv):.2f}/visit vs ${_swb_target:.2f} target"
+
 k1,k2,k3,k4,k5,k6,k7 = st.columns(7)
 k1.metric("Base FTE",         f"{best.base_fte:.1f}")
 k2.metric("Winter FTE",       f"{best.winter_fte:.1f}")
 k3.metric("Summer Floor",     f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}")
 k4.metric("Post Req By",      MONTH_NAMES[best.req_post_month-1])
-k5.metric("SWB / Visit",      f"${s['annual_swb_per_visit']:.2f}",
-          delta=f"Target ${cfg.swb_target_per_visit:.2f}",
+k5.metric("SWB / Visit",      f"${_swb_actual:.2f}",
+          delta=f"Target ${_swb_target:.2f}",
           delta_color="inverse" if s["swb_violation"] else "normal")
 k6.metric("In-Band Months",   f"{s['pct_months_in_band']:.0f}%")
-k7.metric("3-Year Score",     f"${s['total_score']/1e6:.2f}M")
+k7.metric("EBITDA Impact",    _impact_str,
+          delta=_impact_delta,
+          delta_color="normal" if _ebitda_impact >= 0 else "inverse")
 
 st.markdown("<div style='height:0.6rem'></div>",unsafe_allow_html=True)
 if s["swb_violation"]:
@@ -567,14 +580,30 @@ z1,z2,z3,z4,_ = st.columns([1,1,1,1,2])
 z1.metric("Green",  s["green_months"])
 z2.metric("Yellow", s["yellow_months"])
 
-# EBITDA formula banner
+# ── EBITDA waterfall banner + SWB/visit variance row ─────────────────────────
 _es = best.ebitda_summary
 _elabel_b = "EBITDA CONTRIBUTION FROM STAFFING" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
 _fhtml = (f"  −  <span style='color:#F87171'>Fixed ${_es['fixed']/1e3:.0f}K</span>"
           if cfg.monthly_fixed_overhead > 0 else "")
+
+# SWB/visit variance values (reuses _swb_* from KPI strip above)
+_total_cap_3yr  = sum(mo.visits_captured for mo in best.months)
+_swb_impact_3yr = -_swb_delta_pv * _total_cap_3yr   # positive = $ saved vs budget
+_swb_impact_ann = -_swb_delta_pv * _ann_visits_kpi
+_perm_3yr       = sum(mo.permanent_cost for mo in best.months)
+_supp_3yr       = sum(mo.support_cost   for mo in best.months)
+_apc_pv         = (_perm_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
+_sup_pv         = (_supp_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
+_var_clr        = "#4ADE80" if _swb_delta_pv <= 0 else "#F87171"
+_var_word       = "favorable" if _swb_delta_pv <= 0 else "unfavorable"
+_var_arrow      = "▼" if _swb_delta_pv <= 0 else "▲"
+_impact_sign    = "+" if _swb_impact_ann >= 0 else "−"
+_impact_abs_ann = abs(_swb_impact_ann)
+_impact_abs_3yr = abs(_swb_impact_3yr)
+
 st.markdown(
-    f"<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:4px;"
-    f"padding:0.7rem 1.2rem;margin:0.5rem 0;font-size:0.82rem;'>"
+    f"<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:4px 4px 0 0;"
+    f"padding:0.7rem 1.2rem 0.55rem;margin:0.5rem 0 0;font-size:0.82rem;'>"
     f"<span style='color:#6A8FAA;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
     f"letter-spacing:0.12em;'>3-YEAR {_elabel_b}</span><br>"
     f"<span style='color:#4ADE80;font-weight:700'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
@@ -586,7 +615,25 @@ st.markdown(
     f"  =  <span style='color:#4ADE80;font-size:1.1rem;font-weight:700'>"
     f"${_es['ebitda']/1e6:.2f}M</span>"
     f"  <span style='color:#6A8FAA;font-size:0.75rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
-    f"</div>", unsafe_allow_html=True
+    f"</div>"
+    f"<div style='background:#091623;border:1px solid #1A3A5C;border-top:1px solid #0F2A40;"
+    f"border-radius:0 0 4px 4px;padding:0.42rem 1.2rem 0.45rem;margin:0 0 0.5rem;"
+    f"display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;'>"
+    f"<span style='color:#6A8FAA;font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.12em;white-space:nowrap;'>SWB / VISIT VARIANCE</span>"
+    f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
+    f"{_var_arrow} ${abs(_swb_delta_pv):.2f}/visit</span>"
+    f"<span style='color:#6A8FAA;font-size:0.76rem'>"
+    f"APC ${_apc_pv:.2f} + Support ${_sup_pv:.2f} = "
+    f"<strong style='color:#CBD5E1'>${_swb_actual:.2f}</strong>"
+    f" vs target ${_swb_target:.2f}</span>"
+    f"<span style='color:#6A8FAA;font-size:0.76rem'>→</span>"
+    f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
+    f"{_impact_sign}${_impact_abs_ann/1e3:.0f}K/yr</span>"
+    f"<span style='color:#6A8FAA;font-size:0.74rem'>"
+    f"({_var_word}, {_impact_sign}${_impact_abs_3yr/1e3:.0f}K over 3 yrs)</span>"
+    f"</div>",
+    unsafe_allow_html=True
 )
 z3.metric("Red",    s["red_months"])
 _oa = s.get("total_overload_attrition", 0)
