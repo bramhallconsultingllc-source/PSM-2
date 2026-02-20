@@ -677,567 +677,371 @@ st.markdown(f"<hr style='border-color:{RULE};margin:1.5rem 0;'>",unsafe_allow_ht
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
 tabs = st.tabs([
+    "Staffing Model", "Executive Summary",
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
-    "Manual Override", "Policy Heatmap", "Req Timing", "Data Table",
-    "Executive Summary", "Staffing Model",
+    "Policy Heatmap", "Req Timing", "Data Table",
 ])
 
-# ── TAB 0: 36-Month Load ──────────────────────────────────────────────────────
+# ── TAB 0: STAFFING MODEL ────────────────────────────────────────────────────
 with tabs[0]:
-    pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
-    st.markdown("## 36-MONTH APC LOAD & FTE TRAJECTORY")
+    pol  = active_policy()
+    sup  = cfg.support
+    fts  = cfg.fte_per_shift_slot          # e.g. 2.33 for 7-day, 3-shift/wk
+    budget_load = cfg.budgeted_patients_per_provider_per_day
 
-    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,row_heights=[0.55,0.45])
+    # ── Build quarterly rows ──────────────────────────────────────────────────
+    rows = []
+    for yr in [1, 2, 3]:
+        for q in [1, 2, 3, 4]:
+            qmos = [mo for mo in pol.months if mo.year == yr and mo.quarter == q]
+            if not qmos:
+                continue
+            avg_vpd  = sum(mo.demand_visits_per_day for mo in qmos) / len(qmos)
+            avg_pof  = sum(mo.providers_on_floor    for mo in qmos) / len(qmos)
+            avg_pfte = sum(mo.paid_fte               for mo in qmos) / len(qmos)
+            # zones for row shading
+            zones    = [mo.zone for mo in qmos]
+            dom_zone = max(set(zones), key=zones.count)
 
-    for i,mo in enumerate(mos):
-        zc={"Green":"rgba(10,117,84,0.07)","Yellow":"rgba(154,100,0,0.10)","Red":"rgba(185,28,28,0.12)"}[mo.zone]
-        fig.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor=zc,layer="below",line_width=0,row=1,col=1)
+            ma_day   = avg_pof * sup.ma_ratio
+            psr_day  = avg_pof * sup.psr_ratio
+            rt_day   = sup.rt_flat_fte
 
-    if cfg.use_load_band:
-        fig.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,
-                      fillcolor="rgba(10,117,84,0.05)",line_width=0,row=1,col=1)
-        fig.add_hline(y=cfg.load_band_lo,line_dash="dot",line_color=C_GREEN,line_width=1,
-                      annotation_text=f"Band floor {cfg.load_band_lo:.0f}",annotation_position="right",
-                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
-        fig.add_hline(y=cfg.load_band_hi,line_dash="dot",line_color=C_GREEN,line_width=1,
-                      annotation_text=f"Band ceiling {cfg.load_band_hi:.0f}",annotation_position="right",
-                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
+            ma_fte   = ma_day  * fts
+            psr_fte  = psr_day * fts
+            rt_fte   = rt_day  * fts
+            total_fte= avg_pfte + ma_fte + psr_fte + rt_fte
 
-    fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
-                    mode="lines+markers",name="Pts/APC/Shift",
-                    line=dict(color=NAVY,width=2.5),
-                    marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
-                    row=1,col=1)
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fig.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
-                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col),row=1,col=1)
+            rows.append({
+                "year": yr, "quarter": q, "zone": dom_zone,
+                "vpd": avg_vpd,
+                # staff per day
+                "apc_day":  avg_pof,
+                "ma_day":   ma_day,
+                "psr_day":  psr_day,
+                "rt_day":   rt_day,
+                # FTE
+                "apc_fte":  avg_pfte,
+                "ma_fte":   ma_fte,
+                "psr_fte":  psr_fte,
+                "rt_fte":   rt_fte,
+                "total_fte":total_fte,
+            })
 
-    fig.add_scatter(x=lbls,y=[mo.paid_fte for mo in mos],name="Paid FTE",
-                    mode="lines",line=dict(color=C_ACTUAL,width=2.5),row=2,col=1)
-    fig.add_scatter(x=lbls,y=[mo.effective_fte for mo in mos],name="Effective FTE",
-                    mode="lines",line=dict(color=C_ACTUAL,width=1.5,dash="dash"),opacity=0.5,row=2,col=1)
-    fig.add_scatter(x=lbls,y=[mo.demand_fte_required for mo in mos],name="FTE Required",
-                    mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"),row=2,col=1)
-    fig.add_bar(x=lbls,y=[mo.flex_fte for mo in mos],name="Flex FTE",
-                marker_color="rgba(185,28,28,0.30)",row=2,col=1)
+    # ── Colour helpers ────────────────────────────────────────────────────────
+    ZONE_BG   = {"Green": "#0A2818", "Yellow": "#1F1A00", "Red": "#2A0A0A"}
+    ZONE_PILL = {"Green": ("#4ADE80","#0A2818"), "Yellow": ("#FCD34D","#1A1600"), "Red": ("#F87171","#2A0A0A")}
 
-    for mode,col,lbl in [("shed_pause",C_YELLOW,"Q3 shed pause"),("shed_passive","#D97706","Passive shed")]:
-        sx=[lbls[i] for i,mo in enumerate(mos) if mo.hiring_mode==mode]
-        sy=[mos[i].paid_fte for i,mo in enumerate(mos) if mo.hiring_mode==mode]
-        if sx:
-            fig.add_scatter(x=sx,y=sy,mode="markers",name=lbl,
-                            marker=dict(symbol="triangle-down",size=9,color=col,line=dict(color="white",width=1.5)),row=2,col=1)
+    # ── Clinic summary header values ──────────────────────────────────────────
+    _total_fte_avg = sum(r["total_fte"] for r in rows) / len(rows) if rows else 0
 
-    has_overload = any(mo.overload_attrition_delta > 0.001 for mo in mos)
-    if has_overload:
-        fig.add_scatter(x=lbls,y=[mo.paid_fte*mo.effective_attrition_rate for mo in mos],
-                        name="Monthly attrition (overload-adj)",
-                        mode="lines",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7,row=2,col=1)
+    # ── Print-friendly HTML table ─────────────────────────────────────────────
+    # Build complete HTML so browser print works cleanly
+    _clinic_name  = "Urgent Care Clinic"   # could be a config field later
+    _print_date   = __import__("datetime").date.today().strftime("%B %d, %Y")
 
-    fig.update_layout(**mk_layout(height=640,xaxis2=dict(tickangle=-45),title="36-Month APC Load & FTE Trajectory"))
-    fig.update_yaxes(title_text="Pts/APC/Shift",showgrid=True,gridcolor=RULE,row=1,col=1)
-    fig.update_yaxes(title_text="FTE",showgrid=True,gridcolor=RULE,row=2,col=1)
-    st.plotly_chart(fig,use_container_width=True)
+    def _fmt(v, dec=2):
+        return f"{v:.{dec}f}"
 
-    fz=go.Figure(go.Bar(x=lbls,y=[1]*len(mos),marker_color=[ZONE_COLORS[mo.zone] for mo in mos],showlegend=False,
-                         hovertext=[f"{mlabel(mo)}: {mo.zone} {mo.patients_per_provider_per_shift:.1f}" for mo in mos]))
-    fz.update_layout(height=44,margin=dict(t=0,b=0,l=0,r=0),paper_bgcolor="white",plot_bgcolor="white",
-                     yaxis=dict(visible=False),xaxis=dict(visible=False))
-    st.plotly_chart(fz,use_container_width=True)
+    # Table rows HTML
+    _rows_html = ""
+    prev_yr = None
+    for r in rows:
+        yr_label = f"Year {r['year']}" if r['year'] != prev_yr else ""
+        prev_yr  = r['year']
+        q_labels = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct–Dec)"]
+        q_label  = q_labels[r['quarter'] - 1]
+        pill_fg, pill_bg = ZONE_PILL[r["zone"]]
+        zone_pill = (f"<span style='background:{pill_bg};color:{pill_fg};"
+                     f"font-size:0.62rem;font-weight:700;padding:1px 6px;"
+                     f"border-radius:3px;letter-spacing:0.06em'>{r['zone'].upper()}</span>")
 
-    hmc={m:sum(1 for mo in mos if mo.hiring_mode==m) for m in ["growth","attrition_replace","winter_ramp","floor_protect","shed_pause","shed_passive","freeze_flu","none"]}
-    hml={"growth":"Growth","attrition_replace":"Att.backfill","winter_ramp":"Winter ramp","floor_protect":"Floor protect","shed_pause":"Q3 shed","shed_passive":"Passive shed","freeze_flu":"Flu freeze","none":"No action"}
-    st.caption("  |  ".join(f"{hml[k]}: {v} mo" for k,v in hmc.items() if v>0))
+        yr_cell  = (f"<td rowspan='4' style='border-right:1px solid #1E3A52;"
+                    f"color:#4ADE80;font-weight:700;font-size:0.9rem;"
+                    f"text-align:center;vertical-align:middle;white-space:nowrap;"
+                    f"padding:0 0.9rem'>{yr_label}</td>") if yr_label else ""
 
+        _rows_html += f"""
+        <tr style='border-bottom:1px solid #132333;'>
+          {yr_cell}
+          <td style='padding:0.55rem 0.7rem;color:#CBD5E1;font-size:0.8rem'>{q_label}</td>
+          <td style='padding:0.55rem 0.5rem;text-align:center'>{zone_pill}</td>
+          <td style='padding:0.55rem 0.5rem;text-align:right;color:#94A3B8;font-size:0.78rem'>{_fmt(r['vpd'],1)}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['apc_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['ma_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['psr_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['rt_day'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['apc_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['ma_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['psr_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['rt_fte'])}</td>
+          <td style='text-align:right;color:#4ADE80;font-weight:700;font-size:0.82rem;padding:0.55rem 0.7rem'>{_fmt(r['total_fte'])}</td>
+        </tr>"""
 
-# ── TAB 1: Hire Calendar ──────────────────────────────────────────────────────
+    _table_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    background: #060F18;
+    color: #CBD5E1;
+    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 1.5rem 2rem;
+  }}
+
+  /* ── Header ── */
+  .doc-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid #1A3A5C;
+    padding-bottom: 0.8rem;
+    margin-bottom: 1.4rem;
+  }}
+  .doc-title {{
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #E2EAF0;
+  }}
+  .doc-sub {{
+    font-size: 0.7rem;
+    color: #6A8FAA;
+    letter-spacing: 0.1em;
+    margin-top: 0.25rem;
+  }}
+  .doc-meta {{
+    text-align: right;
+    font-size: 0.68rem;
+    color: #4A6A82;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+
+  /* ── Config strip ── */
+  .config-strip {{
+    display: flex;
+    gap: 2rem;
+    background: #0A1A28;
+    border: 1px solid #1A3A5C;
+    border-radius: 4px;
+    padding: 0.6rem 1.1rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+  }}
+  .cfg-item {{
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }}
+  .cfg-label {{
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #4A6A82;
+    font-weight: 600;
+  }}
+  .cfg-value {{
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #CBD5E1;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+
+  /* ── Table ── */
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+  }}
+  thead tr {{
+    background: #091623;
+    border-bottom: 2px solid #1A3A5C;
+  }}
+  /* Section headers */
+  .th-group {{
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #4A6A82;
+    padding: 0.3rem 0.5rem 0.1rem;
+    text-align: center;
+  }}
+  .th-group-spd {{ color: #60A5FA; border-bottom: 1px solid #1A3A5C; }}
+  .th-group-fte {{ color: #A78BFA; border-bottom: 1px solid #2A1A5C; }}
+  th {{
+    padding: 0.35rem 0.5rem;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    color: #6A8FAA;
+  }}
+  th.spd {{ color: #93C5FD; }}
+  th.fte {{ color: #C4B5FD; }}
+  tr:nth-child(4n+1) td, tr:nth-child(4n+2) td,
+  tr:nth-child(4n+3) td, tr:nth-child(4n+4) td {{
+    background: transparent;
+  }}
+  tbody tr:hover td {{ background: rgba(74,110,138,0.07); }}
+  td.spd {{ color: #93C5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+  td.fte {{ color: #C4B5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+
+  /* Year separators */
+  tr.yr-sep td {{ border-top: 2px solid #1A3A5C; }}
+
+  /* ── Footnotes ── */
+  .footnotes {{
+    margin-top: 1rem;
+    font-size: 0.65rem;
+    color: #4A6A82;
+    border-top: 1px solid #1A3A5C;
+    padding-top: 0.6rem;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }}
+  .fn-item {{ display: flex; gap: 0.3rem; }}
+  .fn-key {{ color: #60A5FA; font-weight: 600; }}
+
+  /* ── Print styles ── */
+  @media print {{
+    body {{
+      background: #fff !important;
+      color: #111 !important;
+      padding: 0.5in 0.6in;
+      font-size: 9pt;
+    }}
+    .doc-header {{ border-color: #333; }}
+    .doc-title {{ color: #111; }}
+    .doc-sub, .doc-meta {{ color: #555; }}
+    .config-strip {{ background: #f5f5f5; border-color: #ccc; }}
+    .cfg-label {{ color: #777; }}
+    .cfg-value {{ color: #111; }}
+    table {{ font-size: 8.5pt; }}
+    thead tr {{ background: #eee; border-color: #999; }}
+    .th-group-spd {{ color: #1a56b0; border-color: #999; }}
+    .th-group-fte {{ color: #5a1ab0; border-color: #999; }}
+    th {{ color: #444; }}
+    th.spd {{ color: #1a56b0; }}
+    th.fte {{ color: #5a1ab0; }}
+    td.spd {{ color: #1a56b0; }}
+    td.fte {{ color: #5a1ab0; }}
+    .footnotes {{ color: #555; border-color: #ccc; }}
+    .fn-key {{ color: #1a56b0; }}
+    tr.yr-sep td {{ border-color: #999; }}
+  }}
+  @page {{ size: landscape; margin: 0.5in; }}
+</style>
+</head>
+<body>
+
+<div class="doc-header">
+  <div>
+    <div class="doc-title">Complete Staffing Model</div>
+    <div class="doc-sub">PERMANENT STAFFING MODEL · 36-MONTH QUARTERLY PROJECTION · LOAD-BAND OPTIMIZER</div>
+  </div>
+  <div class="doc-meta">
+    Generated {_print_date}<br>
+    Base {cfg.base_visits_per_day:.0f} vpd · {cfg.annual_growth_pct:.0f}% growth · Budget {budget_load:.0f} pts/APC
+  </div>
+</div>
+
+<div class="config-strip">
+  <div class="cfg-item"><span class="cfg-label">Operating Days/Wk</span><span class="cfg-value">{cfg.operating_days_per_week}</span></div>
+  <div class="cfg-item"><span class="cfg-label">Shift Hours</span><span class="cfg-value">{cfg.shift_hours:.0f}h</span></div>
+  <div class="cfg-item"><span class="cfg-label">Shifts/Wk per APC</span><span class="cfg-value">{cfg.fte_shifts_per_week:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">FTE per Slot</span><span class="cfg-value">{fts:.2f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">MA Ratio (per APC)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">PSR Ratio (per APC)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">RT (flat/shift)</span><span class="cfg-value">{sup.rt_flat_fte:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/APC</span></div>
+  <div class="cfg-item"><span class="cfg-label">Base FTE</span><span class="cfg-value">{best.base_fte:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">Winter FTE</span><span class="cfg-value">{best.winter_fte:.1f}</span></div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2" style="text-align:left;padding-left:0.7rem">Year</th>
+      <th rowspan="2" style="text-align:left">Quarter</th>
+      <th rowspan="2">Zone</th>
+      <th rowspan="2" style="text-align:right;color:#6A8FAA">Visits/Day</th>
+      <th colspan="4" class="th-group th-group-spd">Staff per Day (Concurrent)</th>
+      <th colspan="4" class="th-group th-group-fte">FTE Required</th>
+      <th rowspan="2" style="text-align:right;padding-right:0.7rem;color:#4ADE80">Total FTE</th>
+    </tr>
+    <tr>
+      <th class="spd" style="text-align:right">Provider</th>
+      <th class="spd" style="text-align:right">MA</th>
+      <th class="spd" style="text-align:right">PSR</th>
+      <th class="spd" style="text-align:right">Rad Tech</th>
+      <th class="fte" style="text-align:right">Provider</th>
+      <th class="fte" style="text-align:right">MA</th>
+      <th class="fte" style="text-align:right">PSR</th>
+      <th class="fte" style="text-align:right">Rad Tech</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_rows_html}
+  </tbody>
+</table>
+
+<div class="footnotes">
+  <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day</span></div>
+  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents accounting for {cfg.fte_shifts_per_week:.0f} shifts/wk per APC on a {cfg.operating_days_per_week}-day schedule ({fts:.2f}× concurrent slot)</span></div>
+  <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
+  <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
+  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/APC</span></div>
+</div>
+
+</body>
+</html>"""
+
+    # ── Render in Streamlit ───────────────────────────────────────────────────
+    st.markdown("## COMPLETE STAFFING MODEL")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
+        f"Quarterly averages · recommended policy · all roles · "
+        f"<strong style='color:#CBD5E1'>Staff/Day</strong> = concurrent positions on floor · "
+        f"<strong style='color:#CBD5E1'>FTE</strong> = headcount to sustain that coverage</p>",
+        unsafe_allow_html=True
+    )
+
+    # Print button
+    _pb_col, _ = st.columns([1, 5])
+    _pb_col.markdown(
+        "<button onclick='window.print()' style='"
+        "background:#0D1B2A;border:1px solid #1A3A5C;color:#CBD5E1;"
+        "font-size:0.75rem;padding:0.35rem 0.9rem;border-radius:3px;"
+        "cursor:pointer;letter-spacing:0.06em;font-family:inherit;"
+        "'>🖨 Print / Save PDF</button>",
+        unsafe_allow_html=True
+    )
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    _components.html(_table_html, height=820, scrolling=True)
+
+    # ── Supporting metrics below table ────────────────────────────────────────
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0.2rem 0 0.8rem;'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='font-size:0.72rem;color:{SLATE};'>"
+        f"Ratios: MA {sup.ma_ratio:.1f}× · PSR {sup.psr_ratio:.1f}× · RT flat {sup.rt_flat_fte:.1f} · "
+        f"FTE/slot {fts:.2f} · Shift {cfg.shift_hours:.0f}h · "
+        f"{cfg.operating_days_per_week} days/wk · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC</p>",
+        unsafe_allow_html=True
+    )
+# ── TAB 1: Executive Summary ────────────────────────────────────────────────
 with tabs[1]:
-    pol=active_policy()
-    st.markdown("## HIRING DECISION CALENDAR")
-    st.caption("Every hire event from the simulation with back-calculated posting deadline and independence date.")
-    hevs=pol.hire_events
-    if not hevs:
-        st.info("No hire events in this policy.")
-    else:
-        _perm_hevs   = [h for h in hevs if h.mode != "per_diem"]
-        _pd_hevs     = [h for h in hevs if h.mode == "per_diem"]
-        total_hires   = sum(h.fte_hired for h in _perm_hevs)
-        growth_hires  = sum(h.fte_hired for h in hevs if h.mode=="growth")
-        winter_hires  = sum(h.fte_hired for h in hevs if h.mode=="winter_ramp")
-        perdiem_hires = sum(h.fte_hired for h in _pd_hevs)
-        hc1,hc2,hc3,hc4=st.columns(4)
-        hc1.metric("Perm FTE Hired (36mo)",  f"{total_hires:.1f}")
-        hc2.metric("Growth Hires",           f"{growth_hires:.1f}")
-        hc3.metric("Winter Ramp Hires",      f"{winter_hires:.1f}")
-        hc4.metric("Per-Diem / Extra Shifts",f"{perdiem_hires:.1f} FTE-eq")
-
-        mode_c={"growth":NAVY,"attrition_replace":NAVY_LT,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW,"per_diem":"#9CA3AF"}
-        fhc=go.Figure()
-        for h in hevs:
-            lbl=f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}"
-            post_l=f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}"
-            indep_l=f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}"
-            col=mode_c.get(h.mode,SLATE)
-            _mode_label = ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
-                          else h.mode.replace("_"," ").title())
-            _bar_text   = (f" {h.fte_hired:.2f} FTE-eq  [Per-Diem]  {lbl}"
-                          if h.mode=="per_diem"
-                          else f" {h.fte_hired:.2f} FTE [{h.mode}]  post by {post_l} -> indep {indep_l}")
-            _bar_pattern = "x" if h.mode=="per_diem" else ""
-            fhc.add_bar(x=[h.fte_hired],y=[lbl],orientation="h",base=[0],name=_mode_label,
-                        marker_color=col,marker_pattern_shape=_bar_pattern,
-                        showlegend=False,
-                        text=_bar_text,
-                        textposition="inside",textfont=dict(color="white",size=10),
-                        hovertemplate=(f"<b>{lbl}</b><br>{_mode_label}<br>FTE-equiv: {h.fte_hired:.2f}<br>Cover with extra shifts / per-diem agreements<extra></extra>"
-                                      if h.mode=="per_diem" else
-                                      f"<b>{lbl}</b><br>FTE: {h.fte_hired:.2f}<br>Mode: {h.mode}<br>Post by: {post_l}<br>Independent: {indep_l}<extra></extra>"))
-        fhc.update_layout(**mk_layout(height=max(280,len(hevs)*28+60),barmode="stack",title="Hire Events",
-                           xaxis=dict(title="FTE Hired"),yaxis=dict(autorange="reversed",tickfont=dict(size=10)),
-                           margin=dict(t=52,b=60,l=110,r=48)))
-        st.plotly_chart(fhc,use_container_width=True)
-
-        df_hc=pd.DataFrame([{
-            "Hire Month": f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}",
-            "FTE": round(h.fte_hired,2),
-            "Type": ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
-                     else h.mode.replace("_"," ").title()),
-            "Post Req By": f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}",
-            "Independent By": f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}",
-        } for h in hevs])
-        st.dataframe(df_hc,use_container_width=True,hide_index=True,height=380)
-        st.download_button("Download Hire Calendar CSV",df_hc.to_csv(index=False),"psm_hire_calendar.csv","text/csv")
-
-
-# ── TAB 2: Shift Coverage ─────────────────────────────────────────────────────
-with tabs[2]:
-    pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
-    st.markdown("## SHIFT COVERAGE MODEL")
-    e1,e2,e3,e4=st.columns(4)
-    e1.metric("Shift Slots/Week",   f"{cfg.shift_slots_per_week:.0f}",
-              help=f"{cfg.operating_days_per_week}d x {cfg.shifts_per_day} shifts/day")
-    e2.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
-              help="APC contract shifts — coverage denominator (FTE fraction affects cost only)")
-    e3.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
-              help=f"{cfg.operating_days_per_week} days / {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f}")
-    e4.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
-              help="visits/day / pts-per-APC x FTE-per-slot")
-
-    prov_needed=[mo.demand_providers_per_shift for mo in mos]
-    prov_on_floor=[mo.providers_on_floor for mo in mos]
-    flex_prov=[mo.flex_fte/cfg.fte_per_shift_slot if cfg.fte_per_shift_slot else 0 for mo in mos]
-    gap=[mo.shift_coverage_gap for mo in mos]
-
-    fc=go.Figure()
-    fc.add_scatter(x=lbls,y=prov_needed,name="APCs Needed",mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"))
-    fc.add_scatter(x=lbls,y=prov_on_floor,name="APCs on Floor",mode="lines+markers",
-                   line=dict(color=C_ACTUAL,width=2.5),marker=dict(size=7,color=C_ACTUAL,line=dict(color="white",width=1.5)))
-    fc.add_bar(x=lbls,y=flex_prov,name="Flex APCs",marker_color="rgba(185,28,28,0.28)")
-    fc.update_layout(**mk_layout(height=340,barmode="overlay",xaxis=dict(tickangle=-45),title="Concurrent APCs: Required vs On Floor"))
-    fc.update_yaxes(title_text="Concurrent APCs")
-    st.plotly_chart(fc,use_container_width=True)
-
-    gap_colors=[C_RED if g>0.05 else(C_YELLOW if g>-0.05 else C_GREEN) for g in gap]
-    fg=go.Figure(go.Bar(x=lbls,y=gap,marker_color=gap_colors,hovertext=[f"{mlabel(mo)}: {g:+.2f}" for mo,g in zip(mos,gap)]))
-    fg.add_hline(y=0,line_color=SLATE,line_width=1)
-    fg.update_layout(**mk_layout(height=220,xaxis=dict(tickangle=-45),title="Coverage Gap ( + = understaffed  |  - = overstaffed )"))
-    fg.update_yaxes(title_text="APCs")
-    st.plotly_chart(fg,use_container_width=True)
-
-    df_sh=pd.DataFrame([{"Month":mlabel(mo),"Q":f"Q{mo.quarter}","Visits/Day":round(mo.demand_visits_per_day,1),
-        "APCs Needed":round(mo.demand_providers_per_shift,2),"FTE Required":round(mo.demand_fte_required,2),
-        "Paid FTE":round(mo.paid_fte,2),"APCs on Floor":round(mo.providers_on_floor,2),
-        "Coverage Gap":round(mo.shift_coverage_gap,2),"Hiring Mode":mo.hiring_mode,"Zone":mo.zone} for mo in mos])
-    def _sz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
-    def _sg(v):
-        try:
-            f=float(v)
-            if f>0.1:  return f"color:{C_RED};font-weight:600"
-            if f<-0.1: return f"color:{C_GREEN}"
-        except: pass
-        return ""
-    st.dataframe(df_sh.style.applymap(_sz,subset=["Zone"]).applymap(_sg,subset=["Coverage Gap"]),use_container_width=True,height=440)
-    st.download_button("Download CSV",df_sh.to_csv(index=False),"psm_shift.csv","text/csv")
-
-
-# ── TAB 3: Seasonality ────────────────────────────────────────────────────────
-with tabs[3]:
-    pol=active_policy(); mos=pol.months
-    st.markdown("## QUARTERLY VOLUME SETTINGS")
-    qcols=st.columns(4)
-    for qi,(qn,im,col) in enumerate(zip(QUARTER_NAMES,quarterly_impacts,Q_COLORS)):
-        with qcols[qi]:
-            vq=base_visits*(1+im)*peak_factor
-            fq=(vq/budget)*cfg.fte_per_shift_slot
-            st.metric(qn,f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",delta=f"{vq:.0f} visits -> {fq:.1f} FTE")
-
-    st.plotly_chart(render_hero_chart(pol,cfg,quarterly_impacts,base_visits,budget,peak_factor,title="Annual Demand Curve - Year 1"),use_container_width=True)
-
-    st.markdown("## QUARTERLY SUMMARY  (36-Month Avg)")
-    qr=[]
-    for qi in range(1,5):
-        qm=[mo for mo in mos if mo.quarter==qi]
-        qr.append({"Quarter":QUARTER_NAMES[qi-1],
-                   "Impact":f"{chr(43) if quarterly_impacts[qi-1]>=0 else chr(45)}{quarterly_impacts[qi-1]*100:.0f}%",
-                   "Avg Visits/Day":f"{np.mean([mo.demand_visits_per_day for mo in qm]):.1f}",
-                   "Avg Paid FTE":f"{np.mean([mo.paid_fte for mo in qm]):.2f}",
-                   "Avg Pts/APC":f"{np.mean([mo.patients_per_provider_per_shift for mo in qm]):.1f}",
-                   "Red Months":sum(1 for mo in qm if mo.zone=="Red"),
-                   "In-Band %":f"{sum(1 for mo in qm if mo.within_band)/len(qm)*100:.0f}%"})
-    st.dataframe(pd.DataFrame(qr),use_container_width=True,hide_index=True)
-
-    st.markdown("## ATTRITION TRAJECTORY  (overload-amplified)")
-    fa=go.Figure()
-    fa.add_scatter(x=[mlabel(mo) for mo in mos],y=[mo.effective_attrition_rate*100 for mo in mos],
-                   name="Effective attrition %/mo",mode="lines+markers",line=dict(color=C_RED,width=2.5),
-                   marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=8,line=dict(color="white",width=1.5)))
-    fa.add_hline(y=cfg.monthly_attrition_rate*100,line_dash="dash",line_color=SLATE,line_width=1.5,
-                 annotation_text=f"Base {cfg.monthly_attrition_rate*100:.2f}%/mo",
-                 annotation_position="right",annotation_font=dict(size=9,color=SLATE))
-    fa.update_layout(**mk_layout(height=280,xaxis=dict(tickangle=-45),title="Monthly Attrition Rate (rises with overwork)"))
-    fa.update_yaxes(title_text="Attrition Rate (%/mo)")
-    st.plotly_chart(fa,use_container_width=True)
-
-    fs=go.Figure()
-    for i,mo in enumerate(mos):
-        if mo.quarter==3: fs.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor="rgba(154,100,0,0.06)",layer="below",line_width=0)
-    fs.add_scatter(x=[mlabel(mo) for mo in mos],y=[mo.paid_fte for mo in mos],
-                   mode="lines+markers",name="Paid FTE",line=dict(color=C_ACTUAL,width=3),
-                   marker=dict(color=[HIRE_COLORS.get(mo.hiring_mode,SLATE) for mo in mos],size=9,line=dict(color="white",width=2)))
-    for yv,lbl,col in [(best.winter_fte,f"Winter {best.winter_fte:.1f}",NAVY),
-                       (best.base_fte,f"Base {best.base_fte:.1f}",SLATE),
-                       (best.base_fte*cfg.summer_shed_floor_pct,f"Summer floor {best.base_fte*cfg.summer_shed_floor_pct:.1f}",C_GREEN)]:
-        fs.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
-                     annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
-    fs.update_layout(**mk_layout(height=300,xaxis=dict(tickangle=-45),title="Paid FTE Trajectory (shaded = summer shed)"))
-    fs.update_yaxes(title_text="Paid FTE")
-    st.plotly_chart(fs,use_container_width=True)
-
-
-# ── TAB 4: Cost Breakdown ─────────────────────────────────────────────────────
-with tabs[4]:
-    pol=active_policy(); s2=pol.summary; mos=pol.months
-    st.markdown("## 3-YEAR COST BREAKDOWN")
-
-    # ── EBITDA waterfall ────────────────────────────────────────────────
-    _es2 = pol.ebitda_summary
-    _elabel2 = "EBITDA Contribution" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
-    wf_labels = ["Revenue Captured","SWB Cost","Flex Premium","Turnover Cost","Burnout Risk"]
-    wf_raw    = [_es2["revenue"], _es2["swb"], _es2["flex"], _es2["turnover"], _es2["burnout"]]
-    if cfg.monthly_fixed_overhead > 0:
-        wf_labels.append("Fixed Overhead"); wf_raw.append(_es2["fixed"])
-    wf_labels.append(_elabel2); wf_raw.append(_es2["ebitda"])
-    wf_vals   = [v if i==0 or i==len(wf_raw)-1 else -v for i,v in enumerate(wf_raw)]
-    wf_colors = ["#22C55E" if i==0 else ("#1A6FD4" if i==len(wf_vals)-1 else "#EF4444") for i in range(len(wf_vals))]
-    fw = go.Figure(go.Bar(x=[v/1e6 for v in wf_vals], y=wf_labels, orientation="h",
-                         marker_color=wf_colors,
-                         text=[f"${abs(v)/1e6:.2f}M" for v in wf_vals], textposition="outside"))
-    fw.update_layout(**mk_layout(height=320, title=f"3-Year {_elabel2} Waterfall"))
-    fw.update_xaxes(title_text="$ Millions")
-    st.plotly_chart(fw, use_container_width=True)
-
-    # ── Monthly EBITDA trajectory ────────────────────────────────────────
-    _me_x   = [f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1][:3]}" for mo in pol.months]
-    _me_bar = [mo.ebitda_contribution/1e3 for mo in pol.months]
-    _me_cum = [mo.cumulative_ebitda/1e3   for mo in pol.months]
-    _vc_pct = [mo.throughput_factor*100   for mo in pol.months]
-    fig_me  = go.Figure()
-    fig_me.add_bar(x=_me_x, y=_me_bar,
-                   marker_color=[C_GREEN if v>=0 else C_RED for v in _me_bar],
-                   name="Monthly EBITDA ($K)", opacity=0.75)
-    fig_me.add_scatter(x=_me_x, y=_me_cum, mode="lines",
-                       line=dict(color=C_ACTUAL, width=2.5), name="Cumulative ($K)")
-    fig_me.update_layout(**mk_layout(height=280, title="Monthly EBITDA & Cumulative Trajectory"))
-    fig_me.update_yaxes(title_text="$K")
-    st.plotly_chart(fig_me, use_container_width=True)
-
-    # ── Visit capture rate ───────────────────────────────────────────────
-    fig_vc = go.Figure(go.Bar(x=_me_x, y=_vc_pct,
-        marker_color=[C_GREEN if v==100 else (C_YELLOW if v==95 else C_RED) for v in _vc_pct],
-        name="Visit Capture %"))
-    fig_vc.add_hline(y=100, line_dash="dash", line_color=SLATE, line_width=1)
-    fig_vc.update_layout(**mk_layout(height=200,
-        title="Monthly Visit Capture Rate — 100% Green | 95% Yellow | 85% Red"))
-    fig_vc.update_yaxes(range=[80, 102])
-    st.plotly_chart(fig_vc, use_container_width=True)
-
-    st.divider()
-    lc=["Permanent","Flex","Support Staff","Turnover","Lost Revenue","Burnout","Overstaff"]
-    vc=[s2["total_permanent_cost"],s2["total_flex_cost"],s2["total_support_cost"],
-        s2["total_turnover_cost"],s2["total_lost_revenue"],s2["total_burnout_penalty"],s2["total_overstaff_penalty"]]
-    pal=[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D",C_GREEN]
-    _av=s2["annual_visits"]
-    _sp=(s2["total_permanent_cost"]+s2["total_flex_cost"])/3
-    _ss=s2["total_support_cost"]/3
-    _spv=_sp/_av if _av else 0; _ssv=_ss/_av if _av else 0
-    st.markdown(f"<div style='background:#F0F6FF;border-left:3px solid {NAVY};padding:0.7rem 1rem;"
-                f"border-radius:0 3px 3px 0;margin-bottom:1rem;font-size:0.82rem;'>"
-                f"<b>SWB/Visit:</b> APC ${_spv:.2f} + Support ${_ssv:.2f} = <b>${s2['annual_swb_per_visit']:.2f}</b>  |  Target ${cfg.swb_target_per_visit:.2f}</div>",
-                unsafe_allow_html=True)
-
-    cl,cr=st.columns([1.1,0.9])
-    with cl:
-        fp2=go.Figure(go.Pie(labels=lc,values=vc,marker_colors=pal,hole=0.54,textinfo="label+percent",
-                             textfont=dict(size=11)))
-        fp2.add_annotation(text=f"<b>${sum(vc)/1e6:.1f}M</b><br><span style='font-size:11px'>3-year</span>",
-                           x=0.5,y=0.5,showarrow=False,font=dict(family="'Playfair Display', serif",size=17,color=INK))
-        fp2.update_layout(**mk_layout(height=380,title="3-Year Cost Mix",margin=dict(t=40,b=40,l=16,r=16),
-                           legend=dict(orientation="v",x=1.02,y=0.5)))
-        st.plotly_chart(fp2,use_container_width=True)
-    with cr:
-        dfc=pd.DataFrame({"Component":lc,"3-Year ($)":[f"${v:,.0f}" for v in vc],
-                           "Annual Avg":[f"${v/3:,.0f}" for v in vc],"$/Visit":[f"${v/3/(_av or 1):.2f}" for v in vc]})
-        st.dataframe(dfc,use_container_width=True,hide_index=True)
-        r1,r2,r3=st.columns(3)
-        r1.metric("Total 3-Year",f"${sum(vc)/1e6:.2f}M"); r2.metric("Annual Avg",f"${sum(vc)/3/1e6:.2f}M"); r3.metric("SWB/Visit",f"${s2['annual_swb_per_visit']:.2f}")
-
-    dfms=pd.DataFrame([{"Month":mlabel(mo),"Permanent":mo.permanent_cost,"Flex":mo.flex_cost,
-                         "Support":mo.support_cost,"Turnover":mo.turnover_cost,"Lost Revenue":mo.lost_revenue,"Burnout":mo.burnout_penalty} for mo in mos])
-    fst=go.Figure()
-    for col_,color in zip(["Permanent","Flex","Support","Turnover","Lost Revenue","Burnout"],[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D"]):
-        fst.add_bar(x=dfms["Month"],y=dfms[col_],name=col_,marker_color=color)
-    fst.update_layout(**mk_layout(height=340,barmode="stack",xaxis=dict(tickangle=-45),title="Monthly Cost Stack"))
-    fst.update_yaxes(title_text="Cost ($)")
-    st.plotly_chart(fst,use_container_width=True)
-
-
-# ── TAB 5: Marginal APC Analysis ─────────────────────────────────────────────
-with tabs[5]:
-    st.markdown("## MARGINAL APC ANALYSIS")
-    st.caption("What does one more APC actually cost — and what does it buy you?")
-    pol=active_policy()
-    ma_delta=st.slider("FTE increment to analyze",0.5,3.0,0.5,0.5,key="ma_delta_slider")
-    with st.spinner("Computing marginal impact..."):
-        ma=compare_marginal_fte(pol,cfg,delta_fte=ma_delta)
-
-    mc1,mc2,mc3,mc4,mc5=st.columns(5)
-    mc1.metric(f"+{ma_delta} FTE Annual Cost",   f"${ma['annual_cost_delta']:+,.0f}")
-    mc2.metric("Annual Savings",                  f"${ma['annual_savings']:,.0f}")
-    _nc=ma["net_annual"]
-    mc3.metric("Net Annual",                      f"${_nc:+,.0f}",delta_color="normal" if _nc>0 else "inverse")
-    mc4.metric("Payback",                         "Never" if ma["payback_months"]==float("inf") else f"{ma['payback_months']:.0f} mo")
-    mc5.metric("Red+Yellow Months Saved",         f"{ma['red_months_saved']}R + {ma['yellow_months_saved']}Y")
-
-    if ma["net_annual"]>0:
-        st.success(f"**Add {ma_delta} FTE** — net ${ma['net_annual']:,.0f}/yr positive. Saves {ma['red_months_saved']}R + {ma['yellow_months_saved']}Y months. Payback {ma['payback_months']:.0f} mo.")
-    elif ma["red_months_saved"]>0:
-        st.warning(f"Costs ${-ma['net_annual']:,.0f}/yr net but eliminates {ma['red_months_saved']} Red months of burnout risk.")
-    else:
-        st.info(f"Adding {ma_delta} FTE costs ${ma['annual_cost_delta']:,.0f}/yr with no material zone improvement.")
-
-    m_labels_12=[MONTH_NAMES[i] for i in range(12)]
-    fma=go.Figure()
-    if cfg.use_load_band:
-        fma.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,fillcolor="rgba(10,117,84,0.06)",line_width=0)
-    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_base"],name=f"Current ({pol.base_fte:.1f} FTE)",
-                    mode="lines+markers",line=dict(color=NAVY,width=2.5),marker=dict(size=8,line=dict(color="white",width=1.5)))
-    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_plus"],name=f"+{ma_delta} FTE ({pol.base_fte+ma_delta:.1f} FTE)",
-                    mode="lines+markers",line=dict(color=C_GREEN,width=2.5,dash="dash"),marker=dict(size=8,line=dict(color="white",width=1.5)))
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fma.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
-                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
-    fma.update_layout(**mk_layout(height=340,title=f"Year 1 Load: Current vs +{ma_delta} FTE"))
-    fma.update_yaxes(title_text="Pts/APC/Shift")
-    st.plotly_chart(fma,use_container_width=True)
-
-    st.markdown("## BREAKEVEN TABLE")
-    rows=[]
-    for d in [0.5,1.0,1.5,2.0,2.5,3.0]:
-        m2=compare_marginal_fte(pol,cfg,delta_fte=d)
-        rows.append({"Delta FTE":f"+{d:.1f}","Annual Cost":f"${m2['annual_cost_delta']:+,.0f}",
-                     "Annual Savings":f"${m2['annual_savings']:,.0f}","Net Annual":f"${m2['net_annual']:+,.0f}",
-                     "Payback (mo)":"Never" if m2["payback_months"]==float("inf") else f"{m2['payback_months']:.0f}",
-                     "Red Mo Saved":m2["red_months_saved"],"Yel Mo Saved":m2["yellow_months_saved"],
-                     "SWB Delta":f"${m2['swb_delta']:+.2f}"})
-    def _cn(v):
-        try:
-            val=float(str(v).replace("$","").replace(",","").replace("+",""))
-            return f"color:{C_GREEN};font-weight:600" if val>0 else (f"color:{C_RED}" if val<0 else "")
-        except: return ""
-    st.dataframe(pd.DataFrame(rows).style.applymap(_cn,subset=["Net Annual"]),use_container_width=True,hide_index=True)
-
-
-# ── TAB 6: Stress Test ────────────────────────────────────────────────────────
-with tabs[6]:
-    st.markdown("## STRESS TEST — VOLUME SHOCK SCENARIOS")
-    st.caption("Apply a volume surge and see how the current policy holds.")
-    pol=active_policy()
-    sc1,sc2,sc3=st.columns(3)
-    with sc1: shock_start=st.number_input("Shock start (simulation month)",1,34,13)
-    with sc2: shock_dur=st.number_input("Duration (months)",1,12,3)
-    with sc3: shock_mag=st.slider("Surge magnitude",0.05,0.50,0.15,0.05)
-
-    shock_end=min(36,int(shock_start)+int(shock_dur)-1)
-    _slabels=[]
-    for sm in range(int(shock_start),shock_end+1):
-        cm=((sm-1)%12)+1; yr=((sm-1)//12)+1
-        _slabels.append(f"Y{yr}-{MONTH_NAMES[cm-1]}")
-    st.info(f"Shock window: **{_slabels[0]}** to **{_slabels[-1]}**  (+{shock_mag*100:.0f}% volume for {shock_dur} months)")
-
-    with st.spinner("Running stress simulation..."):
-        pol_stress=simulate_stress(pol,cfg,int(shock_start),int(shock_dur),shock_mag)
-
-    ss=pol_stress.summary; ss0=pol.summary
-    st1,st2,st3,st4,st5=st.columns(5)
-    st1.metric("Red Months (base)",   f"{ss0['red_months']}",delta=f"+{ss['red_months']-ss0['red_months']} shock",delta_color="inverse")
-    st2.metric("Yellow Months",       f"{ss0['yellow_months']}",delta=f"+{ss['yellow_months']-ss0['yellow_months']} shock",delta_color="inverse")
-    st3.metric("SWB/Visit",           f"${ss0['annual_swb_per_visit']:.2f}",delta=f"+${ss['annual_swb_per_visit']-ss0['annual_swb_per_visit']:.2f}",delta_color="inverse")
-    st4.metric("3-Yr EBITDA",         f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(ss.get('total_ebitda_3yr',0)-ss0.get('total_ebitda_3yr',0))/1e6:+.2f}M")
-    st5.metric("Extra Turnover",      f"{ss['total_turnover_events']-ss0['total_turnover_events']:.1f} FTE")
-
-    if ss["red_months"]>ss0["red_months"]:
-        st.error(f"Policy breaks — {ss['red_months']-ss0['red_months']} new Red months under this shock.")
-    elif ss["yellow_months"]>ss0["yellow_months"]:
-        st.warning(f"Policy shows strain — {ss['yellow_months']-ss0['yellow_months']} new Yellow months. Flex staffing would help.")
-    else:
-        st.success("Policy holds under this shock — all months remain in current zones.")
-
-    lbls_36=[mlabel(mo) for mo in pol.months]
-    fs2=go.Figure()
-    fs2.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
-    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol.months],
-                    name="Base scenario",line=dict(color=NAVY,width=2.5))
-    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
-                    name=f"Stress (+{shock_mag*100:.0f}%)",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fs2.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
-    fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
-    fs2.update_yaxes(title_text="Pts/APC/Shift")
-    st.plotly_chart(fs2,use_container_width=True)
-
-    fs3=go.Figure()
-    fs3.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
-    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol.months],name="Base Paid FTE",line=dict(color=NAVY,width=2.5))
-    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol_stress.months],name="Stress Paid FTE",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    fs3.add_scatter(x=lbls_36,y=[mo.demand_fte_required for mo in pol_stress.months],name="FTE Required (stress)",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7)
-    fs3.update_layout(**mk_layout(height=260,xaxis=dict(tickangle=-45),title="FTE Trajectory Under Stress"))
-    fs3.update_yaxes(title_text="FTE")
-    st.plotly_chart(fs3,use_container_width=True)
-
-    df_stress=pd.DataFrame([{
-        "Month":mlabel(mo),
-        "Base Load":round(pol.months[i].patients_per_provider_per_shift,1),
-        "Stress Load":round(mo.patients_per_provider_per_shift,1),
-        "Delta":round(mo.patients_per_provider_per_shift-pol.months[i].patients_per_provider_per_shift,1),
-        "Base Zone":pol.months[i].zone,"Stress Zone":mo.zone,
-        "Zone Changed":"YES" if mo.zone!=pol.months[i].zone else "",
-    } for i,mo in enumerate(pol_stress.months)])
-    def _zc(v): return f"color:{C_RED};font-weight:600" if "YES" in str(v) else ""
-    st.dataframe(df_stress.style.applymap(_sz,subset=["Stress Zone"]).applymap(_zc,subset=["Zone Changed"]),
-                 use_container_width=True,height=380)
-
-
-# ── TAB 7: Manual Override ────────────────────────────────────────────────────
-with tabs[7]:
-    st.markdown("## MANUAL OVERRIDE")
-    st.caption("Adjust Base and Winter FTE to compare against optimizer recommendation.")
-    ca,cb=st.columns(2)
-    with ca: manual_b=st.slider("Base FTE",1.0,25.0,float(st.session_state.get("manual_b",best.base_fte)),0.5)
-    with cb: manual_w=st.slider("Winter FTE",manual_b,35.0,float(max(st.session_state.get("manual_w",best.winter_fte),manual_b)),0.5)
-    man_pol=simulate_policy(manual_b,manual_w,cfg); st.session_state.manual_policy=man_pol; ms=man_pol.summary
-
-    st.markdown("## IMPACT vs OPTIMAL")
-    m1,m2,m3,m4,m5=st.columns(5)
-    m1.metric("EBITDA Contribution",f"${man_pol.summary.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(man_pol.summary.get('total_ebitda_3yr',0)-s.get('total_ebitda_3yr',0))/1e6:+.2f}M")
-    m2.metric("Red Months",ms["red_months"],delta=f"{ms['red_months']-s['red_months']:+d}",delta_color="inverse")
-    m3.metric("SWB/Visit",f"${ms['annual_swb_per_visit']:.2f}",delta="Exceeds" if ms["swb_violation"] else "On target")
-    m4.metric("Summer Floor",f"{manual_b*cfg.summer_shed_floor_pct:.1f} FTE")
-    m5.metric("In-Band %",f"{ms['pct_months_in_band']:.0f}%",delta=f"{ms['pct_months_in_band']-s['pct_months_in_band']:+.0f}pp")
-
-    lb2=[mlabel(mo) for mo in best.months]
-    fcm=go.Figure()
-    if cfg.use_load_band: fcm.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,fillcolor="rgba(10,117,84,0.06)",line_width=0)
-    fcm.add_scatter(x=lb2,y=[mo.patients_per_provider_per_shift for mo in best.months],name=f"Optimal B={best.base_fte:.1f} W={best.winter_fte:.1f}",line=dict(color=NAVY,width=2.5))
-    fcm.add_scatter(x=lb2,y=[mo.patients_per_provider_per_shift for mo in man_pol.months],name=f"Manual B={manual_b:.1f} W={manual_w:.1f}",line=dict(color=C_ACTUAL,width=2.5,dash="dash"))
-    for yv,lbl,col in [(budget,"Budget",C_GREEN),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fcm.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
-    fcm.update_layout(**mk_layout(height=340,xaxis=dict(tickangle=-45),title="APC Load: Optimal vs Manual Override"))
-    fcm.update_yaxes(title_text="Pts/APC/Shift")
-    st.plotly_chart(fcm,use_container_width=True)
-
-    ff2=go.Figure()
-    ff2.add_scatter(x=lb2,y=[mo.paid_fte for mo in best.months],name="Optimal FTE",line=dict(color=NAVY,width=2.5))
-    ff2.add_scatter(x=lb2,y=[mo.paid_fte for mo in man_pol.months],name="Manual FTE",line=dict(color=C_ACTUAL,width=2.5,dash="dash"))
-    ff2.add_scatter(x=lb2,y=[mo.demand_fte_required for mo in best.months],name="FTE Required",line=dict(color=SLATE,width=1.5,dash="dot"))
-    ff2.update_layout(**mk_layout(height=260,xaxis=dict(tickangle=-45),title="FTE Trajectory"))
-    ff2.update_yaxes(title_text="FTE")
-    st.plotly_chart(ff2,use_container_width=True)
-
-
-# ── TAB 8: Policy Heatmap ─────────────────────────────────────────────────────
-with tabs[8]:
-    st.markdown("## POLICY SCORE HEATMAP")
-    if st.session_state.all_policies:
-        all_p=st.session_state.all_policies
-        bv=sorted(set(round(p.base_fte,1) for p in all_p)); wv=sorted(set(round(p.winter_fte,1) for p in all_p))
-        bi={v:i for i,v in enumerate(bv)}; wi={v:i for i,v in enumerate(wv)}
-        mat=np.full((len(wv),len(bv)),np.nan)
-        for p in all_p:
-            b2=bi.get(round(p.base_fte,1)); w2=wi.get(round(p.winter_fte,1))
-            if b2 is not None and w2 is not None: mat[w2][b2]=p.summary.get('total_ebitda_3yr', -p.total_score)
-        vmin,vmax=np.nanmin(mat),np.nanpercentile(mat,95)
-        fh=go.Figure(go.Heatmap(z=mat,x=[str(v) for v in bv],y=[str(v) for v in wv],
-                                 colorscale=[[0,C_GREEN],[0.5,"#FFFBEB"],[1,C_RED]],zmin=vmin,zmax=vmax,
-                                 colorbar=dict(title="Score ($)",tickfont=dict(size=10,color=SLATE))))
-        fh.add_scatter(x=[str(round(best.base_fte,1))],y=[str(round(best.winter_fte,1))],mode="markers",
-                       marker=dict(symbol="star",size=22,color="white",line=dict(color=INK,width=2)),name="Optimal")
-        fh.update_layout(**mk_layout(height=500,title="Policy Score Landscape (lower = better) * = Optimal",
-                          xaxis=dict(title="Base FTE"),yaxis=dict(title="Winter FTE",showgrid=False)))
-        st.plotly_chart(fh,use_container_width=True)
-    else:
-        st.info("Run the optimizer to see the heatmap.")
-
-
-# ── TAB 9: Req Timing ─────────────────────────────────────────────────────────
-with tabs[9]:
-    st.markdown("## REQUISITION TIMING")
-    ld=cfg.days_to_sign+cfg.days_to_credential+cfg.days_to_independent; lm=int(np.ceil(ld/30))
-    t1,t2,t3=st.columns(3)
-    t1.metric("Flu Anchor",MONTH_NAMES[cfg.flu_anchor_month-1])
-    t2.metric("Post Req By",MONTH_NAMES[best.req_post_month-1])
-    t3.metric("Lead Time",f"{ld} days / {lm} months")
-    st.markdown(f"| Phase | Days | Cumulative |\n|:--|--:|--:|\n| Sign offer | {cfg.days_to_sign} | {cfg.days_to_sign} |\n| Credential | {cfg.days_to_credential} | {cfg.days_to_sign+cfg.days_to_credential} |\n| Ramp to independence | {cfg.days_to_independent} | {ld} |")
-    phases_tl=[("Post -> Sign",cfg.days_to_sign,NAVY),("Sign -> Credentialed",cfg.days_to_credential,NAVY_LT),("Credentialed -> Indep.",cfg.days_to_independent,C_GREEN)]
-    ftl=go.Figure(); start=0
-    for lbl_tl,dur,col in phases_tl:
-        ftl.add_bar(x=[dur],y=[""],orientation="h",base=[start],name=lbl_tl,marker_color=col,
-                    text=f"  {lbl_tl}  ({dur}d)",textposition="inside",textfont=dict(color="white",size=11)); start+=dur
-    ftl.add_vline(x=ld,line_dash="dash",line_color=C_RED,line_width=2,
-                  annotation_text=f"Independent: {MONTH_NAMES[cfg.flu_anchor_month-1]}",
-                  annotation_font=dict(color=C_RED,size=11))
-    ftl.update_layout(**mk_layout(height=150,barmode="stack",margin=dict(t=16,b=48,l=8,r=8),
-        title=f"Hiring Timeline: Post {MONTH_NAMES[best.req_post_month-1]} -> Independent by {MONTH_NAMES[cfg.flu_anchor_month-1]}",
-        xaxis=dict(title="Days from Requisition"),yaxis=dict(visible=False),legend=dict(orientation="h",y=-0.65)))
-    st.plotly_chart(ftl,use_container_width=True)
-    st.info(f"Post req by **{MONTH_NAMES[best.req_post_month-1]}** to have {best.winter_fte:.1f} Winter FTE independent by {MONTH_NAMES[cfg.flu_anchor_month-1]}.")
-
-
-# ── TAB 10: Data Table ────────────────────────────────────────────────────────
-with tabs[10]:
-    pol=active_policy()
-    st.markdown("## FULL 36-MONTH DATA")
-    dff=pd.DataFrame([{
-        "Month":mlabel(mo),"Q":f"Q{mo.quarter}","Zone":mo.zone,
-        "Hiring Mode":mo.hiring_mode,"In Band":"Y" if mo.within_band else "N",
-        "Visits/Day":round(mo.demand_visits_per_day,1),
-        "FTE Required":round(mo.demand_fte_required,2),"Paid FTE":round(mo.paid_fte,2),
-        "APCs on Floor":round(mo.providers_on_floor,2),
-        "Pts/APC/Shift":round(mo.patients_per_provider_per_shift,1),
-        "Attrition %/mo":f"{mo.effective_attrition_rate*100:.2f}%",
-        "Overload Att":round(mo.overload_attrition_delta,3),
-        "Perm Cost":f"${mo.permanent_cost:,.0f}","Support":f"${mo.support_cost:,.0f}",
-        "Turnover":round(mo.turnover_events,2),"Burnout":f"${mo.burnout_penalty:,.0f}",
-        "Lost Rev":f"${mo.lost_revenue:,.0f}",
-    } for mo in pol.months])
-    def _szz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
-    st.dataframe(dff.style.applymap(_szz,subset=["Zone"]),use_container_width=True,height=520)
-    st.download_button("Download CSV",dff.to_csv(index=False),"psm_36month.csv","text/csv")
-
-
-
-# ── TAB 11: Executive Summary ────────────────────────────────────────────────
-with tabs[11]:
     pol = active_policy()
     s   = pol.summary
     es  = pol.ebitda_summary
@@ -1933,363 +1737,522 @@ with tabs[11]:
 
 
 
-# ── TAB 12: STAFFING MODEL ────────────────────────────────────────────────────
-with tabs[12]:
-    pol  = active_policy()
-    sup  = cfg.support
-    fts  = cfg.fte_per_shift_slot          # e.g. 2.33 for 7-day, 3-shift/wk
-    budget_load = cfg.budgeted_patients_per_provider_per_day
+# ── TAB 2: 36-Month Load ──────────────────────────────────────────────────────
+with tabs[2]:
+    pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
+    st.markdown("## 36-MONTH APC LOAD & FTE TRAJECTORY")
 
-    # ── Build quarterly rows ──────────────────────────────────────────────────
-    rows = []
-    for yr in [1, 2, 3]:
-        for q in [1, 2, 3, 4]:
-            qmos = [mo for mo in pol.months if mo.year == yr and mo.quarter == q]
-            if not qmos:
-                continue
-            avg_vpd  = sum(mo.demand_visits_per_day for mo in qmos) / len(qmos)
-            avg_pof  = sum(mo.providers_on_floor    for mo in qmos) / len(qmos)
-            avg_pfte = sum(mo.paid_fte               for mo in qmos) / len(qmos)
-            # zones for row shading
-            zones    = [mo.zone for mo in qmos]
-            dom_zone = max(set(zones), key=zones.count)
+    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,row_heights=[0.55,0.45])
 
-            ma_day   = avg_pof * sup.ma_ratio
-            psr_day  = avg_pof * sup.psr_ratio
-            rt_day   = sup.rt_flat_fte
+    for i,mo in enumerate(mos):
+        zc={"Green":"rgba(10,117,84,0.07)","Yellow":"rgba(154,100,0,0.10)","Red":"rgba(185,28,28,0.12)"}[mo.zone]
+        fig.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor=zc,layer="below",line_width=0,row=1,col=1)
 
-            ma_fte   = ma_day  * fts
-            psr_fte  = psr_day * fts
-            rt_fte   = rt_day  * fts
-            total_fte= avg_pfte + ma_fte + psr_fte + rt_fte
+    if cfg.use_load_band:
+        fig.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,
+                      fillcolor="rgba(10,117,84,0.05)",line_width=0,row=1,col=1)
+        fig.add_hline(y=cfg.load_band_lo,line_dash="dot",line_color=C_GREEN,line_width=1,
+                      annotation_text=f"Band floor {cfg.load_band_lo:.0f}",annotation_position="right",
+                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
+        fig.add_hline(y=cfg.load_band_hi,line_dash="dot",line_color=C_GREEN,line_width=1,
+                      annotation_text=f"Band ceiling {cfg.load_band_hi:.0f}",annotation_position="right",
+                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
 
-            rows.append({
-                "year": yr, "quarter": q, "zone": dom_zone,
-                "vpd": avg_vpd,
-                # staff per day
-                "apc_day":  avg_pof,
-                "ma_day":   ma_day,
-                "psr_day":  psr_day,
-                "rt_day":   rt_day,
-                # FTE
-                "apc_fte":  avg_pfte,
-                "ma_fte":   ma_fte,
-                "psr_fte":  psr_fte,
-                "rt_fte":   rt_fte,
-                "total_fte":total_fte,
-            })
+    fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
+                    mode="lines+markers",name="Pts/APC/Shift",
+                    line=dict(color=NAVY,width=2.5),
+                    marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
+                    row=1,col=1)
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+        fig.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
+                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col),row=1,col=1)
 
-    # ── Colour helpers ────────────────────────────────────────────────────────
-    ZONE_BG   = {"Green": "#0A2818", "Yellow": "#1F1A00", "Red": "#2A0A0A"}
-    ZONE_PILL = {"Green": ("#4ADE80","#0A2818"), "Yellow": ("#FCD34D","#1A1600"), "Red": ("#F87171","#2A0A0A")}
+    fig.add_scatter(x=lbls,y=[mo.paid_fte for mo in mos],name="Paid FTE",
+                    mode="lines",line=dict(color=C_ACTUAL,width=2.5),row=2,col=1)
+    fig.add_scatter(x=lbls,y=[mo.effective_fte for mo in mos],name="Effective FTE",
+                    mode="lines",line=dict(color=C_ACTUAL,width=1.5,dash="dash"),opacity=0.5,row=2,col=1)
+    fig.add_scatter(x=lbls,y=[mo.demand_fte_required for mo in mos],name="FTE Required",
+                    mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"),row=2,col=1)
+    fig.add_bar(x=lbls,y=[mo.flex_fte for mo in mos],name="Flex FTE",
+                marker_color="rgba(185,28,28,0.30)",row=2,col=1)
 
-    # ── Clinic summary header values ──────────────────────────────────────────
-    _total_fte_avg = sum(r["total_fte"] for r in rows) / len(rows) if rows else 0
+    for mode,col,lbl in [("shed_pause",C_YELLOW,"Q3 shed pause"),("shed_passive","#D97706","Passive shed")]:
+        sx=[lbls[i] for i,mo in enumerate(mos) if mo.hiring_mode==mode]
+        sy=[mos[i].paid_fte for i,mo in enumerate(mos) if mo.hiring_mode==mode]
+        if sx:
+            fig.add_scatter(x=sx,y=sy,mode="markers",name=lbl,
+                            marker=dict(symbol="triangle-down",size=9,color=col,line=dict(color="white",width=1.5)),row=2,col=1)
 
-    # ── Print-friendly HTML table ─────────────────────────────────────────────
-    # Build complete HTML so browser print works cleanly
-    _clinic_name  = "Urgent Care Clinic"   # could be a config field later
-    _print_date   = __import__("datetime").date.today().strftime("%B %d, %Y")
+    has_overload = any(mo.overload_attrition_delta > 0.001 for mo in mos)
+    if has_overload:
+        fig.add_scatter(x=lbls,y=[mo.paid_fte*mo.effective_attrition_rate for mo in mos],
+                        name="Monthly attrition (overload-adj)",
+                        mode="lines",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7,row=2,col=1)
 
-    def _fmt(v, dec=2):
-        return f"{v:.{dec}f}"
+    fig.update_layout(**mk_layout(height=640,xaxis2=dict(tickangle=-45),title="36-Month APC Load & FTE Trajectory"))
+    fig.update_yaxes(title_text="Pts/APC/Shift",showgrid=True,gridcolor=RULE,row=1,col=1)
+    fig.update_yaxes(title_text="FTE",showgrid=True,gridcolor=RULE,row=2,col=1)
+    st.plotly_chart(fig,use_container_width=True)
 
-    # Table rows HTML
-    _rows_html = ""
-    prev_yr = None
-    for r in rows:
-        yr_label = f"Year {r['year']}" if r['year'] != prev_yr else ""
-        prev_yr  = r['year']
-        q_labels = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct–Dec)"]
-        q_label  = q_labels[r['quarter'] - 1]
-        pill_fg, pill_bg = ZONE_PILL[r["zone"]]
-        zone_pill = (f"<span style='background:{pill_bg};color:{pill_fg};"
-                     f"font-size:0.62rem;font-weight:700;padding:1px 6px;"
-                     f"border-radius:3px;letter-spacing:0.06em'>{r['zone'].upper()}</span>")
+    fz=go.Figure(go.Bar(x=lbls,y=[1]*len(mos),marker_color=[ZONE_COLORS[mo.zone] for mo in mos],showlegend=False,
+                         hovertext=[f"{mlabel(mo)}: {mo.zone} {mo.patients_per_provider_per_shift:.1f}" for mo in mos]))
+    fz.update_layout(height=44,margin=dict(t=0,b=0,l=0,r=0),paper_bgcolor="white",plot_bgcolor="white",
+                     yaxis=dict(visible=False),xaxis=dict(visible=False))
+    st.plotly_chart(fz,use_container_width=True)
 
-        yr_cell  = (f"<td rowspan='4' style='border-right:1px solid #1E3A52;"
-                    f"color:#4ADE80;font-weight:700;font-size:0.9rem;"
-                    f"text-align:center;vertical-align:middle;white-space:nowrap;"
-                    f"padding:0 0.9rem'>{yr_label}</td>") if yr_label else ""
+    hmc={m:sum(1 for mo in mos if mo.hiring_mode==m) for m in ["growth","attrition_replace","winter_ramp","floor_protect","shed_pause","shed_passive","freeze_flu","none"]}
+    hml={"growth":"Growth","attrition_replace":"Att.backfill","winter_ramp":"Winter ramp","floor_protect":"Floor protect","shed_pause":"Q3 shed","shed_passive":"Passive shed","freeze_flu":"Flu freeze","none":"No action"}
+    st.caption("  |  ".join(f"{hml[k]}: {v} mo" for k,v in hmc.items() if v>0))
 
-        _rows_html += f"""
-        <tr style='border-bottom:1px solid #132333;'>
-          {yr_cell}
-          <td style='padding:0.55rem 0.7rem;color:#CBD5E1;font-size:0.8rem'>{q_label}</td>
-          <td style='padding:0.55rem 0.5rem;text-align:center'>{zone_pill}</td>
-          <td style='padding:0.55rem 0.5rem;text-align:right;color:#94A3B8;font-size:0.78rem'>{_fmt(r['vpd'],1)}</td>
-          <td class='spd' style='text-align:right'>{_fmt(r['apc_day'])}</td>
-          <td class='spd' style='text-align:right'>{_fmt(r['ma_day'])}</td>
-          <td class='spd' style='text-align:right'>{_fmt(r['psr_day'])}</td>
-          <td class='spd' style='text-align:right'>{_fmt(r['rt_day'])}</td>
-          <td class='fte' style='text-align:right'>{_fmt(r['apc_fte'])}</td>
-          <td class='fte' style='text-align:right'>{_fmt(r['ma_fte'])}</td>
-          <td class='fte' style='text-align:right'>{_fmt(r['psr_fte'])}</td>
-          <td class='fte' style='text-align:right'>{_fmt(r['rt_fte'])}</td>
-          <td style='text-align:right;color:#4ADE80;font-weight:700;font-size:0.82rem;padding:0.55rem 0.7rem'>{_fmt(r['total_fte'])}</td>
-        </tr>"""
 
-    _table_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+# ── TAB 3: Hire Calendar ──────────────────────────────────────────────────────
+with tabs[3]:
+    pol=active_policy()
+    st.markdown("## HIRING DECISION CALENDAR")
+    st.caption("Every hire event from the simulation with back-calculated posting deadline and independence date.")
+    hevs=pol.hire_events
+    if not hevs:
+        st.info("No hire events in this policy.")
+    else:
+        _perm_hevs   = [h for h in hevs if h.mode != "per_diem"]
+        _pd_hevs     = [h for h in hevs if h.mode == "per_diem"]
+        total_hires   = sum(h.fte_hired for h in _perm_hevs)
+        growth_hires  = sum(h.fte_hired for h in hevs if h.mode=="growth")
+        winter_hires  = sum(h.fte_hired for h in hevs if h.mode=="winter_ramp")
+        perdiem_hires = sum(h.fte_hired for h in _pd_hevs)
+        hc1,hc2,hc3,hc4=st.columns(4)
+        hc1.metric("Perm FTE Hired (36mo)",  f"{total_hires:.1f}")
+        hc2.metric("Growth Hires",           f"{growth_hires:.1f}")
+        hc3.metric("Winter Ramp Hires",      f"{winter_hires:.1f}")
+        hc4.metric("Per-Diem / Extra Shifts",f"{perdiem_hires:.1f} FTE-eq")
 
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{
-    background: #060F18;
-    color: #CBD5E1;
-    font-family: 'IBM Plex Sans', sans-serif;
-    padding: 1.5rem 2rem;
-  }}
+        mode_c={"growth":NAVY,"attrition_replace":NAVY_LT,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW,"per_diem":"#9CA3AF"}
+        fhc=go.Figure()
+        for h in hevs:
+            lbl=f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}"
+            post_l=f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}"
+            indep_l=f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}"
+            col=mode_c.get(h.mode,SLATE)
+            _mode_label = ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
+                          else h.mode.replace("_"," ").title())
+            _bar_text   = (f" {h.fte_hired:.2f} FTE-eq  [Per-Diem]  {lbl}"
+                          if h.mode=="per_diem"
+                          else f" {h.fte_hired:.2f} FTE [{h.mode}]  post by {post_l} -> indep {indep_l}")
+            _bar_pattern = "x" if h.mode=="per_diem" else ""
+            fhc.add_bar(x=[h.fte_hired],y=[lbl],orientation="h",base=[0],name=_mode_label,
+                        marker_color=col,marker_pattern_shape=_bar_pattern,
+                        showlegend=False,
+                        text=_bar_text,
+                        textposition="inside",textfont=dict(color="white",size=10),
+                        hovertemplate=(f"<b>{lbl}</b><br>{_mode_label}<br>FTE-equiv: {h.fte_hired:.2f}<br>Cover with extra shifts / per-diem agreements<extra></extra>"
+                                      if h.mode=="per_diem" else
+                                      f"<b>{lbl}</b><br>FTE: {h.fte_hired:.2f}<br>Mode: {h.mode}<br>Post by: {post_l}<br>Independent: {indep_l}<extra></extra>"))
+        fhc.update_layout(**mk_layout(height=max(280,len(hevs)*28+60),barmode="stack",title="Hire Events",
+                           xaxis=dict(title="FTE Hired"),yaxis=dict(autorange="reversed",tickfont=dict(size=10)),
+                           margin=dict(t=52,b=60,l=110,r=48)))
+        st.plotly_chart(fhc,use_container_width=True)
 
-  /* ── Header ── */
-  .doc-header {{
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    border-bottom: 2px solid #1A3A5C;
-    padding-bottom: 0.8rem;
-    margin-bottom: 1.4rem;
-  }}
-  .doc-title {{
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #E2EAF0;
-  }}
-  .doc-sub {{
-    font-size: 0.7rem;
-    color: #6A8FAA;
-    letter-spacing: 0.1em;
-    margin-top: 0.25rem;
-  }}
-  .doc-meta {{
-    text-align: right;
-    font-size: 0.68rem;
-    color: #4A6A82;
-    font-family: 'IBM Plex Mono', monospace;
-  }}
+        df_hc=pd.DataFrame([{
+            "Hire Month": f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}",
+            "FTE": round(h.fte_hired,2),
+            "Type": ("Per-Diem / Extra Shifts" if h.mode=="per_diem"
+                     else h.mode.replace("_"," ").title()),
+            "Post Req By": f"Y{h.post_by_year}-{MONTH_NAMES[h.post_by_month-1]}",
+            "Independent By": f"Y{h.independent_year}-{MONTH_NAMES[h.independent_month-1]}",
+        } for h in hevs])
+        st.dataframe(df_hc,use_container_width=True,hide_index=True,height=380)
+        st.download_button("Download Hire Calendar CSV",df_hc.to_csv(index=False),"psm_hire_calendar.csv","text/csv")
 
-  /* ── Config strip ── */
-  .config-strip {{
-    display: flex;
-    gap: 2rem;
-    background: #0A1A28;
-    border: 1px solid #1A3A5C;
-    border-radius: 4px;
-    padding: 0.6rem 1.1rem;
-    margin-bottom: 1.2rem;
-    flex-wrap: wrap;
-  }}
-  .cfg-item {{
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }}
-  .cfg-label {{
-    font-size: 0.58rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #4A6A82;
-    font-weight: 600;
-  }}
-  .cfg-value {{
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #CBD5E1;
-    font-family: 'IBM Plex Mono', monospace;
-  }}
 
-  /* ── Table ── */
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.78rem;
-  }}
-  thead tr {{
-    background: #091623;
-    border-bottom: 2px solid #1A3A5C;
-  }}
-  /* Section headers */
-  .th-group {{
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #4A6A82;
-    padding: 0.3rem 0.5rem 0.1rem;
-    text-align: center;
-  }}
-  .th-group-spd {{ color: #60A5FA; border-bottom: 1px solid #1A3A5C; }}
-  .th-group-fte {{ color: #A78BFA; border-bottom: 1px solid #2A1A5C; }}
-  th {{
-    padding: 0.35rem 0.5rem;
-    font-size: 0.66rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    color: #6A8FAA;
-  }}
-  th.spd {{ color: #93C5FD; }}
-  th.fte {{ color: #C4B5FD; }}
-  tr:nth-child(4n+1) td, tr:nth-child(4n+2) td,
-  tr:nth-child(4n+3) td, tr:nth-child(4n+4) td {{
-    background: transparent;
-  }}
-  tbody tr:hover td {{ background: rgba(74,110,138,0.07); }}
-  td.spd {{ color: #93C5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
-  td.fte {{ color: #C4B5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+# ── TAB 4: Shift Coverage ─────────────────────────────────────────────────────
+with tabs[4]:
+    pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
+    st.markdown("## SHIFT COVERAGE MODEL")
+    e1,e2,e3,e4=st.columns(4)
+    e1.metric("Shift Slots/Week",   f"{cfg.shift_slots_per_week:.0f}",
+              help=f"{cfg.operating_days_per_week}d x {cfg.shifts_per_day} shifts/day")
+    e2.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
+              help="APC contract shifts — coverage denominator (FTE fraction affects cost only)")
+    e3.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
+              help=f"{cfg.operating_days_per_week} days / {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f}")
+    e4.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
+              help="visits/day / pts-per-APC x FTE-per-slot")
 
-  /* Year separators */
-  tr.yr-sep td {{ border-top: 2px solid #1A3A5C; }}
+    prov_needed=[mo.demand_providers_per_shift for mo in mos]
+    prov_on_floor=[mo.providers_on_floor for mo in mos]
+    flex_prov=[mo.flex_fte/cfg.fte_per_shift_slot if cfg.fte_per_shift_slot else 0 for mo in mos]
+    gap=[mo.shift_coverage_gap for mo in mos]
 
-  /* ── Footnotes ── */
-  .footnotes {{
-    margin-top: 1rem;
-    font-size: 0.65rem;
-    color: #4A6A82;
-    border-top: 1px solid #1A3A5C;
-    padding-top: 0.6rem;
-    display: flex;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-  }}
-  .fn-item {{ display: flex; gap: 0.3rem; }}
-  .fn-key {{ color: #60A5FA; font-weight: 600; }}
+    fc=go.Figure()
+    fc.add_scatter(x=lbls,y=prov_needed,name="APCs Needed",mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"))
+    fc.add_scatter(x=lbls,y=prov_on_floor,name="APCs on Floor",mode="lines+markers",
+                   line=dict(color=C_ACTUAL,width=2.5),marker=dict(size=7,color=C_ACTUAL,line=dict(color="white",width=1.5)))
+    fc.add_bar(x=lbls,y=flex_prov,name="Flex APCs",marker_color="rgba(185,28,28,0.28)")
+    fc.update_layout(**mk_layout(height=340,barmode="overlay",xaxis=dict(tickangle=-45),title="Concurrent APCs: Required vs On Floor"))
+    fc.update_yaxes(title_text="Concurrent APCs")
+    st.plotly_chart(fc,use_container_width=True)
 
-  /* ── Print styles ── */
-  @media print {{
-    body {{
-      background: #fff !important;
-      color: #111 !important;
-      padding: 0.5in 0.6in;
-      font-size: 9pt;
-    }}
-    .doc-header {{ border-color: #333; }}
-    .doc-title {{ color: #111; }}
-    .doc-sub, .doc-meta {{ color: #555; }}
-    .config-strip {{ background: #f5f5f5; border-color: #ccc; }}
-    .cfg-label {{ color: #777; }}
-    .cfg-value {{ color: #111; }}
-    table {{ font-size: 8.5pt; }}
-    thead tr {{ background: #eee; border-color: #999; }}
-    .th-group-spd {{ color: #1a56b0; border-color: #999; }}
-    .th-group-fte {{ color: #5a1ab0; border-color: #999; }}
-    th {{ color: #444; }}
-    th.spd {{ color: #1a56b0; }}
-    th.fte {{ color: #5a1ab0; }}
-    td.spd {{ color: #1a56b0; }}
-    td.fte {{ color: #5a1ab0; }}
-    .footnotes {{ color: #555; border-color: #ccc; }}
-    .fn-key {{ color: #1a56b0; }}
-    tr.yr-sep td {{ border-color: #999; }}
-  }}
-  @page {{ size: landscape; margin: 0.5in; }}
-</style>
-</head>
-<body>
+    gap_colors=[C_RED if g>0.05 else(C_YELLOW if g>-0.05 else C_GREEN) for g in gap]
+    fg=go.Figure(go.Bar(x=lbls,y=gap,marker_color=gap_colors,hovertext=[f"{mlabel(mo)}: {g:+.2f}" for mo,g in zip(mos,gap)]))
+    fg.add_hline(y=0,line_color=SLATE,line_width=1)
+    fg.update_layout(**mk_layout(height=220,xaxis=dict(tickangle=-45),title="Coverage Gap ( + = understaffed  |  - = overstaffed )"))
+    fg.update_yaxes(title_text="APCs")
+    st.plotly_chart(fg,use_container_width=True)
 
-<div class="doc-header">
-  <div>
-    <div class="doc-title">Complete Staffing Model</div>
-    <div class="doc-sub">PERMANENT STAFFING MODEL · 36-MONTH QUARTERLY PROJECTION · LOAD-BAND OPTIMIZER</div>
-  </div>
-  <div class="doc-meta">
-    Generated {_print_date}<br>
-    Base {cfg.base_visits_per_day:.0f} vpd · {cfg.annual_growth_pct:.0f}% growth · Budget {budget_load:.0f} pts/APC
-  </div>
-</div>
+    df_sh=pd.DataFrame([{"Month":mlabel(mo),"Q":f"Q{mo.quarter}","Visits/Day":round(mo.demand_visits_per_day,1),
+        "APCs Needed":round(mo.demand_providers_per_shift,2),"FTE Required":round(mo.demand_fte_required,2),
+        "Paid FTE":round(mo.paid_fte,2),"APCs on Floor":round(mo.providers_on_floor,2),
+        "Coverage Gap":round(mo.shift_coverage_gap,2),"Hiring Mode":mo.hiring_mode,"Zone":mo.zone} for mo in mos])
+    def _sz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
+    def _sg(v):
+        try:
+            f=float(v)
+            if f>0.1:  return f"color:{C_RED};font-weight:600"
+            if f<-0.1: return f"color:{C_GREEN}"
+        except: pass
+        return ""
+    st.dataframe(df_sh.style.applymap(_sz,subset=["Zone"]).applymap(_sg,subset=["Coverage Gap"]),use_container_width=True,height=440)
+    st.download_button("Download CSV",df_sh.to_csv(index=False),"psm_shift.csv","text/csv")
 
-<div class="config-strip">
-  <div class="cfg-item"><span class="cfg-label">Operating Days/Wk</span><span class="cfg-value">{cfg.operating_days_per_week}</span></div>
-  <div class="cfg-item"><span class="cfg-label">Shift Hours</span><span class="cfg-value">{cfg.shift_hours:.0f}h</span></div>
-  <div class="cfg-item"><span class="cfg-label">Shifts/Wk per APC</span><span class="cfg-value">{cfg.fte_shifts_per_week:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">FTE per Slot</span><span class="cfg-value">{fts:.2f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">MA Ratio (per APC)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">PSR Ratio (per APC)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">RT (flat/shift)</span><span class="cfg-value">{sup.rt_flat_fte:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/APC</span></div>
-  <div class="cfg-item"><span class="cfg-label">Base FTE</span><span class="cfg-value">{best.base_fte:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">Winter FTE</span><span class="cfg-value">{best.winter_fte:.1f}</span></div>
-</div>
 
-<table>
-  <thead>
-    <tr>
-      <th rowspan="2" style="text-align:left;padding-left:0.7rem">Year</th>
-      <th rowspan="2" style="text-align:left">Quarter</th>
-      <th rowspan="2">Zone</th>
-      <th rowspan="2" style="text-align:right;color:#6A8FAA">Visits/Day</th>
-      <th colspan="4" class="th-group th-group-spd">Staff per Day (Concurrent)</th>
-      <th colspan="4" class="th-group th-group-fte">FTE Required</th>
-      <th rowspan="2" style="text-align:right;padding-right:0.7rem;color:#4ADE80">Total FTE</th>
-    </tr>
-    <tr>
-      <th class="spd" style="text-align:right">Provider</th>
-      <th class="spd" style="text-align:right">MA</th>
-      <th class="spd" style="text-align:right">PSR</th>
-      <th class="spd" style="text-align:right">Rad Tech</th>
-      <th class="fte" style="text-align:right">Provider</th>
-      <th class="fte" style="text-align:right">MA</th>
-      <th class="fte" style="text-align:right">PSR</th>
-      <th class="fte" style="text-align:right">Rad Tech</th>
-    </tr>
-  </thead>
-  <tbody>
-    {_rows_html}
-  </tbody>
-</table>
+# ── TAB 5: Seasonality ────────────────────────────────────────────────────────
+with tabs[5]:
+    pol=active_policy(); mos=pol.months
+    st.markdown("## QUARTERLY VOLUME SETTINGS")
+    qcols=st.columns(4)
+    for qi,(qn,im,col) in enumerate(zip(QUARTER_NAMES,quarterly_impacts,Q_COLORS)):
+        with qcols[qi]:
+            vq=base_visits*(1+im)*peak_factor
+            fq=(vq/budget)*cfg.fte_per_shift_slot
+            st.metric(qn,f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",delta=f"{vq:.0f} visits -> {fq:.1f} FTE")
 
-<div class="footnotes">
-  <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day</span></div>
-  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents accounting for {cfg.fte_shifts_per_week:.0f} shifts/wk per APC on a {cfg.operating_days_per_week}-day schedule ({fts:.2f}× concurrent slot)</span></div>
-  <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
-  <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
-  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/APC</span></div>
-</div>
+    st.plotly_chart(render_hero_chart(pol,cfg,quarterly_impacts,base_visits,budget,peak_factor,title="Annual Demand Curve - Year 1"),use_container_width=True)
 
-</body>
-</html>"""
+    st.markdown("## QUARTERLY SUMMARY  (36-Month Avg)")
+    qr=[]
+    for qi in range(1,5):
+        qm=[mo for mo in mos if mo.quarter==qi]
+        qr.append({"Quarter":QUARTER_NAMES[qi-1],
+                   "Impact":f"{chr(43) if quarterly_impacts[qi-1]>=0 else chr(45)}{quarterly_impacts[qi-1]*100:.0f}%",
+                   "Avg Visits/Day":f"{np.mean([mo.demand_visits_per_day for mo in qm]):.1f}",
+                   "Avg Paid FTE":f"{np.mean([mo.paid_fte for mo in qm]):.2f}",
+                   "Avg Pts/APC":f"{np.mean([mo.patients_per_provider_per_shift for mo in qm]):.1f}",
+                   "Red Months":sum(1 for mo in qm if mo.zone=="Red"),
+                   "In-Band %":f"{sum(1 for mo in qm if mo.within_band)/len(qm)*100:.0f}%"})
+    st.dataframe(pd.DataFrame(qr),use_container_width=True,hide_index=True)
 
-    # ── Render in Streamlit ───────────────────────────────────────────────────
-    st.markdown("## COMPLETE STAFFING MODEL")
-    st.markdown(
-        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
-        f"Quarterly averages · recommended policy · all roles · "
-        f"<strong style='color:#CBD5E1'>Staff/Day</strong> = concurrent positions on floor · "
-        f"<strong style='color:#CBD5E1'>FTE</strong> = headcount to sustain that coverage</p>",
-        unsafe_allow_html=True
-    )
+    st.markdown("## ATTRITION TRAJECTORY  (overload-amplified)")
+    fa=go.Figure()
+    fa.add_scatter(x=[mlabel(mo) for mo in mos],y=[mo.effective_attrition_rate*100 for mo in mos],
+                   name="Effective attrition %/mo",mode="lines+markers",line=dict(color=C_RED,width=2.5),
+                   marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=8,line=dict(color="white",width=1.5)))
+    fa.add_hline(y=cfg.monthly_attrition_rate*100,line_dash="dash",line_color=SLATE,line_width=1.5,
+                 annotation_text=f"Base {cfg.monthly_attrition_rate*100:.2f}%/mo",
+                 annotation_position="right",annotation_font=dict(size=9,color=SLATE))
+    fa.update_layout(**mk_layout(height=280,xaxis=dict(tickangle=-45),title="Monthly Attrition Rate (rises with overwork)"))
+    fa.update_yaxes(title_text="Attrition Rate (%/mo)")
+    st.plotly_chart(fa,use_container_width=True)
 
-    # Print button
-    _pb_col, _ = st.columns([1, 5])
-    _pb_col.markdown(
-        "<button onclick='window.print()' style='"
-        "background:#0D1B2A;border:1px solid #1A3A5C;color:#CBD5E1;"
-        "font-size:0.75rem;padding:0.35rem 0.9rem;border-radius:3px;"
-        "cursor:pointer;letter-spacing:0.06em;font-family:inherit;"
-        "'>🖨 Print / Save PDF</button>",
-        unsafe_allow_html=True
-    )
-    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+    fs=go.Figure()
+    for i,mo in enumerate(mos):
+        if mo.quarter==3: fs.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor="rgba(154,100,0,0.06)",layer="below",line_width=0)
+    fs.add_scatter(x=[mlabel(mo) for mo in mos],y=[mo.paid_fte for mo in mos],
+                   mode="lines+markers",name="Paid FTE",line=dict(color=C_ACTUAL,width=3),
+                   marker=dict(color=[HIRE_COLORS.get(mo.hiring_mode,SLATE) for mo in mos],size=9,line=dict(color="white",width=2)))
+    for yv,lbl,col in [(best.winter_fte,f"Winter {best.winter_fte:.1f}",NAVY),
+                       (best.base_fte,f"Base {best.base_fte:.1f}",SLATE),
+                       (best.base_fte*cfg.summer_shed_floor_pct,f"Summer floor {best.base_fte*cfg.summer_shed_floor_pct:.1f}",C_GREEN)]:
+        fs.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
+                     annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
+    fs.update_layout(**mk_layout(height=300,xaxis=dict(tickangle=-45),title="Paid FTE Trajectory (shaded = summer shed)"))
+    fs.update_yaxes(title_text="Paid FTE")
+    st.plotly_chart(fs,use_container_width=True)
 
-    _components.html(_table_html, height=820, scrolling=True)
 
-    # ── Supporting metrics below table ────────────────────────────────────────
-    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    st.markdown(f"<hr style='border-color:{RULE};margin:0.2rem 0 0.8rem;'>", unsafe_allow_html=True)
-    st.markdown(
-        f"<p style='font-size:0.72rem;color:{SLATE};'>"
-        f"Ratios: MA {sup.ma_ratio:.1f}× · PSR {sup.psr_ratio:.1f}× · RT flat {sup.rt_flat_fte:.1f} · "
-        f"FTE/slot {fts:.2f} · Shift {cfg.shift_hours:.0f}h · "
-        f"{cfg.operating_days_per_week} days/wk · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC</p>",
-        unsafe_allow_html=True
-    )
+# ── TAB 6: Cost Breakdown ─────────────────────────────────────────────────────
+with tabs[6]:
+    pol=active_policy(); s2=pol.summary; mos=pol.months
+    st.markdown("## 3-YEAR COST BREAKDOWN")
+
+    # ── EBITDA waterfall ────────────────────────────────────────────────
+    _es2 = pol.ebitda_summary
+    _elabel2 = "EBITDA Contribution" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
+    wf_labels = ["Revenue Captured","SWB Cost","Flex Premium","Turnover Cost","Burnout Risk"]
+    wf_raw    = [_es2["revenue"], _es2["swb"], _es2["flex"], _es2["turnover"], _es2["burnout"]]
+    if cfg.monthly_fixed_overhead > 0:
+        wf_labels.append("Fixed Overhead"); wf_raw.append(_es2["fixed"])
+    wf_labels.append(_elabel2); wf_raw.append(_es2["ebitda"])
+    wf_vals   = [v if i==0 or i==len(wf_raw)-1 else -v for i,v in enumerate(wf_raw)]
+    wf_colors = ["#22C55E" if i==0 else ("#1A6FD4" if i==len(wf_vals)-1 else "#EF4444") for i in range(len(wf_vals))]
+    fw = go.Figure(go.Bar(x=[v/1e6 for v in wf_vals], y=wf_labels, orientation="h",
+                         marker_color=wf_colors,
+                         text=[f"${abs(v)/1e6:.2f}M" for v in wf_vals], textposition="outside"))
+    fw.update_layout(**mk_layout(height=320, title=f"3-Year {_elabel2} Waterfall"))
+    fw.update_xaxes(title_text="$ Millions")
+    st.plotly_chart(fw, use_container_width=True)
+
+    # ── Monthly EBITDA trajectory ────────────────────────────────────────
+    _me_x   = [f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1][:3]}" for mo in pol.months]
+    _me_bar = [mo.ebitda_contribution/1e3 for mo in pol.months]
+    _me_cum = [mo.cumulative_ebitda/1e3   for mo in pol.months]
+    _vc_pct = [mo.throughput_factor*100   for mo in pol.months]
+    fig_me  = go.Figure()
+    fig_me.add_bar(x=_me_x, y=_me_bar,
+                   marker_color=[C_GREEN if v>=0 else C_RED for v in _me_bar],
+                   name="Monthly EBITDA ($K)", opacity=0.75)
+    fig_me.add_scatter(x=_me_x, y=_me_cum, mode="lines",
+                       line=dict(color=C_ACTUAL, width=2.5), name="Cumulative ($K)")
+    fig_me.update_layout(**mk_layout(height=280, title="Monthly EBITDA & Cumulative Trajectory"))
+    fig_me.update_yaxes(title_text="$K")
+    st.plotly_chart(fig_me, use_container_width=True)
+
+    # ── Visit capture rate ───────────────────────────────────────────────
+    fig_vc = go.Figure(go.Bar(x=_me_x, y=_vc_pct,
+        marker_color=[C_GREEN if v==100 else (C_YELLOW if v==95 else C_RED) for v in _vc_pct],
+        name="Visit Capture %"))
+    fig_vc.add_hline(y=100, line_dash="dash", line_color=SLATE, line_width=1)
+    fig_vc.update_layout(**mk_layout(height=200,
+        title="Monthly Visit Capture Rate — 100% Green | 95% Yellow | 85% Red"))
+    fig_vc.update_yaxes(range=[80, 102])
+    st.plotly_chart(fig_vc, use_container_width=True)
+
+    st.divider()
+    lc=["Permanent","Flex","Support Staff","Turnover","Lost Revenue","Burnout","Overstaff"]
+    vc=[s2["total_permanent_cost"],s2["total_flex_cost"],s2["total_support_cost"],
+        s2["total_turnover_cost"],s2["total_lost_revenue"],s2["total_burnout_penalty"],s2["total_overstaff_penalty"]]
+    pal=[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D",C_GREEN]
+    _av=s2["annual_visits"]
+    _sp=(s2["total_permanent_cost"]+s2["total_flex_cost"])/3
+    _ss=s2["total_support_cost"]/3
+    _spv=_sp/_av if _av else 0; _ssv=_ss/_av if _av else 0
+    st.markdown(f"<div style='background:#F0F6FF;border-left:3px solid {NAVY};padding:0.7rem 1rem;"
+                f"border-radius:0 3px 3px 0;margin-bottom:1rem;font-size:0.82rem;'>"
+                f"<b>SWB/Visit:</b> APC ${_spv:.2f} + Support ${_ssv:.2f} = <b>${s2['annual_swb_per_visit']:.2f}</b>  |  Target ${cfg.swb_target_per_visit:.2f}</div>",
+                unsafe_allow_html=True)
+
+    cl,cr=st.columns([1.1,0.9])
+    with cl:
+        fp2=go.Figure(go.Pie(labels=lc,values=vc,marker_colors=pal,hole=0.54,textinfo="label+percent",
+                             textfont=dict(size=11)))
+        fp2.add_annotation(text=f"<b>${sum(vc)/1e6:.1f}M</b><br><span style='font-size:11px'>3-year</span>",
+                           x=0.5,y=0.5,showarrow=False,font=dict(family="'Playfair Display', serif",size=17,color=INK))
+        fp2.update_layout(**mk_layout(height=380,title="3-Year Cost Mix",margin=dict(t=40,b=40,l=16,r=16),
+                           legend=dict(orientation="v",x=1.02,y=0.5)))
+        st.plotly_chart(fp2,use_container_width=True)
+    with cr:
+        dfc=pd.DataFrame({"Component":lc,"3-Year ($)":[f"${v:,.0f}" for v in vc],
+                           "Annual Avg":[f"${v/3:,.0f}" for v in vc],"$/Visit":[f"${v/3/(_av or 1):.2f}" for v in vc]})
+        st.dataframe(dfc,use_container_width=True,hide_index=True)
+        r1,r2,r3=st.columns(3)
+        r1.metric("Total 3-Year",f"${sum(vc)/1e6:.2f}M"); r2.metric("Annual Avg",f"${sum(vc)/3/1e6:.2f}M"); r3.metric("SWB/Visit",f"${s2['annual_swb_per_visit']:.2f}")
+
+    dfms=pd.DataFrame([{"Month":mlabel(mo),"Permanent":mo.permanent_cost,"Flex":mo.flex_cost,
+                         "Support":mo.support_cost,"Turnover":mo.turnover_cost,"Lost Revenue":mo.lost_revenue,"Burnout":mo.burnout_penalty} for mo in mos])
+    fst=go.Figure()
+    for col_,color in zip(["Permanent","Flex","Support","Turnover","Lost Revenue","Burnout"],[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D"]):
+        fst.add_bar(x=dfms["Month"],y=dfms[col_],name=col_,marker_color=color)
+    fst.update_layout(**mk_layout(height=340,barmode="stack",xaxis=dict(tickangle=-45),title="Monthly Cost Stack"))
+    fst.update_yaxes(title_text="Cost ($)")
+    st.plotly_chart(fst,use_container_width=True)
+
+
+# ── TAB 7: Marginal APC Analysis ─────────────────────────────────────────────
+with tabs[7]:
+    st.markdown("## MARGINAL APC ANALYSIS")
+    st.caption("What does one more APC actually cost — and what does it buy you?")
+    pol=active_policy()
+    ma_delta=st.slider("FTE increment to analyze",0.5,3.0,0.5,0.5,key="ma_delta_slider")
+    with st.spinner("Computing marginal impact..."):
+        ma=compare_marginal_fte(pol,cfg,delta_fte=ma_delta)
+
+    mc1,mc2,mc3,mc4,mc5=st.columns(5)
+    mc1.metric(f"+{ma_delta} FTE Annual Cost",   f"${ma['annual_cost_delta']:+,.0f}")
+    mc2.metric("Annual Savings",                  f"${ma['annual_savings']:,.0f}")
+    _nc=ma["net_annual"]
+    mc3.metric("Net Annual",                      f"${_nc:+,.0f}",delta_color="normal" if _nc>0 else "inverse")
+    mc4.metric("Payback",                         "Never" if ma["payback_months"]==float("inf") else f"{ma['payback_months']:.0f} mo")
+    mc5.metric("Red+Yellow Months Saved",         f"{ma['red_months_saved']}R + {ma['yellow_months_saved']}Y")
+
+    if ma["net_annual"]>0:
+        st.success(f"**Add {ma_delta} FTE** — net ${ma['net_annual']:,.0f}/yr positive. Saves {ma['red_months_saved']}R + {ma['yellow_months_saved']}Y months. Payback {ma['payback_months']:.0f} mo.")
+    elif ma["red_months_saved"]>0:
+        st.warning(f"Costs ${-ma['net_annual']:,.0f}/yr net but eliminates {ma['red_months_saved']} Red months of burnout risk.")
+    else:
+        st.info(f"Adding {ma_delta} FTE costs ${ma['annual_cost_delta']:,.0f}/yr with no material zone improvement.")
+
+    m_labels_12=[MONTH_NAMES[i] for i in range(12)]
+    fma=go.Figure()
+    if cfg.use_load_band:
+        fma.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,fillcolor="rgba(10,117,84,0.06)",line_width=0)
+    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_base"],name=f"Current ({pol.base_fte:.1f} FTE)",
+                    mode="lines+markers",line=dict(color=NAVY,width=2.5),marker=dict(size=8,line=dict(color="white",width=1.5)))
+    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_plus"],name=f"+{ma_delta} FTE ({pol.base_fte+ma_delta:.1f} FTE)",
+                    mode="lines+markers",line=dict(color=C_GREEN,width=2.5,dash="dash"),marker=dict(size=8,line=dict(color="white",width=1.5)))
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+        fma.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
+                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
+    fma.update_layout(**mk_layout(height=340,title=f"Year 1 Load: Current vs +{ma_delta} FTE"))
+    fma.update_yaxes(title_text="Pts/APC/Shift")
+    st.plotly_chart(fma,use_container_width=True)
+
+    st.markdown("## BREAKEVEN TABLE")
+    rows=[]
+    for d in [0.5,1.0,1.5,2.0,2.5,3.0]:
+        m2=compare_marginal_fte(pol,cfg,delta_fte=d)
+        rows.append({"Delta FTE":f"+{d:.1f}","Annual Cost":f"${m2['annual_cost_delta']:+,.0f}",
+                     "Annual Savings":f"${m2['annual_savings']:,.0f}","Net Annual":f"${m2['net_annual']:+,.0f}",
+                     "Payback (mo)":"Never" if m2["payback_months"]==float("inf") else f"{m2['payback_months']:.0f}",
+                     "Red Mo Saved":m2["red_months_saved"],"Yel Mo Saved":m2["yellow_months_saved"],
+                     "SWB Delta":f"${m2['swb_delta']:+.2f}"})
+    def _cn(v):
+        try:
+            val=float(str(v).replace("$","").replace(",","").replace("+",""))
+            return f"color:{C_GREEN};font-weight:600" if val>0 else (f"color:{C_RED}" if val<0 else "")
+        except: return ""
+    st.dataframe(pd.DataFrame(rows).style.applymap(_cn,subset=["Net Annual"]),use_container_width=True,hide_index=True)
+
+
+# ── TAB 8: Stress Test ────────────────────────────────────────────────────────
+with tabs[8]:
+    st.markdown("## STRESS TEST — VOLUME SHOCK SCENARIOS")
+    st.caption("Apply a volume surge and see how the current policy holds.")
+    pol=active_policy()
+    sc1,sc2,sc3=st.columns(3)
+    with sc1: shock_start=st.number_input("Shock start (simulation month)",1,34,13)
+    with sc2: shock_dur=st.number_input("Duration (months)",1,12,3)
+    with sc3: shock_mag=st.slider("Surge magnitude",0.05,0.50,0.15,0.05)
+
+    shock_end=min(36,int(shock_start)+int(shock_dur)-1)
+    _slabels=[]
+    for sm in range(int(shock_start),shock_end+1):
+        cm=((sm-1)%12)+1; yr=((sm-1)//12)+1
+        _slabels.append(f"Y{yr}-{MONTH_NAMES[cm-1]}")
+    st.info(f"Shock window: **{_slabels[0]}** to **{_slabels[-1]}**  (+{shock_mag*100:.0f}% volume for {shock_dur} months)")
+
+    with st.spinner("Running stress simulation..."):
+        pol_stress=simulate_stress(pol,cfg,int(shock_start),int(shock_dur),shock_mag)
+
+    ss=pol_stress.summary; ss0=pol.summary
+    st1,st2,st3,st4,st5=st.columns(5)
+    st1.metric("Red Months (base)",   f"{ss0['red_months']}",delta=f"+{ss['red_months']-ss0['red_months']} shock",delta_color="inverse")
+    st2.metric("Yellow Months",       f"{ss0['yellow_months']}",delta=f"+{ss['yellow_months']-ss0['yellow_months']} shock",delta_color="inverse")
+    st3.metric("SWB/Visit",           f"${ss0['annual_swb_per_visit']:.2f}",delta=f"+${ss['annual_swb_per_visit']-ss0['annual_swb_per_visit']:.2f}",delta_color="inverse")
+    st4.metric("3-Yr EBITDA",         f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(ss.get('total_ebitda_3yr',0)-ss0.get('total_ebitda_3yr',0))/1e6:+.2f}M")
+    st5.metric("Extra Turnover",      f"{ss['total_turnover_events']-ss0['total_turnover_events']:.1f} FTE")
+
+    if ss["red_months"]>ss0["red_months"]:
+        st.error(f"Policy breaks — {ss['red_months']-ss0['red_months']} new Red months under this shock.")
+    elif ss["yellow_months"]>ss0["yellow_months"]:
+        st.warning(f"Policy shows strain — {ss['yellow_months']-ss0['yellow_months']} new Yellow months. Flex staffing would help.")
+    else:
+        st.success("Policy holds under this shock — all months remain in current zones.")
+
+    lbls_36=[mlabel(mo) for mo in pol.months]
+    fs2=go.Figure()
+    fs2.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
+    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol.months],
+                    name="Base scenario",line=dict(color=NAVY,width=2.5))
+    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
+                    name=f"Stress (+{shock_mag*100:.0f}%)",line=dict(color=C_STRESS,width=2.5,dash="dash"))
+    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
+        fs2.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
+    fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
+    fs2.update_yaxes(title_text="Pts/APC/Shift")
+    st.plotly_chart(fs2,use_container_width=True)
+
+    fs3=go.Figure()
+    fs3.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
+    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol.months],name="Base Paid FTE",line=dict(color=NAVY,width=2.5))
+    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol_stress.months],name="Stress Paid FTE",line=dict(color=C_STRESS,width=2.5,dash="dash"))
+    fs3.add_scatter(x=lbls_36,y=[mo.demand_fte_required for mo in pol_stress.months],name="FTE Required (stress)",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7)
+    fs3.update_layout(**mk_layout(height=260,xaxis=dict(tickangle=-45),title="FTE Trajectory Under Stress"))
+    fs3.update_yaxes(title_text="FTE")
+    st.plotly_chart(fs3,use_container_width=True)
+
+    df_stress=pd.DataFrame([{
+        "Month":mlabel(mo),
+        "Base Load":round(pol.months[i].patients_per_provider_per_shift,1),
+        "Stress Load":round(mo.patients_per_provider_per_shift,1),
+        "Delta":round(mo.patients_per_provider_per_shift-pol.months[i].patients_per_provider_per_shift,1),
+        "Base Zone":pol.months[i].zone,"Stress Zone":mo.zone,
+        "Zone Changed":"YES" if mo.zone!=pol.months[i].zone else "",
+    } for i,mo in enumerate(pol_stress.months)])
+    def _zc(v): return f"color:{C_RED};font-weight:600" if "YES" in str(v) else ""
+    st.dataframe(df_stress.style.applymap(_sz,subset=["Stress Zone"]).applymap(_zc,subset=["Zone Changed"]),
+                 use_container_width=True,height=380)
+
+
+# ── TAB 9: Policy Heatmap ─────────────────────────────────────────────────────
+with tabs[9]:
+    st.markdown("## POLICY SCORE HEATMAP")
+    if st.session_state.all_policies:
+        all_p=st.session_state.all_policies
+        bv=sorted(set(round(p.base_fte,1) for p in all_p)); wv=sorted(set(round(p.winter_fte,1) for p in all_p))
+        bi={v:i for i,v in enumerate(bv)}; wi={v:i for i,v in enumerate(wv)}
+        mat=np.full((len(wv),len(bv)),np.nan)
+        for p in all_p:
+            b2=bi.get(round(p.base_fte,1)); w2=wi.get(round(p.winter_fte,1))
+            if b2 is not None and w2 is not None: mat[w2][b2]=p.summary.get('total_ebitda_3yr', -p.total_score)
+        vmin,vmax=np.nanmin(mat),np.nanpercentile(mat,95)
+        fh=go.Figure(go.Heatmap(z=mat,x=[str(v) for v in bv],y=[str(v) for v in wv],
+                                 colorscale=[[0,C_GREEN],[0.5,"#FFFBEB"],[1,C_RED]],zmin=vmin,zmax=vmax,
+                                 colorbar=dict(title="Score ($)",tickfont=dict(size=10,color=SLATE))))
+        fh.add_scatter(x=[str(round(best.base_fte,1))],y=[str(round(best.winter_fte,1))],mode="markers",
+                       marker=dict(symbol="star",size=22,color="white",line=dict(color=INK,width=2)),name="Optimal")
+        fh.update_layout(**mk_layout(height=500,title="Policy Score Landscape (lower = better) * = Optimal",
+                          xaxis=dict(title="Base FTE"),yaxis=dict(title="Winter FTE",showgrid=False)))
+        st.plotly_chart(fh,use_container_width=True)
+    else:
+        st.info("Run the optimizer to see the heatmap.")
+
+
+# ── TAB 10: Req Timing ─────────────────────────────────────────────────────────
+with tabs[10]:
+    st.markdown("## REQUISITION TIMING")
+    ld=cfg.days_to_sign+cfg.days_to_credential+cfg.days_to_independent; lm=int(np.ceil(ld/30))
+    t1,t2,t3=st.columns(3)
+    t1.metric("Flu Anchor",MONTH_NAMES[cfg.flu_anchor_month-1])
+    t2.metric("Post Req By",MONTH_NAMES[best.req_post_month-1])
+    t3.metric("Lead Time",f"{ld} days / {lm} months")
+    st.markdown(f"| Phase | Days | Cumulative |\n|:--|--:|--:|\n| Sign offer | {cfg.days_to_sign} | {cfg.days_to_sign} |\n| Credential | {cfg.days_to_credential} | {cfg.days_to_sign+cfg.days_to_credential} |\n| Ramp to independence | {cfg.days_to_independent} | {ld} |")
+    phases_tl=[("Post -> Sign",cfg.days_to_sign,NAVY),("Sign -> Credentialed",cfg.days_to_credential,NAVY_LT),("Credentialed -> Indep.",cfg.days_to_independent,C_GREEN)]
+    ftl=go.Figure(); start=0
+    for lbl_tl,dur,col in phases_tl:
+        ftl.add_bar(x=[dur],y=[""],orientation="h",base=[start],name=lbl_tl,marker_color=col,
+                    text=f"  {lbl_tl}  ({dur}d)",textposition="inside",textfont=dict(color="white",size=11)); start+=dur
+    ftl.add_vline(x=ld,line_dash="dash",line_color=C_RED,line_width=2,
+                  annotation_text=f"Independent: {MONTH_NAMES[cfg.flu_anchor_month-1]}",
+                  annotation_font=dict(color=C_RED,size=11))
+    ftl.update_layout(**mk_layout(height=150,barmode="stack",margin=dict(t=16,b=48,l=8,r=8),
+        title=f"Hiring Timeline: Post {MONTH_NAMES[best.req_post_month-1]} -> Independent by {MONTH_NAMES[cfg.flu_anchor_month-1]}",
+        xaxis=dict(title="Days from Requisition"),yaxis=dict(visible=False),legend=dict(orientation="h",y=-0.65)))
+    st.plotly_chart(ftl,use_container_width=True)
+    st.info(f"Post req by **{MONTH_NAMES[best.req_post_month-1]}** to have {best.winter_fte:.1f} Winter FTE independent by {MONTH_NAMES[cfg.flu_anchor_month-1]}.")
+
+
+# ── TAB 11: Data Table ────────────────────────────────────────────────────────
+with tabs[11]:
+    pol=active_policy()
+    st.markdown("## FULL 36-MONTH DATA")
+    dff=pd.DataFrame([{
+        "Month":mlabel(mo),"Q":f"Q{mo.quarter}","Zone":mo.zone,
+        "Hiring Mode":mo.hiring_mode,"In Band":"Y" if mo.within_band else "N",
+        "Visits/Day":round(mo.demand_visits_per_day,1),
+        "FTE Required":round(mo.demand_fte_required,2),"Paid FTE":round(mo.paid_fte,2),
+        "APCs on Floor":round(mo.providers_on_floor,2),
+        "Pts/APC/Shift":round(mo.patients_per_provider_per_shift,1),
+        "Attrition %/mo":f"{mo.effective_attrition_rate*100:.2f}%",
+        "Overload Att":round(mo.overload_attrition_delta,3),
+        "Perm Cost":f"${mo.permanent_cost:,.0f}","Support":f"${mo.support_cost:,.0f}",
+        "Turnover":round(mo.turnover_events,2),"Burnout":f"${mo.burnout_penalty:,.0f}",
+        "Lost Rev":f"${mo.lost_revenue:,.0f}",
+    } for mo in pol.months])
+    def _szz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
+    st.dataframe(dff.style.applymap(_szz,subset=["Zone"]),use_container_width=True,height=520)
+    st.download_button("Download CSV",dff.to_csv(index=False),"psm_36month.csv","text/csv")
+
+
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
