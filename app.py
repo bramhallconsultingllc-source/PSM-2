@@ -742,7 +742,12 @@ with tabs[0]:
     _print_date   = __import__("datetime").date.today().strftime("%B %d, %Y")
 
     def _fmt(v, dec=2):
-        return f"{v:.{dec}f}"
+        """Format staffing numbers. dec=1 → 1dp (visits/day). dec=2 → snap to 0.25."""
+        if dec == 1:
+            return f"{v:.1f}"
+        # Round to nearest 0.25 for clean schedule-friendly display
+        snapped = round(v * 4) / 4
+        return f"{snapped:.2f}"
 
     # Table rows HTML
     _rows_html = ""
@@ -996,8 +1001,8 @@ with tabs[0]:
 </table>
 
 <div class="footnotes">
-  <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day</span></div>
-  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents accounting for {cfg.fte_shifts_per_week:.0f} shifts/wk per APC on a {cfg.operating_days_per_week}-day schedule ({fts:.2f}× concurrent slot)</span></div>
+  <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day · rounded to nearest 0.25</span></div>
+  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents · rounded to nearest 0.25 · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC · {cfg.operating_days_per_week}-day schedule ({fts:.2f}× slot)</span></div>
   <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
   <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
   <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/APC</span></div>
