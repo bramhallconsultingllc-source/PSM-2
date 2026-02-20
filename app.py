@@ -680,7 +680,7 @@ tabs = st.tabs([
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
     "Manual Override", "Policy Heatmap", "Req Timing", "Data Table",
-    "Executive Summary",
+    "Executive Summary", "Staffing Model",
 ])
 
 # ── TAB 0: 36-Month Load ──────────────────────────────────────────────────────
@@ -1753,6 +1753,543 @@ with tabs[11]:
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
     st.info("📋 PDF export — coming next build.", icon="📄")
 
+    # ── MONTE CARLO SENSITIVITY ───────────────────────────────────────────────
+    st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.2rem;'>", unsafe_allow_html=True)
+    st.markdown("## MONTE CARLO SENSITIVITY")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1.2rem;'>"
+        "500 trials — holds the recommended staffing policy fixed and randomizes the four "
+        "inputs you cannot control: volume growth, attrition rate, net revenue per visit, "
+        "and overload sensitivity. Shows the range of outcomes if key assumptions prove wrong.</p>",
+        unsafe_allow_html=True
+    )
+
+    with st.expander("Uncertainty ranges used in each trial", expanded=False):
+        _ua1, _ua2, _ua3, _ua4 = st.columns(4)
+        _ua1.metric("Growth Rate",       f"{cfg.annual_growth_pct:.0f}%",
+                    delta=f"±{cfg.annual_growth_pct*0.15:.1f}% (1σ)")
+        _ua2.metric("Attrition Rate",    f"{cfg.annual_attrition_pct:.0f}%",
+                    delta=f"±{cfg.annual_attrition_pct*0.15:.1f}% (1σ)")
+        _ua3.metric("Revenue / Visit",   f"${cfg.net_revenue_per_visit:.0f}",
+                    delta=f"±${cfg.net_revenue_per_visit*0.05:.0f} (1σ)")
+        _ua4.metric("Overload Factor",   f"{cfg.overload_attrition_factor:.1f}×",
+                    delta=f"±{cfg.overload_attrition_factor*0.125:.2f} (1σ)")
+        st.caption(
+            "Each trial draws these four inputs independently from normal distributions. "
+            "Base FTE, Winter FTE, and WLT are held constant — this tests policy robustness "
+            "to assumption error, not a comparison of different policies. Seed is fixed (42) "
+            "so results are reproducible."
+        )
+
+    # Run 500 trials -----------------------------------------------------------
+    with st.spinner("Running 500 Monte Carlo trials…"):
+        _rng = np.random.default_rng(42)
+        _N   = 500
+        _mc_ebitda  = np.empty(_N)
+        _mc_swb     = np.empty(_N)
+        _mc_capture = np.empty(_N)
+        _mc_green   = np.empty(_N)
+        _mc_burnout = np.empty(_N)
+
+        for _i in range(_N):
+            _kw = {f: getattr(cfg, f) for f in cfg.__dataclass_fields__}
+            _kw["annual_growth_pct"]         = float(np.clip(
+                _rng.normal(cfg.annual_growth_pct,         cfg.annual_growth_pct*0.15),         1,  50))
+            _kw["net_revenue_per_visit"]      = float(np.clip(
+                _rng.normal(cfg.net_revenue_per_visit,     cfg.net_revenue_per_visit*0.05),      60, 300))
+            _kw["annual_attrition_pct"]       = float(np.clip(
+                _rng.normal(cfg.annual_attrition_pct,      cfg.annual_attrition_pct*0.15),       3,  60))
+            _kw["overload_attrition_factor"]  = float(np.clip(
+                _rng.normal(cfg.overload_attrition_factor, cfg.overload_attrition_factor*0.125), 0.2, 5))
+            _p = simulate_policy(best.base_fte, best.winter_fte,
+                                 ClinicConfig(**_kw))
+            _mc_ebitda[_i]  = _p.ebitda_summary["ebitda"]
+            _mc_swb[_i]     = _p.summary["annual_swb_per_visit"]
+            _mc_capture[_i] = _p.ebitda_summary["capture_rate"] * 100
+            _mc_green[_i]   = _p.summary["green_months"]
+            _mc_burnout[_i] = _p.ebitda_summary["burnout"]
+
+    # Probability KPI strip ----------------------------------------------------
+    _p_pos  = (_mc_ebitda > 0).mean() * 100
+    _p_swb  = (_mc_swb <= cfg.swb_target_per_visit).mean() * 100
+    _p_cap  = (_mc_capture >= 99.0).mean() * 100
+    _p_grn  = (_mc_green >= 30).mean() * 100
+
+    _mk1, _mk2, _mk3, _mk4 = st.columns(4)
+    _mk1.metric("P(EBITDA > 0)",       f"{_p_pos:.0f}%",
+                delta="all scenarios positive" if _p_pos == 100 else f"{100-_p_pos:.0f}% loss risk",
+                delta_color="normal" if _p_pos >= 80 else "inverse")
+    _mk2.metric("P(SWB on target)",    f"{_p_swb:.0f}%",
+                delta=f"≤ ${cfg.swb_target_per_visit:.0f}/visit",
+                delta_color="normal" if _p_swb >= 70 else "inverse")
+    _mk3.metric("P(Capture ≥ 99%)",    f"{_p_cap:.0f}%",
+                delta="near-perfect throughput",
+                delta_color="normal" if _p_cap >= 70 else "inverse")
+    _mk4.metric("P(≥ 30 Green months)", f"{_p_grn:.0f}%",
+                delta="low provider stress",
+                delta_color="normal" if _p_grn >= 70 else "inverse")
+
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+
+    # Fan chart — EBITDA distribution -----------------------------------------
+    _pct_vals = [5, 10, 25, 50, 75, 90, 95]
+    _ep       = {p: float(np.percentile(_mc_ebitda, p)) / 1e6 for p in _pct_vals}
+    _base_e   = es["ebitda"] / 1e6
+
+    _fig_mc = go.Figure()
+
+    # Shaded confidence bands (narrow → wide)
+    _bands_mc = [
+        (5,  95, "rgba(56,140,220,0.10)", "p5–p95 (90% CI)"),
+        (10, 90, "rgba(56,140,220,0.15)", "p10–p90 (80% CI)"),
+        (25, 75, "rgba(56,140,220,0.22)", "p25–p75 (50% CI)"),
+    ]
+    _sc = ["Pessimistic", "Expected", "Optimistic"]
+    for _lo, _hi, _col, _nm in _bands_mc:
+        _yhi = [_ep[_lo], _ep[_hi], _ep[_hi]]  # fan shape: narrows pessimistic side
+        _ylo = [_ep[_lo], _ep[_lo], _ep[_hi]]
+        _fig_mc.add_trace(go.Scatter(
+            x=_sc + _sc[::-1],
+            y=[_ep[_hi], (_ep[_hi]+_ep[50])/2, _ep[_hi]] + [_ep[_lo], (_ep[_lo]+_ep[50])/2, _ep[_lo]],
+            fill="toself", fillcolor=_col,
+            line=dict(width=0), showlegend=True, name=_nm, hoverinfo="skip",
+        ))
+
+    # Median spine
+    _fig_mc.add_trace(go.Scatter(
+        x=_sc,
+        y=[(_ep[25]+_ep[10])/2, _ep[50], (_ep[75]+_ep[90])/2],
+        mode="lines+markers",
+        line=dict(color=C_GREEN, width=2.5, dash="solid"),
+        marker=dict(size=8, color=C_GREEN),
+        name=f"Median  ${_ep[50]:.2f}M",
+    ))
+
+    # p5 / p95 boundary markers
+    _fig_mc.add_trace(go.Scatter(
+        x=["Pessimistic", "Optimistic"],
+        y=[_ep[5], _ep[95]],
+        mode="markers+text",
+        marker=dict(size=9, color="#FCD34D", symbol="diamond"),
+        text=[f"p5  ${_ep[5]:.2f}M", f"p95  ${_ep[95]:.2f}M"],
+        textposition=["bottom center", "top center"],
+        textfont=dict(size=10, color="#FCD34D"),
+        name="p5 / p95 bounds",
+        showlegend=True,
+    ))
+
+    # Base case horizontal reference
+    _fig_mc.add_hline(
+        y=_base_e,
+        line_dash="dot", line_color="#FBBF24", line_width=1.5,
+        annotation_text=f"  Base case  ${_base_e:.2f}M",
+        annotation_font=dict(color="#FBBF24", size=11),
+        annotation_position="right",
+    )
+
+    _fig_mc.update_layout(**mk_layout(
+        height=360,
+        title="3-Year EBITDA Range  —  Monte Carlo Fan  (500 trials, seed=42)",
+        yaxis=dict(title="3-Year EBITDA ($M)", tickprefix="$", ticksuffix="M",
+                   gridcolor="rgba(30,58,92,0.5)"),
+        xaxis=dict(title="Scenario bracket"),
+        legend=dict(orientation="h", y=-0.22, x=0),
+    ))
+    st.plotly_chart(_fig_mc, use_container_width=True)
+
+    # Percentile table ---------------------------------------------------------
+    _tbl_pcts = [5, 25, 50, 75, 95]
+    _tbl_labels = {5:"Tail risk", 25:"Pessimistic", 50:"Median", 75:"Optimistic", 95:"Upside"}
+    _tbl_rows = []
+    for _p in _tbl_pcts:
+        _tbl_rows.append({
+            "":              f"p{_p}  —  {_tbl_labels[_p]}",
+            "3-Yr EBITDA":   f"${np.percentile(_mc_ebitda,  _p)/1e6:.2f}M",
+            "EBITDA / Yr":   f"${np.percentile(_mc_ebitda,  _p)/3/1e3:.0f}K",
+            "SWB / Visit":   f"${np.percentile(_mc_swb,     _p):.2f}",
+            "Visit Capture": f"{np.percentile(_mc_capture,  _p):.1f}%",
+            "Green Months":  f"{np.percentile(_mc_green,    _p):.0f} / 36",
+            "Burnout Cost":  f"${np.percentile(_mc_burnout, _p)/1e3:.0f}K",
+        })
+
+    def _mc_row_style(row):
+        if "Median" in str(row[""]):
+            return ["background-color:#0A2818; font-weight:600"] * len(row)
+        return [""] * len(row)
+
+    st.dataframe(
+        pd.DataFrame(_tbl_rows).style.apply(_mc_row_style, axis=1),
+        use_container_width=True, hide_index=True, height=215,
+    )
+    st.caption(
+        f"Policy held fixed at Base {best.base_fte:.1f} FTE · Winter {best.winter_fte:.1f} FTE · "
+        f"WLT {cfg.load_winter_target:.0f} pts/APC.  "
+        f"Deterministic base case: EBITDA ${_base_e:.2f}M · "
+        f"SWB ${s['annual_swb_per_visit']:.2f}/visit · "
+        f"Capture {es['capture_rate']*100:.1f}%."
+    )
+
+
+
+
+# ── TAB 12: STAFFING MODEL ────────────────────────────────────────────────────
+with tabs[12]:
+    pol  = active_policy()
+    sup  = cfg.support
+    fts  = cfg.fte_per_shift_slot          # e.g. 2.33 for 7-day, 3-shift/wk
+    budget_load = cfg.budgeted_patients_per_provider_per_day
+
+    # ── Build quarterly rows ──────────────────────────────────────────────────
+    rows = []
+    for yr in [1, 2, 3]:
+        for q in [1, 2, 3, 4]:
+            qmos = [mo for mo in pol.months if mo.year == yr and mo.quarter == q]
+            if not qmos:
+                continue
+            avg_vpd  = sum(mo.demand_visits_per_day for mo in qmos) / len(qmos)
+            avg_pof  = sum(mo.providers_on_floor    for mo in qmos) / len(qmos)
+            avg_pfte = sum(mo.paid_fte               for mo in qmos) / len(qmos)
+            # zones for row shading
+            zones    = [mo.zone for mo in qmos]
+            dom_zone = max(set(zones), key=zones.count)
+
+            ma_day   = avg_pof * sup.ma_ratio
+            psr_day  = avg_pof * sup.psr_ratio
+            rt_day   = sup.rt_flat_fte
+
+            ma_fte   = ma_day  * fts
+            psr_fte  = psr_day * fts
+            rt_fte   = rt_day  * fts
+            total_fte= avg_pfte + ma_fte + psr_fte + rt_fte
+
+            rows.append({
+                "year": yr, "quarter": q, "zone": dom_zone,
+                "vpd": avg_vpd,
+                # staff per day
+                "apc_day":  avg_pof,
+                "ma_day":   ma_day,
+                "psr_day":  psr_day,
+                "rt_day":   rt_day,
+                # FTE
+                "apc_fte":  avg_pfte,
+                "ma_fte":   ma_fte,
+                "psr_fte":  psr_fte,
+                "rt_fte":   rt_fte,
+                "total_fte":total_fte,
+            })
+
+    # ── Colour helpers ────────────────────────────────────────────────────────
+    ZONE_BG   = {"Green": "#0A2818", "Yellow": "#1F1A00", "Red": "#2A0A0A"}
+    ZONE_PILL = {"Green": ("#4ADE80","#0A2818"), "Yellow": ("#FCD34D","#1A1600"), "Red": ("#F87171","#2A0A0A")}
+
+    # ── Clinic summary header values ──────────────────────────────────────────
+    _total_fte_avg = sum(r["total_fte"] for r in rows) / len(rows) if rows else 0
+
+    # ── Print-friendly HTML table ─────────────────────────────────────────────
+    # Build complete HTML so browser print works cleanly
+    _clinic_name  = "Urgent Care Clinic"   # could be a config field later
+    _print_date   = __import__("datetime").date.today().strftime("%B %d, %Y")
+
+    def _fmt(v, dec=2):
+        return f"{v:.{dec}f}"
+
+    # Table rows HTML
+    _rows_html = ""
+    prev_yr = None
+    for r in rows:
+        yr_label = f"Year {r['year']}" if r['year'] != prev_yr else ""
+        prev_yr  = r['year']
+        q_labels = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct–Dec)"]
+        q_label  = q_labels[r['quarter'] - 1]
+        pill_fg, pill_bg = ZONE_PILL[r["zone"]]
+        zone_pill = (f"<span style='background:{pill_bg};color:{pill_fg};"
+                     f"font-size:0.62rem;font-weight:700;padding:1px 6px;"
+                     f"border-radius:3px;letter-spacing:0.06em'>{r['zone'].upper()}</span>")
+
+        yr_cell  = (f"<td rowspan='4' style='border-right:1px solid #1E3A52;"
+                    f"color:#4ADE80;font-weight:700;font-size:0.9rem;"
+                    f"text-align:center;vertical-align:middle;white-space:nowrap;"
+                    f"padding:0 0.9rem'>{yr_label}</td>") if yr_label else ""
+
+        _rows_html += f"""
+        <tr style='border-bottom:1px solid #132333;'>
+          {yr_cell}
+          <td style='padding:0.55rem 0.7rem;color:#CBD5E1;font-size:0.8rem'>{q_label}</td>
+          <td style='padding:0.55rem 0.5rem;text-align:center'>{zone_pill}</td>
+          <td style='padding:0.55rem 0.5rem;text-align:right;color:#94A3B8;font-size:0.78rem'>{_fmt(r['vpd'],1)}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['apc_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['ma_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['psr_day'])}</td>
+          <td class='spd' style='text-align:right'>{_fmt(r['rt_day'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['apc_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['ma_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['psr_fte'])}</td>
+          <td class='fte' style='text-align:right'>{_fmt(r['rt_fte'])}</td>
+          <td style='text-align:right;color:#4ADE80;font-weight:700;font-size:0.82rem;padding:0.55rem 0.7rem'>{_fmt(r['total_fte'])}</td>
+        </tr>"""
+
+    _table_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    background: #060F18;
+    color: #CBD5E1;
+    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 1.5rem 2rem;
+  }}
+
+  /* ── Header ── */
+  .doc-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid #1A3A5C;
+    padding-bottom: 0.8rem;
+    margin-bottom: 1.4rem;
+  }}
+  .doc-title {{
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #E2EAF0;
+  }}
+  .doc-sub {{
+    font-size: 0.7rem;
+    color: #6A8FAA;
+    letter-spacing: 0.1em;
+    margin-top: 0.25rem;
+  }}
+  .doc-meta {{
+    text-align: right;
+    font-size: 0.68rem;
+    color: #4A6A82;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+
+  /* ── Config strip ── */
+  .config-strip {{
+    display: flex;
+    gap: 2rem;
+    background: #0A1A28;
+    border: 1px solid #1A3A5C;
+    border-radius: 4px;
+    padding: 0.6rem 1.1rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+  }}
+  .cfg-item {{
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }}
+  .cfg-label {{
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #4A6A82;
+    font-weight: 600;
+  }}
+  .cfg-value {{
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #CBD5E1;
+    font-family: 'IBM Plex Mono', monospace;
+  }}
+
+  /* ── Table ── */
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+  }}
+  thead tr {{
+    background: #091623;
+    border-bottom: 2px solid #1A3A5C;
+  }}
+  /* Section headers */
+  .th-group {{
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #4A6A82;
+    padding: 0.3rem 0.5rem 0.1rem;
+    text-align: center;
+  }}
+  .th-group-spd {{ color: #60A5FA; border-bottom: 1px solid #1A3A5C; }}
+  .th-group-fte {{ color: #A78BFA; border-bottom: 1px solid #2A1A5C; }}
+  th {{
+    padding: 0.35rem 0.5rem;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    color: #6A8FAA;
+  }}
+  th.spd {{ color: #93C5FD; }}
+  th.fte {{ color: #C4B5FD; }}
+  tr:nth-child(4n+1) td, tr:nth-child(4n+2) td,
+  tr:nth-child(4n+3) td, tr:nth-child(4n+4) td {{
+    background: transparent;
+  }}
+  tbody tr:hover td {{ background: rgba(74,110,138,0.07); }}
+  td.spd {{ color: #93C5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+  td.fte {{ color: #C4B5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+
+  /* Year separators */
+  tr.yr-sep td {{ border-top: 2px solid #1A3A5C; }}
+
+  /* ── Footnotes ── */
+  .footnotes {{
+    margin-top: 1rem;
+    font-size: 0.65rem;
+    color: #4A6A82;
+    border-top: 1px solid #1A3A5C;
+    padding-top: 0.6rem;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }}
+  .fn-item {{ display: flex; gap: 0.3rem; }}
+  .fn-key {{ color: #60A5FA; font-weight: 600; }}
+
+  /* ── Print styles ── */
+  @media print {{
+    body {{
+      background: #fff !important;
+      color: #111 !important;
+      padding: 0.5in 0.6in;
+      font-size: 9pt;
+    }}
+    .doc-header {{ border-color: #333; }}
+    .doc-title {{ color: #111; }}
+    .doc-sub, .doc-meta {{ color: #555; }}
+    .config-strip {{ background: #f5f5f5; border-color: #ccc; }}
+    .cfg-label {{ color: #777; }}
+    .cfg-value {{ color: #111; }}
+    table {{ font-size: 8.5pt; }}
+    thead tr {{ background: #eee; border-color: #999; }}
+    .th-group-spd {{ color: #1a56b0; border-color: #999; }}
+    .th-group-fte {{ color: #5a1ab0; border-color: #999; }}
+    th {{ color: #444; }}
+    th.spd {{ color: #1a56b0; }}
+    th.fte {{ color: #5a1ab0; }}
+    td.spd {{ color: #1a56b0; }}
+    td.fte {{ color: #5a1ab0; }}
+    .footnotes {{ color: #555; border-color: #ccc; }}
+    .fn-key {{ color: #1a56b0; }}
+    tr.yr-sep td {{ border-color: #999; }}
+  }}
+  @page {{ size: landscape; margin: 0.5in; }}
+</style>
+</head>
+<body>
+
+<div class="doc-header">
+  <div>
+    <div class="doc-title">Complete Staffing Model</div>
+    <div class="doc-sub">PERMANENT STAFFING MODEL · 36-MONTH QUARTERLY PROJECTION · LOAD-BAND OPTIMIZER</div>
+  </div>
+  <div class="doc-meta">
+    Generated {_print_date}<br>
+    Base {cfg.base_visits_per_day:.0f} vpd · {cfg.annual_growth_pct:.0f}% growth · Budget {budget_load:.0f} pts/APC
+  </div>
+</div>
+
+<div class="config-strip">
+  <div class="cfg-item"><span class="cfg-label">Operating Days/Wk</span><span class="cfg-value">{cfg.operating_days_per_week}</span></div>
+  <div class="cfg-item"><span class="cfg-label">Shift Hours</span><span class="cfg-value">{cfg.shift_hours:.0f}h</span></div>
+  <div class="cfg-item"><span class="cfg-label">Shifts/Wk per APC</span><span class="cfg-value">{cfg.fte_shifts_per_week:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">FTE per Slot</span><span class="cfg-value">{fts:.2f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">MA Ratio (per APC)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">PSR Ratio (per APC)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">RT (flat/shift)</span><span class="cfg-value">{sup.rt_flat_fte:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/APC</span></div>
+  <div class="cfg-item"><span class="cfg-label">Base FTE</span><span class="cfg-value">{best.base_fte:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">Winter FTE</span><span class="cfg-value">{best.winter_fte:.1f}</span></div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2" style="text-align:left;padding-left:0.7rem">Year</th>
+      <th rowspan="2" style="text-align:left">Quarter</th>
+      <th rowspan="2">Zone</th>
+      <th rowspan="2" style="text-align:right;color:#6A8FAA">Visits/Day</th>
+      <th colspan="4" class="th-group th-group-spd">Staff per Day (Concurrent)</th>
+      <th colspan="4" class="th-group th-group-fte">FTE Required</th>
+      <th rowspan="2" style="text-align:right;padding-right:0.7rem;color:#4ADE80">Total FTE</th>
+    </tr>
+    <tr>
+      <th class="spd" style="text-align:right">Provider</th>
+      <th class="spd" style="text-align:right">MA</th>
+      <th class="spd" style="text-align:right">PSR</th>
+      <th class="spd" style="text-align:right">Rad Tech</th>
+      <th class="fte" style="text-align:right">Provider</th>
+      <th class="fte" style="text-align:right">MA</th>
+      <th class="fte" style="text-align:right">PSR</th>
+      <th class="fte" style="text-align:right">Rad Tech</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_rows_html}
+  </tbody>
+</table>
+
+<div class="footnotes">
+  <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day</span></div>
+  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents accounting for {cfg.fte_shifts_per_week:.0f} shifts/wk per APC on a {cfg.operating_days_per_week}-day schedule ({fts:.2f}× concurrent slot)</span></div>
+  <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
+  <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
+  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/APC</span></div>
+</div>
+
+</body>
+</html>"""
+
+    # ── Render in Streamlit ───────────────────────────────────────────────────
+    st.markdown("## COMPLETE STAFFING MODEL")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
+        f"Quarterly averages · recommended policy · all roles · "
+        f"<strong style='color:#CBD5E1'>Staff/Day</strong> = concurrent positions on floor · "
+        f"<strong style='color:#CBD5E1'>FTE</strong> = headcount to sustain that coverage</p>",
+        unsafe_allow_html=True
+    )
+
+    # Print button
+    _pb_col, _ = st.columns([1, 5])
+    _pb_col.markdown(
+        "<button onclick='window.print()' style='"
+        "background:#0D1B2A;border:1px solid #1A3A5C;color:#CBD5E1;"
+        "font-size:0.75rem;padding:0.35rem 0.9rem;border-radius:3px;"
+        "cursor:pointer;letter-spacing:0.06em;font-family:inherit;"
+        "'>🖨 Print / Save PDF</button>",
+        unsafe_allow_html=True
+    )
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    _components.html(_table_html, height=820, scrolling=True)
+
+    # ── Supporting metrics below table ────────────────────────────────────────
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0.2rem 0 0.8rem;'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='font-size:0.72rem;color:{SLATE};'>"
+        f"Ratios: MA {sup.ma_ratio:.1f}× · PSR {sup.psr_ratio:.1f}× · RT flat {sup.rt_flat_fte:.1f} · "
+        f"FTE/slot {fts:.2f} · Shift {cfg.shift_hours:.0f}h · "
+        f"{cfg.operating_days_per_week} days/wk · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC</p>",
+        unsafe_allow_html=True
+    )
 
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
