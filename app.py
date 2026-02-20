@@ -234,15 +234,10 @@ with st.sidebar:
             help="Days per week the clinic is open. Drives total shift slots and FTE-per-slot conversion.")
         shift_hrs = st.number_input("Hours/Shift", 4.0, 24.0, 12.0, 0.5,
             help="Length of each clinical shift in hours. Used to calculate support staff hours and shifts-per-day default.")
-        import math as _math
-        _auto_shifts = max(1, min(3, _math.ceil(12.0 / shift_hrs)))
-        _shift_key   = f"shifts_day_{shift_hrs}"
-        if _shift_key not in st.session_state:
-            st.session_state[_shift_key] = _auto_shifts
-        shifts_day = st.number_input("Shifts/Day", min_value=1, max_value=3,
-                                     value=st.session_state[_shift_key], step=1,
-                                     help=f"Auto: ceil(12/{shift_hrs:.0f}) = {_auto_shifts}",
-                                     key=_shift_key)
+        # shifts_per_day is always 1 — the model determines concurrent APC need
+        # from volume/budget math. The operator sees the fractional result as
+        # shift scheduling guidance (e.g. 1.25 APCs = one 12h + one 4h shift).
+        shifts_day = 1
         fte_shifts = st.number_input("Shifts/Week per APC", 1.0, 7.0, 3.0, 0.5,
             help="How many shifts per week each APC is contracted to work. Key driver of FTE-per-slot: 7 days / 3 shifts = 2.33 FTE needed per concurrent slot.")
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05,
@@ -1873,15 +1868,29 @@ with tabs[3]:
 with tabs[4]:
     pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
     st.markdown("## SHIFT COVERAGE MODEL")
-    e1,e2,e3,e4=st.columns(4)
-    e1.metric("Shift Slots/Week",   f"{cfg.shift_slots_per_week:.0f}",
-              help=f"{cfg.operating_days_per_week}d x {cfg.shifts_per_day} shifts/day")
-    e2.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
+    e1,e2,e3=st.columns(3)
+    e1.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
               help="APC contract shifts — coverage denominator (FTE fraction affects cost only)")
-    e3.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
-              help=f"{cfg.operating_days_per_week} days / {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f}")
-    e4.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
-              help="visits/day / pts-per-APC x FTE-per-slot")
+    e2.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
+              help=f"{cfg.operating_days_per_week} days ÷ {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f} FTE to keep one slot filled every day")
+    e3.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
+              help="visits/day ÷ pts-per-APC × FTE-per-slot — minimum to staff the floor at base volume")
+
+    # Shift scheduling interpreter — translates fractional APC need into practical shift language
+    _shift_h = cfg.shift_hours
+    _peak_apcs = max((mo.demand_providers_per_shift for mo in mos), default=0)
+    _full_shifts = int(_peak_apcs)
+    _partial_hrs = round((_peak_apcs - _full_shifts) * _shift_h)
+    if _partial_hrs > 0:
+        _shift_desc = f"{_full_shifts} full {_shift_h:.0f}h shift{'s' if _full_shifts != 1 else ''} + one {_partial_hrs}h shift"
+    else:
+        _shift_desc = f"{_full_shifts} full {_shift_h:.0f}h shift{'s' if _full_shifts != 1 else ''}"
+    st.info(
+        f"**Peak concurrent need: {_peak_apcs:.2f} APCs on floor** — "
+        f"operationally this is **{_shift_desc}** per day at peak volume "
+        f"({_shift_h:.0f}h shift length).",
+        icon="🕐"
+    )
 
     prov_needed=[mo.demand_providers_per_shift for mo in mos]
     prov_on_floor=[mo.providers_on_floor for mo in mos]
