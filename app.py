@@ -1730,7 +1730,6 @@ with tabs[1]:
       {headline_swb}.
       Zone performance is <strong>{headline_zone}</strong>
       with {headline_capture}.
-      EBITDA: {headline_ebitda}.
     </div>
 
     <div class="memo-section-label">What Your Current Inputs Are Producing</div>
