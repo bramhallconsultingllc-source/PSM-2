@@ -1281,28 +1281,39 @@ with tabs[1]:
         supp_3yr = sum(mo.support_cost   for mo in pol.months)
         avg_swb_actual = (perm_3yr + supp_3yr) / total_visits_3yr if total_visits_3yr > 0 else swb_actual
 
+        _vc = "#0A6B4A" if swb_fav else "#B91C1C"
         if swb_fav and abs(swb_impact_3yr) > 500_000:
-            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
-                         f"${swb_target:.0f} target, staffing costs are running "
-                         f"<strong>${abs(swb_delta):.2f}/visit below budget</strong> — "
-                         f"a <strong>{swb_impact_sign}${abs(swb_impact_3yr)/1e6:.2f}M favorable variance</strong> "
-                         f"({swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr) over the 3-year horizon")
+            swb_prose = (
+                f"At <strong style='color:{_vc}'>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                f"${swb_target:.0f} target, staffing costs are running "
+                f"<strong style='color:{_vc}'>${abs(swb_delta):.2f}/visit below budget</strong> — "
+                f"a <strong style='color:{_vc}'>{swb_impact_sign}${abs(swb_impact_3yr)/1e6:.2f}M "
+                f"favorable variance</strong> "
+                f"(<span style='color:{_vc}'>{swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr</span>) "
+                f"over the 3-year horizon")
         elif swb_fav:
-            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
-                         f"${swb_target:.0f} target, staffing costs are "
-                         f"<strong>${abs(swb_delta):.2f}/visit below budget</strong> — "
-                         f"a {swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr favorable variance")
+            swb_prose = (
+                f"At <strong style='color:{_vc}'>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                f"${swb_target:.0f} target, staffing costs are "
+                f"<strong style='color:{_vc}'>${abs(swb_delta):.2f}/visit below budget</strong> — "
+                f"a <span style='color:{_vc}'>{swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr "
+                f"favorable variance</span>")
         elif abs(swb_impact_3yr) > 300_000:
-            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
-                         f"${swb_target:.0f} target, staffing costs are running "
-                         f"<strong>${abs(swb_delta):.2f}/visit over budget</strong> — "
-                         f"a <strong>−${abs(swb_impact_3yr)/1e6:.2f}M unfavorable variance</strong> "
-                         f"(−${abs(swb_impact_ann)/1e3:.0f}K/yr) that warrants review")
+            swb_prose = (
+                f"At <strong style='color:{_vc}'>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                f"${swb_target:.0f} target, staffing costs are running "
+                f"<strong style='color:{_vc}'>${abs(swb_delta):.2f}/visit over budget</strong> — "
+                f"a <strong style='color:{_vc}'>−${abs(swb_impact_3yr)/1e6:.2f}M "
+                f"unfavorable variance</strong> "
+                f"(<span style='color:{_vc}'>−${abs(swb_impact_ann)/1e3:.0f}K/yr</span>) "
+                f"that warrants review")
         else:
-            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
-                         f"${swb_target:.0f} target, staffing costs are "
-                         f"<strong>${abs(swb_delta):.2f}/visit over budget</strong> — "
-                         f"a −${abs(swb_impact_ann)/1e3:.0f}K/yr unfavorable variance")
+            swb_prose = (
+                f"At <strong style='color:{_vc}'>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                f"${swb_target:.0f} target, staffing costs are "
+                f"<strong style='color:{_vc}'>${abs(swb_delta):.2f}/visit over budget</strong> — "
+                f"a <span style='color:{_vc}'>−${abs(swb_impact_ann)/1e3:.0f}K/yr "
+                f"unfavorable variance</span>")
 
         # EBITDA (supporting context only)
         ebitda_annual = ebitda / 3
