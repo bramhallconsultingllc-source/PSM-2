@@ -721,89 +721,97 @@ k7.metric("EBITDA Impact",    _impact_str,
           delta=_impact_delta,
           delta_color="normal" if _ebitda_impact >= 0 else "inverse")
 
-st.markdown("<div style='height:0.6rem'></div>",unsafe_allow_html=True)
-if s["swb_violation"]:
-    st.error(f"SWB/Visit target exceeded — ${s['annual_swb_per_visit']:.2f} vs ${cfg.swb_target_per_visit:.2f}")
-else:
-    st.success(f"SWB/Visit on target — **${s['annual_swb_per_visit']:.2f}** vs "
-               f"${cfg.swb_target_per_visit:.2f}  |  ~{s['annual_visits']:,.0f} annual visits")
 
 z1,z2,z3,z4,_ = st.columns([1,1,1,1,2])
 z1.metric("Green",  s["green_months"])
 z2.metric("Yellow", s["yellow_months"])
 
-# ── EBITDA waterfall banner + SWB/visit variance row ─────────────────────────
-_es = best.ebitda_summary
+# ── Unified summary card: EBITDA · SWB variance · Marginal ───────────────────
+_es       = best.ebitda_summary
 _elabel_b = "EBITDA CONTRIBUTION FROM STAFFING" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
-_fhtml = (f"  −  <span style='color:#F87171'>Fixed ${_es['fixed']/1e3:.0f}K</span>"
-          if cfg.monthly_fixed_overhead > 0 else "")
+_fhtml    = (f"  <span style='color:#7A8799'>−</span>  <span style='color:#B91C1C'>Fixed ${_es['fixed']/1e3:.0f}K</span>"
+             if cfg.monthly_fixed_overhead > 0 else "")
 
-# SWB/visit variance values (reuses _swb_* from KPI strip above)
 _total_cap_3yr  = sum(mo.visits_captured for mo in best.months)
-_swb_impact_3yr = -_swb_delta_pv * _total_cap_3yr   # positive = $ saved vs budget
+_swb_impact_3yr = -_swb_delta_pv * _total_cap_3yr
 _swb_impact_ann = -_swb_delta_pv * _ann_visits_kpi
 _perm_3yr       = sum(mo.permanent_cost for mo in best.months)
 _supp_3yr       = sum(mo.support_cost   for mo in best.months)
 _apc_pv         = (_perm_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
 _sup_pv         = (_supp_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
-_var_clr        = "#0A6B4A" if _swb_delta_pv <= 0 else "#F87171"
+_var_clr        = "#0A6B4A" if _swb_delta_pv <= 0 else "#B91C1C"
 _var_word       = "favorable" if _swb_delta_pv <= 0 else "unfavorable"
 _var_arrow      = "▼" if _swb_delta_pv <= 0 else "▲"
 _impact_sign    = "+" if _swb_impact_ann >= 0 else "−"
 _impact_abs_ann = abs(_swb_impact_ann)
 _impact_abs_3yr = abs(_swb_impact_3yr)
 
+# Marginal row (gold tint, only if analysis exists)
+_ma_row = ""
+if best.marginal_analysis:
+    ma    = best.marginal_analysis
+    _net  = ma["net_annual"]
+    _mc   = "#0A6B4A" if _net > 0 else "#92600A"
+    _mpay = "never" if ma["payback_months"] == float("inf") else f"{ma['payback_months']:.0f} mo"
+    _ma_row = (
+        f"<div style='border-top:1px solid #E2E8F0;padding:0.4rem 1.2rem 0.45rem;"
+        f"display:flex;align-items:center;gap:1.8rem;flex-wrap:wrap;background:#FDFAED;'>"
+        f"<span style='color:#7A6200;font-size:0.60rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.13em;'>+{ma['delta_fte']:.1f} FTE Marginal</span>"
+        f"<span style='color:#4A5568;font-size:0.76rem'>Saves "
+        f"<b style='color:#B91C1C'>{ma['red_months_saved']}R</b> + "
+        f"<b style='color:#92600A'>{ma['yellow_months_saved']}Y</b> zone-months</span>"
+        f"<span style='color:#4A5568;font-size:0.76rem'>Net annual: "
+        f"<b style='color:{_mc}'>${_net:+,.0f}</b></span>"
+        f"<span style='color:#4A5568;font-size:0.76rem'>Payback: <b>{_mpay}</b></span>"
+        f"</div>"
+    )
+
 st.markdown(
-    f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px 4px 0 0;"
-    f"padding:0.7rem 1.2rem 0.55rem;margin:0.5rem 0 0;font-size:0.82rem;'>"
-    f"<span style='color:#7A8799;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-    f"letter-spacing:0.12em;'>3-YEAR {_elabel_b}</span><br>"
-    f"<span style='color:#003366;font-weight:700'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
-    f"  −  <span style='color:#F87171'>SWB ${_es['swb']/1e6:.2f}M</span>"
-    f"  −  <span style='color:#F87171'>Flex ${_es['flex']/1e3:.0f}K</span>"
-    f"  −  <span style='color:#F87171'>Turnover ${_es['turnover']/1e3:.0f}K</span>"
-    f"  −  <span style='color:#F87171'>Burnout ${_es['burnout']/1e3:.0f}K</span>"
+    f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {NAVY};"
+    f"border-radius:4px;margin:0.5rem 0 0.4rem;overflow:hidden;font-size:0.82rem;'>"
+    # Row 1 — EBITDA waterfall
+    f"<div style='padding:0.6rem 1.2rem 0.55rem;'>"
+    f"<div style='color:#7A8799;font-size:0.60rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.14em;margin-bottom:0.3rem;'>3-Year {_elabel_b}</div>"
+    f"<span style='color:{NAVY};font-weight:600'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
+    f"  <span style='color:#7A8799'>−</span>  "
+    f"<span style='color:#B91C1C'>SWB ${_es['swb']/1e6:.2f}M</span>"
+    f"  <span style='color:#7A8799'>−</span>  "
+    f"<span style='color:#B91C1C'>Flex ${_es['flex']/1e3:.0f}K</span>"
+    f"  <span style='color:#7A8799'>−</span>  "
+    f"<span style='color:#B91C1C'>Turnover ${_es['turnover']/1e3:.0f}K</span>"
+    f"  <span style='color:#7A8799'>−</span>  "
+    f"<span style='color:#B91C1C'>Burnout ${_es['burnout']/1e3:.0f}K</span>"
     f"{_fhtml}"
-    f"  =  <span style='color:#0A6B4A;font-size:1.1rem;font-weight:700'>"
-    f"${_es['ebitda']/1e6:.2f}M</span>"
-    f"  <span style='color:#7A8799;font-size:0.75rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
+    f"  <span style='color:#7A8799'>=</span>  "
+    f"<span style='color:{C_GREEN};font-size:1.05rem;font-weight:700'>${_es['ebitda']/1e6:.2f}M</span>"
+    f"  <span style='color:{MUTED};font-size:0.72rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
     f"</div>"
-    f"<div style='background:#F8FAFC;border:1px solid #E2E8F0;border-top:1px solid #E2E8F0;"
-    f"border-radius:0 0 4px 4px;padding:0.42rem 1.2rem 0.45rem;margin:0 0 0.5rem;"
-    f"display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;'>"
-    f"<span style='color:#7A8799;font-size:0.62rem;font-weight:700;text-transform:uppercase;"
-    f"letter-spacing:0.12em;white-space:nowrap;'>SWB / VISIT VARIANCE</span>"
-    f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
-    f"{_var_arrow} ${abs(_swb_delta_pv):.2f}/visit</span>"
-    f"<span style='color:#7A8799;font-size:0.76rem'>"
-    f"APC ${_apc_pv:.2f} + Support ${_sup_pv:.2f} = "
-    f"<strong style='color:#0F1923'>${_swb_actual:.2f}</strong>"
-    f" vs target ${_swb_target:.2f}</span>"
-    f"<span style='color:#7A8799;font-size:0.76rem'>→</span>"
-    f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
+    # Row 2 — SWB variance
+    f"<div style='border-top:1px solid #E2E8F0;padding:0.4rem 1.2rem 0.45rem;"
+    f"display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;background:#F8FAFC;'>"
+    f"<span style='color:{MUTED};font-size:0.60rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.13em;white-space:nowrap;'>SWB / Visit</span>"
+    f"<span style='color:{_var_clr};font-weight:700;font-size:0.85rem'>"
+    f"{_var_arrow} ${abs(_swb_delta_pv):.2f}/visit</span>"
+    f"<span style='color:{SLATE};font-size:0.76rem'>"
+    f"APC ${_apc_pv:.2f} + Support ${_sup_pv:.2f} = "
+    f"<b style='color:{INK}'>${_swb_actual:.2f}</b> vs target ${_swb_target:.2f}</span>"
+    f"<span style='color:{MUTED}'>→</span>"
+    f"<span style='color:{_var_clr};font-weight:700;font-size:0.85rem'>"
     f"{_impact_sign}${_impact_abs_ann/1e3:.0f}K/yr</span>"
-    f"<span style='color:#7A8799;font-size:0.74rem'>"
-    f"({_var_word}, {_impact_sign}${_impact_abs_3yr/1e3:.0f}K over 3 yrs)</span>"
+    f"<span style='color:{MUTED};font-size:0.72rem'>"
+    f"({_var_word}, {_impact_sign}${_impact_abs_3yr/1e3:.0f}K over 3 yrs)</span>"
+    f"</div>"
+    # Row 3 — Marginal (gold, conditional)
+    f"{_ma_row}"
     f"</div>",
     unsafe_allow_html=True
 )
 z3.metric("Red",    s["red_months"])
 _oa = s.get("total_overload_attrition", 0)
 z4.metric("Overload Attrition", f"{_oa:.1f} FTE")
-
-# Marginal APC callout banner
-if best.marginal_analysis:
-    ma = best.marginal_analysis
-    _net = ma["net_annual"]
-    _clr = C_GREEN if _net > 0 else C_YELLOW
-    st.markdown(
-        f"<div style='background:#F0FDF4;border-left:3px solid {_clr};"
-        f"padding:0.7rem 1rem;border-radius:0 3px 3px 0;margin-bottom:1rem;font-size:0.82rem;'>"
-        f"<b>+{ma['delta_fte']:.1f} FTE marginal:</b> &nbsp;"
-        f"Saves <b>{ma['red_months_saved']}R + {ma['yellow_months_saved']}Y</b> months  |  "
-        f"Net annual: <b style='color:{_clr}'>${_net:+,.0f}</b>  |  "
-        f"Payback: <b>{'never' if ma['payback_months']==float('inf') else f"{ma['payback_months']:.0f} mo"}</b>"
-        f"</div>", unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.75rem'></div>",unsafe_allow_html=True)
 st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor),
