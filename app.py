@@ -25,28 +25,33 @@ from simulation import (ClinicConfig, SupportStaffConfig, simulate_policy,
 # ══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM
 # ══════════════════════════════════════════════════════════════════════════════
-INK      = "#0D1B2A"
-NAVY     = "#1A3A5C"
-NAVY_LT  = "#2E5F8A"
-SLATE    = "#5B6E82"
-RULE     = "#DDE3EA"
-CANVAS   = "#F8F9FB"
-C_DEMAND = "#1A3A5C"
+INK      = "#0F1923"
+NAVY     = "#003366"
+NAVY_MID = "#1A4D7A"
+SLATE    = "#4A5568"
+MUTED    = "#7A8799"
+RULE     = "#E2E8F0"
+RULE_LT  = "#F1F5F9"
+CANVAS   = "#FFFFFF"
+SURFACE  = "#F8FAFC"
+C_DEMAND = "#003366"
 C_ACTUAL = "#C84B11"
-C_BARS   = "#B8C9D9"
-C_GREEN  = "#0A7554"
-C_YELLOW = "#9A6400"
+C_BARS   = "#C5D4E3"
+C_GREEN  = "#0A6B4A"
+C_YELLOW = "#92600A"
 C_RED    = "#B91C1C"
-C_STRESS = "#7C3AED"
+C_STRESS = "#6D28D9"
+C_GOLD   = "#7A6200"          # Sunshine Gold — logo accent
+C_GOLD_BG= "#FDFAED"          # Gold wash for backgrounds
 
-Q_COLORS       = [NAVY, C_GREEN, C_YELLOW, NAVY_LT]
+Q_COLORS       = [NAVY, C_GREEN, C_YELLOW, NAVY_MID]
 Q_BG           = ["rgba(26,58,92,0.05)","rgba(10,117,84,0.04)",
                    "rgba(154,100,0,0.04)","rgba(46,95,138,0.05)"]
 Q_MONTH_GROUPS = [[0,1,2],[3,4,5],[6,7,8],[9,10,11]]
 
 HIRE_COLORS = {
     "growth":            NAVY,
-    "attrition_replace": NAVY_LT,
+    "attrition_replace": NAVY_MID,
     "winter_ramp":       C_GREEN,
     "floor_protect":     C_YELLOW,
     "shed_pause":        C_YELLOW,
@@ -62,17 +67,17 @@ MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
 def mk_layout(**kw):
     base = dict(
         template="plotly_white", paper_bgcolor="white", plot_bgcolor="white",
-        font=dict(family="'IBM Plex Sans', sans-serif", size=11, color=SLATE),
-        title_font=dict(family="'Playfair Display', serif", size=14, color=INK),
+        font=dict(family="'DM Sans', sans-serif", size=11, color=SLATE),
+        title_font=dict(family="'EB Garamond', Georgia, serif", size=14, color=INK),
         margin=dict(t=52, b=60, l=56, r=48),
         legend=dict(orientation="h", y=-0.22, x=0,
-                    font=dict(size=11, color=SLATE),
+                    font=dict(size=11, color=MUTED),
                     bgcolor="rgba(0,0,0,0)", borderwidth=0),
         xaxis=dict(showgrid=False, zeroline=False,
-                   tickfont=dict(size=11, color=SLATE),
+                   tickfont=dict(size=11, color=MUTED),
                    linecolor=RULE, linewidth=1, ticks="outside", ticklen=4),
-        yaxis=dict(showgrid=True, gridcolor=RULE, gridwidth=1,
-                   zeroline=False, tickfont=dict(size=11, color=SLATE),
+        yaxis=dict(showgrid=True, gridcolor=RULE_LT, gridwidth=1,
+                   zeroline=False, tickfont=dict(size=11, color=MUTED),
                    linecolor=RULE, linewidth=1),
     )
     base.update(kw)
@@ -92,81 +97,232 @@ st.set_page_config(page_title="PSM — Staffing Optimizer", page_icon="📊",
 
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
-html, body, [class*="css"] {{ font-family: 'IBM Plex Sans', sans-serif; background-color: {CANVAS}; color: {SLATE}; }}
-[data-testid="stSidebar"] {{ background: {INK} !important; border-right: none; }}
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+/* ── BASE ─────────────────────────────────────────────────────── */
+html, body, [class*="css"] {{
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background-color: {SURFACE};
+    color: {INK};
+}}
+
+/* ── SIDEBAR ──────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {{
+    background: {CANVAS} !important;
+    border-right: 1px solid {RULE} !important;
+}}
 [data-testid="stSidebar"] > div {{ padding-top: 0 !important; }}
-[data-testid="stSidebar"] * {{ color: #C8D8E8 !important; }}
+[data-testid="stSidebar"] * {{ color: {SLATE} !important; }}
+
+/* Sidebar tooltip icons */
 [data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"],
-[data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"] svg,
-[data-testid="stSidebar"] button[data-testid="tooltipHoverTarget"] path,
-[data-testid="stSidebar"] .stTooltipIcon,
 [data-testid="stSidebar"] .stTooltipIcon svg {{
-    color: #7AAFD4 !important;
-    fill: #7AAFD4 !important;
-    opacity: 1 !important; }}
+    color: {MUTED} !important;
+    fill: {MUTED} !important;
+    opacity: 1 !important;
+}}
+
+/* Sidebar inputs */
 [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {{
-    background: #E8F0F8 !important;
-    border: 1px solid #4A7A9B !important;
-    color: #0D1B2A !important;
-    -webkit-text-fill-color: #0D1B2A !important;
+    background: {SURFACE} !important;
+    border: 1px solid {RULE} !important;
+    color: {INK} !important;
+    -webkit-text-fill-color: {INK} !important;
     border-radius: 3px;
-    font-size: 0.95rem !important;
-    font-weight: 600 !important; }}
-[data-testid="stSidebar"] input::placeholder {{
-    color: #7A9AB8 !important;
-    -webkit-text-fill-color: #7A9AB8 !important; }}
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
+}}
 [data-testid="stSidebar"] input:focus, [data-testid="stSidebar"] select:focus {{
-    background: #F0F6FF !important;
-    border-color: #1A3A5C !important;
-    color: #0D1B2A !important;
-    -webkit-text-fill-color: #0D1B2A !important;
-    outline: none !important; }}
+    background: {CANVAS} !important;
+    border-color: {NAVY} !important;
+    outline: none !important;
+}}
 [data-testid="stSidebar"] [data-baseweb="input"],
 [data-testid="stSidebar"] [data-baseweb="base-input"],
 [data-testid="stSidebar"] [data-baseweb="input"] > div,
 [data-testid="stSidebar"] [data-baseweb="base-input"] > div {{
-    background: #E8F0F8 !important; }}
+    background: {SURFACE} !important;
+}}
 [data-testid="stSidebar"] [data-baseweb="input"] input,
 [data-testid="stSidebar"] [data-baseweb="base-input"] input,
 [data-testid="stSidebar"] [data-testid="stNumberInput"] input,
 [data-testid="stSidebar"] div[class*="InputContainer"] input,
 [data-testid="stSidebar"] div[class*="stNumberInput"] input {{
-    background: #E8F0F8 !important;
-    color: #0D1B2A !important;
-    -webkit-text-fill-color: #0D1B2A !important;
-    font-weight: 600 !important; }}
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] .stExpander summary p {{
-    font-size: 0.68rem !important; font-weight: 600 !important; text-transform: uppercase !important;
-    letter-spacing: 0.10em !important; color: #8FAABB !important; }}
+    background: {SURFACE} !important;
+    color: {INK} !important;
+    -webkit-text-fill-color: {INK} !important;
+    font-weight: 500 !important;
+}}
+
+/* Sidebar labels */
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stExpander summary p {{
+    font-size: 0.67rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.11em !important;
+    color: {MUTED} !important;
+}}
+
+/* Sidebar expander headers — gold underline accent */
+[data-testid="stSidebar"] .stExpander {{
+    border: none !important;
+    border-bottom: 1px solid {RULE} !important;
+}}
+[data-testid="stSidebar"] .stExpander summary {{
+    padding: 0.65rem 0 !important;
+    border-bottom: 2px solid {C_GOLD} !important;
+}}
+
+/* Run button */
 [data-testid="stSidebar"] .stButton > button {{
-    background: {C_ACTUAL} !important; color: white !important; border: none; border-radius: 3px;
-    font-size: 0.78rem !important; font-weight: 600 !important; letter-spacing: 0.12em !important;
-    text-transform: uppercase; padding: 0.65rem 1rem !important; }}
-[data-testid="stSidebar"] .stButton > button:hover {{ background: #A53C0D !important; }}
-.main .block-container {{ background: {CANVAS}; padding: 2rem 2.5rem 3rem; max-width: 1440px; }}
-h1 {{ font-family: 'Playfair Display', serif !important; font-size: 2.0rem !important;
-      font-weight: 700 !important; color: {INK} !important; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 0 !important; }}
-h2 {{ font-family: 'IBM Plex Sans', sans-serif !important; font-size: 0.65rem !important;
-      font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.16em !important;
-      color: {SLATE} !important; border: none !important; margin-top: 1.8rem !important; margin-bottom: 0.75rem !important; }}
-[data-testid="stMetric"] {{ background: white; border: 1px solid {RULE}; border-top: 3px solid {NAVY};
-    border-radius: 3px; padding: 1rem 1.25rem 0.85rem !important; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }}
-[data-testid="stMetricLabel"] p {{ font-size: 0.65rem !important; font-weight: 600 !important;
-    text-transform: uppercase !important; letter-spacing: 0.12em !important; color: {SLATE} !important; }}
-[data-testid="stMetricValue"] {{ font-family: 'Playfair Display', serif !important; font-size: 1.75rem !important;
-    font-weight: 700 !important; color: {INK} !important; line-height: 1.1 !important; }}
-.stTabs [data-baseweb="tab-list"] {{ border-bottom: 1px solid {RULE}; gap: 0; background: transparent; }}
-.stTabs [data-baseweb="tab"] {{ font-size: 0.72rem !important; font-weight: 500 !important;
-    text-transform: uppercase !important; letter-spacing: 0.10em !important;
-    color: {SLATE} !important; padding: 0.7rem 1.2rem !important; border: none !important;
-    border-bottom: 2px solid transparent !important; margin-bottom: -1px; background: transparent !important; }}
-.stTabs [aria-selected="true"] {{ color: {INK} !important; border-bottom: 2px solid {NAVY} !important; font-weight: 600 !important; }}
-[data-testid="stSuccess"] {{ background: #F0FDF6; border-left: 3px solid {C_GREEN}; font-size: 0.84rem; color: #064E3B; }}
-[data-testid="stError"]   {{ background: #FFF5F5; border-left: 3px solid {C_RED};   font-size: 0.84rem; }}
-[data-testid="stInfo"]    {{ background: #EFF6FF; border-left: 3px solid {NAVY};    font-size: 0.84rem; }}
-[data-testid="stWarning"] {{ background: #FFFBEB; border-left: 3px solid {C_YELLOW};font-size: 0.84rem; }}
+    background: {NAVY} !important;
+    color: white !important;
+    border: none;
+    border-radius: 3px;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.14em !important;
+    text-transform: uppercase;
+    padding: 0.7rem 1rem !important;
+    width: 100% !important;
+}}
+[data-testid="stSidebar"] .stButton > button:hover {{
+    background: {NAVY_MID} !important;
+}}
+
+/* ── MAIN AREA ─────────────────────────────────────────────────── */
+.main .block-container {{
+    background: {SURFACE};
+    padding: 2rem 2.5rem 3rem;
+    max-width: 1440px;
+}}
+
+/* ── TYPOGRAPHY ───────────────────────────────────────────────── */
+h1 {{
+    font-family: 'EB Garamond', Georgia, serif !important;
+    font-size: 1.9rem !important;
+    font-weight: 500 !important;
+    color: {INK} !important;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin-bottom: 0 !important;
+}}
+h2 {{
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.63rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.18em !important;
+    color: {MUTED} !important;
+    border: none !important;
+    border-bottom: 1px solid {RULE} !important;
+    padding-bottom: 0.4rem !important;
+    margin-top: 2rem !important;
+    margin-bottom: 0.85rem !important;
+}}
+
+/* ── METRICS ──────────────────────────────────────────────────── */
+[data-testid="stMetric"] {{
+    background: {CANVAS};
+    border: 1px solid {RULE};
+    border-top: 3px solid {NAVY};
+    border-radius: 3px;
+    padding: 1rem 1.25rem 0.85rem !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}}
+[data-testid="stMetricLabel"] p {{
+    font-size: 0.63rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.13em !important;
+    color: {MUTED} !important;
+}}
+[data-testid="stMetricValue"] {{
+    font-family: 'EB Garamond', Georgia, serif !important;
+    font-size: 1.8rem !important;
+    font-weight: 500 !important;
+    color: {INK} !important;
+    line-height: 1.1 !important;
+}}
+[data-testid="stMetricDelta"] {{
+    font-size: 0.72rem !important;
+}}
+
+/* ── TABS ─────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {{
+    border-bottom: 1px solid {RULE};
+    gap: 0;
+    background: transparent;
+}}
+.stTabs [data-baseweb="tab"] {{
+    font-size: 0.70rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.11em !important;
+    color: {MUTED} !important;
+    padding: 0.7rem 1.2rem !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    margin-bottom: -1px;
+    background: transparent !important;
+}}
+.stTabs [aria-selected="true"] {{
+    color: {INK} !important;
+    border-bottom: 2px solid {C_GOLD} !important;
+    font-weight: 600 !important;
+}}
+
+/* ── ALERTS ───────────────────────────────────────────────────── */
+[data-testid="stSuccess"] {{
+    background: #F0FDF6;
+    border-left: 3px solid {C_GREEN};
+    font-size: 0.84rem;
+    color: #064E3B;
+}}
+[data-testid="stError"] {{
+    background: #FEF2F2;
+    border-left: 3px solid {C_RED};
+    font-size: 0.84rem;
+}}
+[data-testid="stInfo"] {{
+    background: {C_GOLD_BG};
+    border-left: 3px solid {C_GOLD};
+    font-size: 0.84rem;
+    color: #4A3800;
+}}
+[data-testid="stWarning"] {{
+    background: #FFFBEB;
+    border-left: 3px solid {C_YELLOW};
+    font-size: 0.84rem;
+}}
+
+/* ── DIVIDERS ─────────────────────────────────────────────────── */
 hr {{ border-color: {RULE} !important; }}
+
+/* ── DATAFRAME ────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {{
+    border: 1px solid {RULE};
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}}
+
+/* ── DOWNLOAD BUTTON ──────────────────────────────────────────── */
+[data-testid="stDownloadButton"] > button {{
+    background: transparent !important;
+    border: 1px solid {RULE} !important;
+    color: {SLATE} !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.10em !important;
+    text-transform: uppercase;
+    border-radius: 3px;
+    padding: 0.45rem 0.9rem !important;
+}}
+[data-testid="stDownloadButton"] > button:hover {{
+    border-color: {C_GOLD} !important;
+    color: {C_GOLD} !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -182,9 +338,10 @@ for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_poli
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown(f"""
-    <div style='padding:1.6rem 1.2rem 1.2rem;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:0.8rem;'>
-      <div style='font-size:0.6rem;font-weight:600;text-transform:uppercase;letter-spacing:0.18em;color:#4A6178;margin-bottom:0.35rem;'>Permanent Staffing Model</div>
-      <div style='font-family:"Playfair Display",serif;font-size:1.3rem;font-weight:700;color:#E2EBF3;line-height:1.2;'>Staffing Optimizer</div>
+    <div style='padding:1.4rem 1.1rem 1.1rem;border-bottom:2px solid {C_GOLD};margin-bottom:0.5rem;background:{CANVAS};'>
+      <div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.20em;color:{MUTED};margin-bottom:0.4rem;'>Permanent Staffing Model</div>
+      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.25rem;font-weight:500;color:{INK};line-height:1.2;letter-spacing:-0.01em;'>Staffing Optimizer</div>
+      <div style='margin-top:6px;width:28px;height:2px;background:{C_GOLD};border-radius:1px;'></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -267,7 +424,7 @@ with st.sidebar:
 
         # ── 1. Comp multipliers ───────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
-                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
                     "COMPENSATION MULTIPLIERS</div>", unsafe_allow_html=True)
         sm1,sm2,sm3=st.columns(3)
         with sm1: benefits_load = st.number_input("Benefits %", 0.0, 60.0, 30.0, 1.0,
@@ -281,7 +438,7 @@ with st.sidebar:
 
         # ── 2. Hourly rates ───────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
-                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
                     "HOURLY RATES  (base, before multiplier)</div>", unsafe_allow_html=True)
         r1,r2 = st.columns(2)
         with r1: phys_rate = st.number_input("Physician ($/hr)",  50.0, 300.0, 135.79, 1.0)
@@ -295,7 +452,7 @@ with st.sidebar:
 
         # ── 3. Staffing ratios ────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
-                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
                     "STAFFING RATIOS  (per APC on floor)</div>", unsafe_allow_html=True)
         ra1,ra2 = st.columns(2)
         with ra1: ma_ratio  = st.number_input("MA per APC", 0.0, 4.0, 1.0, 0.25,
@@ -307,7 +464,7 @@ with st.sidebar:
 
         # ── 4. Supervision ────────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
-                    "letter-spacing:0.12em;color:#6A8FAA;padding:0.5rem 0 0.25rem;'>"
+                    "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
                     "SUPERVISION  (cost added only when hrs > 0)</div>", unsafe_allow_html=True)
         sv1,sv2 = st.columns(2)
         with sv1: phys_sup_hrs  = st.number_input("Physician sup (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
@@ -512,9 +669,9 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
 
     fig.update_layout(
         height=580, template="plotly_white", paper_bgcolor="white", plot_bgcolor="white", barmode="stack",
-        font=dict(family="'IBM Plex Sans', sans-serif",size=11,color=SLATE),
+        font=dict(family="'DM Sans', system-ui, sans-serif",size=11,color=SLATE),
         title=dict(text=title or "Annual Demand & Staffing Model - Year 1",
-                   font=dict(family="'Playfair Display', serif",size=15,color=INK),x=0,xanchor="left"),
+                   font=dict(family="'EB Garamond', Georgia, serif",size=15,color=INK),x=0,xanchor="left"),
         margin=dict(t=60,b=80,l=60,r=140),
         legend=dict(orientation="h",y=-0.16,x=0,font=dict(size=11,color=SLATE),
                     bgcolor="rgba(0,0,0,0)",borderwidth=0,itemsizing="constant"),
@@ -589,7 +746,7 @@ _perm_3yr       = sum(mo.permanent_cost for mo in best.months)
 _supp_3yr       = sum(mo.support_cost   for mo in best.months)
 _apc_pv         = (_perm_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
 _sup_pv         = (_supp_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
-_var_clr        = "#4ADE80" if _swb_delta_pv <= 0 else "#F87171"
+_var_clr        = "#0A6B4A" if _swb_delta_pv <= 0 else "#F87171"
 _var_word       = "favorable" if _swb_delta_pv <= 0 else "unfavorable"
 _var_arrow      = "▼" if _swb_delta_pv <= 0 else "▲"
 _impact_sign    = "+" if _swb_impact_ann >= 0 else "−"
@@ -597,35 +754,35 @@ _impact_abs_ann = abs(_swb_impact_ann)
 _impact_abs_3yr = abs(_swb_impact_3yr)
 
 st.markdown(
-    f"<div style='background:#0D1B2A;border:1px solid #1A3A5C;border-radius:4px 4px 0 0;"
+    f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px 4px 0 0;"
     f"padding:0.7rem 1.2rem 0.55rem;margin:0.5rem 0 0;font-size:0.82rem;'>"
-    f"<span style='color:#6A8FAA;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+    f"<span style='color:#7A8799;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
     f"letter-spacing:0.12em;'>3-YEAR {_elabel_b}</span><br>"
-    f"<span style='color:#4ADE80;font-weight:700'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
+    f"<span style='color:#003366;font-weight:700'>Revenue ${_es['revenue']/1e6:.2f}M</span>"
     f"  −  <span style='color:#F87171'>SWB ${_es['swb']/1e6:.2f}M</span>"
     f"  −  <span style='color:#F87171'>Flex ${_es['flex']/1e3:.0f}K</span>"
     f"  −  <span style='color:#F87171'>Turnover ${_es['turnover']/1e3:.0f}K</span>"
     f"  −  <span style='color:#F87171'>Burnout ${_es['burnout']/1e3:.0f}K</span>"
     f"{_fhtml}"
-    f"  =  <span style='color:#4ADE80;font-size:1.1rem;font-weight:700'>"
+    f"  =  <span style='color:#0A6B4A;font-size:1.1rem;font-weight:700'>"
     f"${_es['ebitda']/1e6:.2f}M</span>"
-    f"  <span style='color:#6A8FAA;font-size:0.75rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
+    f"  <span style='color:#7A8799;font-size:0.75rem'>({_es['capture_rate']*100:.1f}% visit capture)</span>"
     f"</div>"
-    f"<div style='background:#091623;border:1px solid #1A3A5C;border-top:1px solid #0F2A40;"
+    f"<div style='background:#F8FAFC;border:1px solid #E2E8F0;border-top:1px solid #E2E8F0;"
     f"border-radius:0 0 4px 4px;padding:0.42rem 1.2rem 0.45rem;margin:0 0 0.5rem;"
     f"display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;'>"
-    f"<span style='color:#6A8FAA;font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+    f"<span style='color:#7A8799;font-size:0.62rem;font-weight:700;text-transform:uppercase;"
     f"letter-spacing:0.12em;white-space:nowrap;'>SWB / VISIT VARIANCE</span>"
     f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
     f"{_var_arrow} ${abs(_swb_delta_pv):.2f}/visit</span>"
-    f"<span style='color:#6A8FAA;font-size:0.76rem'>"
+    f"<span style='color:#7A8799;font-size:0.76rem'>"
     f"APC ${_apc_pv:.2f} + Support ${_sup_pv:.2f} = "
-    f"<strong style='color:#CBD5E1'>${_swb_actual:.2f}</strong>"
+    f"<strong style='color:#0F1923'>${_swb_actual:.2f}</strong>"
     f" vs target ${_swb_target:.2f}</span>"
-    f"<span style='color:#6A8FAA;font-size:0.76rem'>→</span>"
+    f"<span style='color:#7A8799;font-size:0.76rem'>→</span>"
     f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
     f"{_impact_sign}${_impact_abs_ann/1e3:.0f}K/yr</span>"
-    f"<span style='color:#6A8FAA;font-size:0.74rem'>"
+    f"<span style='color:#7A8799;font-size:0.74rem'>"
     f"({_var_word}, {_impact_sign}${_impact_abs_3yr/1e3:.0f}K over 3 yrs)</span>"
     f"</div>",
     unsafe_allow_html=True
@@ -654,7 +811,7 @@ st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_vis
 
 # Hiring mode legend
 hm_map = {
-    "growth":("Growth hire",NAVY), "attrition_replace":("Attrition backfill",NAVY_LT),
+    "growth":("Growth hire",NAVY), "attrition_replace":("Attrition backfill",NAVY_MID),
     "winter_ramp":("Winter ramp",C_GREEN), "shed_pause":("Q3 shed pause",C_YELLOW),
     "shed_passive":("Passive shed",C_YELLOW), "freeze_flu":("Flu freeze",SLATE),
 }
@@ -725,8 +882,8 @@ with tabs[0]:
             })
 
     # ── Colour helpers ────────────────────────────────────────────────────────
-    ZONE_BG   = {"Green": "#0A2818", "Yellow": "#1F1A00", "Red": "#2A0A0A"}
-    ZONE_PILL = {"Green": ("#4ADE80","#0A2818"), "Yellow": ("#FCD34D","#1A1600"), "Red": ("#F87171","#2A0A0A")}
+    ZONE_BG   = {"Green": "#ECFDF5", "Yellow": "#FFFBEB", "Red": "#FEF2F2"}
+    ZONE_PILL = {"Green": ("#0A6B4A","#ECFDF5"), "Yellow": ("#92600A","#FFFBEB"), "Red": ("#B91C1C","#FEF2F2")}
 
     # ── Clinic summary header values ──────────────────────────────────────────
     _total_fte_avg = sum(r["total_fte"] for r in rows) / len(rows) if rows else 0
@@ -758,16 +915,16 @@ with tabs[0]:
                      f"border-radius:3px;letter-spacing:0.06em'>{r['zone'].upper()}</span>")
 
         yr_cell  = (f"<td rowspan='4' style='border-right:1px solid #1E3A52;"
-                    f"color:#4ADE80;font-weight:700;font-size:0.9rem;"
+                    f"color:#003366;font-weight:700;font-size:0.9rem;"
                     f"text-align:center;vertical-align:middle;white-space:nowrap;"
                     f"padding:0 0.9rem'>{yr_label}</td>") if yr_label else ""
 
         _rows_html += f"""
         <tr style='border-bottom:1px solid #132333;'>
           {yr_cell}
-          <td style='padding:0.55rem 0.7rem;color:#CBD5E1;font-size:0.8rem'>{q_label}</td>
+          <td style='padding:0.55rem 0.7rem;color:#0F1923;font-size:0.8rem'>{q_label}</td>
           <td style='padding:0.55rem 0.5rem;text-align:center'>{zone_pill}</td>
-          <td style='padding:0.55rem 0.5rem;text-align:right;color:#94A3B8;font-size:0.78rem'>{_fmt(r['vpd'],1)}</td>
+          <td style='padding:0.55rem 0.5rem;text-align:right;color:#4A5568;font-size:0.78rem'>{_fmt(r['vpd'],1)}</td>
           <td class='spd' style='text-align:right'>{_fmt(r['apc_day'])}</td>
           <td class='spd' style='text-align:right'>{_fmt(r['ma_day'])}</td>
           <td class='spd' style='text-align:right'>{_fmt(r['psr_day'])}</td>
@@ -776,7 +933,7 @@ with tabs[0]:
           <td class='fte' style='text-align:right'>{_fmt(r['ma_fte'])}</td>
           <td class='fte' style='text-align:right'>{_fmt(r['psr_fte'])}</td>
           <td class='fte' style='text-align:right'>{_fmt(r['rt_fte'])}</td>
-          <td style='text-align:right;color:#4ADE80;font-weight:700;font-size:0.82rem;padding:0.55rem 0.7rem'>{_fmt(r['total_fte'])}</td>
+          <td style='text-align:right;color:#003366;font-weight:700;font-size:0.82rem;padding:0.55rem 0.7rem'>{_fmt(r['total_fte'])}</td>
         </tr>"""
 
     _table_html = f"""
@@ -785,13 +942,13 @@ with tabs[0]:
 <head>
 <meta charset="utf-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
 
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
-    background: #060F18;
-    color: #CBD5E1;
-    font-family: 'IBM Plex Sans', sans-serif;
+    background: #FFFFFF;
+    color: #0F1923;
+    font-family: 'DM Sans', system-ui, sans-serif;
     padding: 1.5rem 2rem;
   }}
 
@@ -800,37 +957,39 @@ with tabs[0]:
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    border-bottom: 2px solid #1A3A5C;
+    border-bottom: 2px solid #003366;
     padding-bottom: 0.8rem;
     margin-bottom: 1.4rem;
   }}
   .doc-title {{
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #E2EAF0;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 1.2rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: #0F1923;
   }}
   .doc-sub {{
-    font-size: 0.7rem;
-    color: #6A8FAA;
-    letter-spacing: 0.1em;
-    margin-top: 0.25rem;
+    font-size: 0.68rem;
+    color: #7A8799;
+    letter-spacing: 0.06em;
+    margin-top: 0.3rem;
   }}
   .doc-meta {{
     text-align: right;
     font-size: 0.68rem;
-    color: #4A6A82;
-    font-family: 'IBM Plex Mono', monospace;
+    color: #7A8799;
+    line-height: 1.7;
   }}
+  .doc-meta strong {{ color: #4A5568; }}
 
   /* ── Config strip ── */
   .config-strip {{
     display: flex;
     gap: 2rem;
-    background: #0A1A28;
-    border: 1px solid #1A3A5C;
-    border-radius: 4px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-left: 3px solid #7A6200;
+    border-radius: 3px;
     padding: 0.6rem 1.1rem;
     margin-bottom: 1.2rem;
     flex-wrap: wrap;
@@ -841,17 +1000,17 @@ with tabs[0]:
     gap: 2px;
   }}
   .cfg-label {{
-    font-size: 0.58rem;
+    font-size: 0.57rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #4A6A82;
-    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: #7A8799;
+    font-weight: 700;
   }}
   .cfg-value {{
-    font-size: 0.82rem;
+    font-size: 0.84rem;
     font-weight: 600;
-    color: #CBD5E1;
-    font-family: 'IBM Plex Mono', monospace;
+    color: #0F1923;
+    font-variant-numeric: tabular-nums;
   }}
 
   /* ── Table ── */
@@ -860,57 +1019,61 @@ with tabs[0]:
     border-collapse: collapse;
     font-size: 0.78rem;
   }}
-  thead tr {{
-    background: #091623;
-    border-bottom: 2px solid #1A3A5C;
+  thead tr:first-child {{
+    background: #FFFFFF;
+    border-bottom: 2px solid #0F1923;
+  }}
+  thead tr:last-child {{
+    background: #F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
   }}
   /* Section headers */
   .th-group {{
-    font-size: 0.6rem;
+    font-size: 0.58rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #4A6A82;
+    letter-spacing: 0.14em;
+    color: #7A8799;
     padding: 0.3rem 0.5rem 0.1rem;
     text-align: center;
   }}
-  .th-group-spd {{ color: #60A5FA; border-bottom: 1px solid #1A3A5C; }}
-  .th-group-fte {{ color: #A78BFA; border-bottom: 1px solid #2A1A5C; }}
+  .th-group-spd {{ color: #003366; border-bottom: 2px solid #003366; }}
+  .th-group-fte {{ color: #7A6200; border-bottom: 2px solid #7A6200; }}
   th {{
     padding: 0.35rem 0.5rem;
-    font-size: 0.66rem;
-    font-weight: 600;
+    font-size: 0.64rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.09em;
     white-space: nowrap;
-    color: #6A8FAA;
+    color: #7A8799;
+    background: #F8FAFC;
   }}
-  th.spd {{ color: #93C5FD; }}
-  th.fte {{ color: #C4B5FD; }}
-  tr:nth-child(4n+1) td, tr:nth-child(4n+2) td,
-  tr:nth-child(4n+3) td, tr:nth-child(4n+4) td {{
-    background: transparent;
-  }}
-  tbody tr:hover td {{ background: rgba(74,110,138,0.07); }}
-  td.spd {{ color: #93C5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
-  td.fte {{ color: #C4B5FD; font-family: 'IBM Plex Mono', monospace; font-size: 0.77rem; }}
+  th.spd {{ color: #003366; }}
+  th.fte {{ color: #7A6200; }}
+  tbody tr {{ border-bottom: 1px solid #F1F5F9; }}
+  tbody tr:hover td {{ background: #F8FAFC; }}
+  td {{ padding: 0.42rem 0.5rem; color: #4A5568; }}
+  td.spd {{ color: #003366; font-variant-numeric: tabular-nums; font-size: 0.78rem; font-weight: 500; }}
+  td.fte {{ color: #7A6200; font-variant-numeric: tabular-nums; font-size: 0.78rem; font-weight: 500; }}
 
   /* Year separators */
-  tr.yr-sep td {{ border-top: 2px solid #1A3A5C; }}
+  tr.yr-sep td {{ border-top: 2px solid #E2E8F0; }}
 
   /* ── Footnotes ── */
   .footnotes {{
     margin-top: 1rem;
-    font-size: 0.65rem;
-    color: #4A6A82;
-    border-top: 1px solid #1A3A5C;
-    padding-top: 0.6rem;
+    font-size: 0.64rem;
+    color: #7A8799;
+    border-top: 1px solid #E2E8F0;
+    padding-top: 0.65rem;
     display: flex;
     gap: 1.5rem;
     flex-wrap: wrap;
+    line-height: 1.5;
   }}
   .fn-item {{ display: flex; gap: 0.3rem; }}
-  .fn-key {{ color: #60A5FA; font-weight: 600; }}
+  .fn-key {{ color: #003366; font-weight: 700; }}
 
   /* ── Print styles ── */
   @media print {{
@@ -974,10 +1137,10 @@ with tabs[0]:
       <th rowspan="2" style="text-align:left;padding-left:0.7rem">Year</th>
       <th rowspan="2" style="text-align:left">Quarter</th>
       <th rowspan="2">Zone</th>
-      <th rowspan="2" style="text-align:right;color:#6A8FAA">Visits/Day</th>
+      <th rowspan="2" style="text-align:right;color:#7A8799">Visits/Day</th>
       <th colspan="4" class="th-group th-group-spd">Staff per Day (Concurrent)</th>
       <th colspan="4" class="th-group th-group-fte">FTE Required</th>
-      <th rowspan="2" style="text-align:right;padding-right:0.7rem;color:#4ADE80">Total FTE</th>
+      <th rowspan="2" style="text-align:right;padding-right:0.7rem;color:#7A6200;font-weight:700">Total FTE</th>
     </tr>
     <tr>
       <th class="spd" style="text-align:right">Provider</th>
@@ -1011,8 +1174,8 @@ with tabs[0]:
     st.markdown(
         f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
         f"Quarterly averages · recommended policy · all roles · "
-        f"<strong style='color:#CBD5E1'>Staff/Day</strong> = concurrent positions on floor · "
-        f"<strong style='color:#CBD5E1'>FTE</strong> = headcount to sustain that coverage</p>",
+        f"<strong style='color:#0F1923'>Staff/Day</strong> = concurrent positions on floor · "
+        f"<strong style='color:#0F1923'>FTE</strong> = headcount to sustain that coverage</p>",
         unsafe_allow_html=True
     )
 
@@ -1020,7 +1183,7 @@ with tabs[0]:
     _pb_col, _ = st.columns([1, 5])
     _pb_col.markdown(
         "<button onclick='window.print()' style='"
-        "background:#0D1B2A;border:1px solid #1A3A5C;color:#CBD5E1;"
+        "background:#F8FAFC;border:1px solid #E2E8F0;border-left:3px solid #7A6200;color:#0F1923;padding:0.7rem 1rem;"
         "font-size:0.75rem;padding:0.35rem 0.9rem;border-radius:3px;"
         "cursor:pointer;letter-spacing:0.06em;font-family:inherit;"
         "'>🖨 Print / Save PDF</button>",
@@ -1304,8 +1467,8 @@ with tabs[1]:
 
     # Pre-build all dynamic HTML fragments — must be done BEFORE the f-string
     # so Python doesn't try to evaluate nested quotes/braces as f-string syntax
-    ebitda_color  = "#4ADE80" if es["ebitda"] > 0 else "#F87171"
-    zone_badge    = {"excellent":"#22C55E","good":"#4ADE80","moderate":"#FBBF24","stressed":"#EF4444"}
+    ebitda_color  = "#0A6B4A" if es["ebitda"] > 0 else "#F87171"
+    zone_badge    = {"excellent":"#22C55E","good":"#0A6B4A","moderate":"#FBBF24","stressed":"#EF4444"}
     badge_col     = zone_badge.get(memo["zone_health"], "#94A3B8")
     actions_html  = "".join(f"<li>{a}</li>" for a in memo["actions"])
     yr1 = memo["yr_data"][1]; yr2 = memo["yr_data"][2]; yr3 = memo["yr_data"][3]
@@ -1330,21 +1493,21 @@ with tabs[1]:
     marginal_txt  = memo['marginal_prose']
     growth_txt    = memo['growth_prose']
 
-    _memo_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px 0;background:#0A0F1A;">
+    _memo_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px 0;background:#FFFFFF;">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
 .memo-wrap {{
-    background: #080F1A;
-    border: 1px solid #1E3A5F;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
     border-radius: 8px;
     overflow: hidden;
     max-width: 900px;
     margin: 0 auto;
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'DM Sans', system-ui, sans-serif;
 }}
 .memo-masthead {{
-    background: linear-gradient(135deg, #0D1B2A 0%, #0A1628 100%);
-    border-bottom: 1px solid #1E3A5F;
+    background:#F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
     padding: 2rem 2.5rem 1.5rem;
     display: flex;
     justify-content: space-between;
@@ -1355,26 +1518,26 @@ with tabs[1]:
     font-weight: 700;
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: #4A7FA5;
+    color: #7A8799;
     margin-bottom: 0.5rem;
 }}
 .memo-title-main {{
-    font-family: 'Playfair Display', serif;
+    font-family: 'EB Garamond', Georgia, serif;
     font-size: 1.5rem;
     font-weight: 700;
-    color: #E2E8F0;
+    color: #0F1923;
     line-height: 1.2;
     margin-bottom: 0.3rem;
 }}
 .memo-subtitle {{
     font-size: 0.75rem;
-    color: #6A8FAA;
+    color: #7A8799;
 }}
 .memo-kpi-block {{
     text-align: right;
 }}
 .memo-ebitda-num {{
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'DM Sans', system-ui, sans-serif;
     font-size: 2.2rem;
     font-weight: 700;
     color: {ebitda_color};
@@ -1384,7 +1547,7 @@ with tabs[1]:
     font-size: 0.58rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #6A8FAA;
+    color: #7A8799;
     margin-top: 0.2rem;
 }}
 .memo-body {{
@@ -1395,17 +1558,17 @@ with tabs[1]:
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: #4A7FA5;
-    border-bottom: 1px solid #1E3A5F;
+    color: #7A8799;
+    border-bottom: 1px solid #E2E8F0;
     padding-bottom: 0.35rem;
     margin: 1.8rem 0 0.8rem;
 }}
 .memo-prose {{
     font-size: 0.88rem;
     line-height: 1.8;
-    color: #B8C9D9;
+    color: #4A5568;
 }}
-.memo-prose strong {{ color: #E2E8F0; }}
+.memo-prose strong {{ color: #0F1923; }}
 .memo-actions {{
     counter-reset: action-counter;
     list-style: none;
@@ -1419,7 +1582,7 @@ with tabs[1]:
     margin-bottom: 0.9rem;
     font-size: 0.88rem;
     line-height: 1.7;
-    color: #B8C9D9;
+    color: #4A5568;
 }}
 .memo-actions li::before {{
     content: counter(action-counter);
@@ -1428,8 +1591,8 @@ with tabs[1]:
     justify-content: center;
     min-width: 1.6rem;
     height: 1.6rem;
-    background: #1A3A5C;
-    color: #4ADE80;
+    background: #F1F5F9;
+    color: #003366;
     border-radius: 50%;
     font-size: 0.72rem;
     font-weight: 700;
@@ -1443,8 +1606,8 @@ with tabs[1]:
     margin: 0.8rem 0;
 }}
 .memo-yr-card {{
-    background: #0D1B2A;
-    border: 1px solid #1E3A5F;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
     border-radius: 4px;
     padding: 0.75rem 1rem;
 }}
@@ -1453,17 +1616,17 @@ with tabs[1]:
     font-weight: 700;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: #4A7FA5;
+    color: #7A8799;
     margin-bottom: 0.4rem;
 }}
 .memo-yr-zones {{
     font-size: 0.82rem;
-    color: #94A3B8;
+    color: #4A5568;
 }}
 .memo-yr-ebitda {{
     font-size: 0.88rem;
     font-weight: 600;
-    color: #4ADE80;
+    color: #003366;
     margin-top: 0.3rem;
 }}
 </style>
@@ -1719,7 +1882,7 @@ with tabs[1]:
 
     def _mc_row_style(row):
         if "Median" in str(row[""]):
-            return ["background-color:#0A2818; font-weight:600"] * len(row)
+            return ["background-color:#ECFDF5; font-weight:600; color:#0A6B4A"] * len(row)
         return [""] * len(row)
 
     st.dataframe(
@@ -1826,7 +1989,7 @@ with tabs[3]:
         hc3.metric("Winter Ramp Hires",      f"{winter_hires:.1f}")
         hc4.metric("Per-Diem / Extra Shifts",f"{perdiem_hires:.1f} FTE-eq")
 
-        mode_c={"growth":NAVY,"attrition_replace":NAVY_LT,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW,"per_diem":"#9CA3AF"}
+        mode_c={"growth":NAVY,"attrition_replace":NAVY_MID,"winter_ramp":C_GREEN,"floor_protect":C_YELLOW,"per_diem":"#9CA3AF"}
         fhc=go.Figure()
         for h in hevs:
             lbl=f"Y{h.year}-{MONTH_NAMES[h.calendar_month-1]}"
@@ -2034,12 +2197,12 @@ with tabs[6]:
     lc=["Permanent","Flex","Support Staff","Turnover","Lost Revenue","Burnout","Overstaff"]
     vc=[s2["total_permanent_cost"],s2["total_flex_cost"],s2["total_support_cost"],
         s2["total_turnover_cost"],s2["total_lost_revenue"],s2["total_burnout_penalty"],s2["total_overstaff_penalty"]]
-    pal=[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D",C_GREEN]
+    pal=[NAVY,NAVY_MID,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D",C_GREEN]
     _av=s2["annual_visits"]
     _sp=(s2["total_permanent_cost"]+s2["total_flex_cost"])/3
     _ss=s2["total_support_cost"]/3
     _spv=_sp/_av if _av else 0; _ssv=_ss/_av if _av else 0
-    st.markdown(f"<div style='background:#F0F6FF;border-left:3px solid {NAVY};padding:0.7rem 1rem;"
+    st.markdown(f"<div style='background:#FDFAED;border-left:3px solid #7A6200;padding:0.7rem 1rem;"
                 f"border-radius:0 3px 3px 0;margin-bottom:1rem;font-size:0.82rem;'>"
                 f"<b>SWB/Visit:</b> APC ${_spv:.2f} + Support ${_ssv:.2f} = <b>${s2['annual_swb_per_visit']:.2f}</b>  |  Target ${cfg.swb_target_per_visit:.2f}</div>",
                 unsafe_allow_html=True)
@@ -2049,7 +2212,7 @@ with tabs[6]:
         fp2=go.Figure(go.Pie(labels=lc,values=vc,marker_colors=pal,hole=0.54,textinfo="label+percent",
                              textfont=dict(size=11)))
         fp2.add_annotation(text=f"<b>${sum(vc)/1e6:.1f}M</b><br><span style='font-size:11px'>3-year</span>",
-                           x=0.5,y=0.5,showarrow=False,font=dict(family="'Playfair Display', serif",size=17,color=INK))
+                           x=0.5,y=0.5,showarrow=False,font=dict(family="'EB Garamond', Georgia, serif",size=17,color=INK))
         fp2.update_layout(**mk_layout(height=380,title="3-Year Cost Mix",margin=dict(t=40,b=40,l=16,r=16),
                            legend=dict(orientation="v",x=1.02,y=0.5)))
         st.plotly_chart(fp2,use_container_width=True)
@@ -2063,7 +2226,7 @@ with tabs[6]:
     dfms=pd.DataFrame([{"Month":mlabel(mo),"Permanent":mo.permanent_cost,"Flex":mo.flex_cost,
                          "Support":mo.support_cost,"Turnover":mo.turnover_cost,"Lost Revenue":mo.lost_revenue,"Burnout":mo.burnout_penalty} for mo in mos])
     fst=go.Figure()
-    for col_,color in zip(["Permanent","Flex","Support","Turnover","Lost Revenue","Burnout"],[NAVY,NAVY_LT,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D"]):
+    for col_,color in zip(["Permanent","Flex","Support","Turnover","Lost Revenue","Burnout"],[NAVY,NAVY_MID,"#4B8BBE",C_YELLOW,C_RED,"#7F1D1D"]):
         fst.add_bar(x=dfms["Month"],y=dfms[col_],name=col_,marker_color=color)
     fst.update_layout(**mk_layout(height=340,barmode="stack",xaxis=dict(tickangle=-45),title="Monthly Cost Stack"))
     fst.update_yaxes(title_text="Cost ($)")
@@ -2229,7 +2392,7 @@ with tabs[10]:
     t2.metric("Post Req By",MONTH_NAMES[best.req_post_month-1])
     t3.metric("Lead Time",f"{ld} days / {lm} months")
     st.markdown(f"| Phase | Days | Cumulative |\n|:--|--:|--:|\n| Sign offer | {cfg.days_to_sign} | {cfg.days_to_sign} |\n| Credential | {cfg.days_to_credential} | {cfg.days_to_sign+cfg.days_to_credential} |\n| Ramp to independence | {cfg.days_to_independent} | {ld} |")
-    phases_tl=[("Post -> Sign",cfg.days_to_sign,NAVY),("Sign -> Credentialed",cfg.days_to_credential,NAVY_LT),("Credentialed -> Indep.",cfg.days_to_independent,C_GREEN)]
+    phases_tl=[("Post -> Sign",cfg.days_to_sign,NAVY),("Sign -> Credentialed",cfg.days_to_credential,NAVY_MID),("Credentialed -> Indep.",cfg.days_to_independent,C_GREEN)]
     ftl=go.Figure(); start=0
     for lbl_tl,dur,col in phases_tl:
         ftl.add_bar(x=[dur],y=[""],orientation="h",base=[start],name=lbl_tl,marker_color=col,
