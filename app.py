@@ -1268,7 +1268,43 @@ with tabs[1]:
             zone_health = "stressed"
             zone_prose  = f"only {green_m} Green months against {red_m} Red — provider load is routinely excessive"
 
-        # EBITDA characterization
+        # SWB variance — primary decision metric
+        swb_delta       = swb_actual - swb_target          # positive = over budget
+        total_visits_3yr= sum(mo.visits_captured for mo in pol.months)
+        swb_impact_3yr  = -swb_delta * total_visits_3yr    # positive = saving money
+        swb_impact_ann  = swb_impact_3yr / 3
+        swb_impact_sign = "+" if swb_impact_ann >= 0 else "−"
+        swb_fav         = swb_impact_ann >= 0
+
+        # Compute avg actual SWB per year for the prose
+        perm_3yr = sum(mo.permanent_cost for mo in pol.months)
+        supp_3yr = sum(mo.support_cost   for mo in pol.months)
+        avg_swb_actual = (perm_3yr + supp_3yr) / total_visits_3yr if total_visits_3yr > 0 else swb_actual
+
+        if swb_fav and abs(swb_impact_3yr) > 500_000:
+            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                         f"${swb_target:.0f} target, staffing costs are running "
+                         f"<strong>${abs(swb_delta):.2f}/visit below budget</strong> — "
+                         f"a <strong>{swb_impact_sign}${abs(swb_impact_3yr)/1e6:.2f}M favorable variance</strong> "
+                         f"({swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr) over the 3-year horizon")
+        elif swb_fav:
+            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                         f"${swb_target:.0f} target, staffing costs are "
+                         f"<strong>${abs(swb_delta):.2f}/visit below budget</strong> — "
+                         f"a {swb_impact_sign}${abs(swb_impact_ann)/1e3:.0f}K/yr favorable variance")
+        elif abs(swb_impact_3yr) > 300_000:
+            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                         f"${swb_target:.0f} target, staffing costs are running "
+                         f"<strong>${abs(swb_delta):.2f}/visit over budget</strong> — "
+                         f"a <strong>−${abs(swb_impact_3yr)/1e6:.2f}M unfavorable variance</strong> "
+                         f"(−${abs(swb_impact_ann)/1e3:.0f}K/yr) that warrants review")
+        else:
+            swb_prose = (f"At <strong>${avg_swb_actual:.2f}/visit</strong> actual vs the "
+                         f"${swb_target:.0f} target, staffing costs are "
+                         f"<strong>${abs(swb_delta):.2f}/visit over budget</strong> — "
+                         f"a −${abs(swb_impact_ann)/1e3:.0f}K/yr unfavorable variance")
+
+        # EBITDA (supporting context only)
         ebitda_annual = ebitda / 3
         if ebitda > 3_000_000:
             ebitda_prose = f"strong 3-year EBITDA contribution of ${ebitda/1e6:.2f}M (${ebitda_annual/1e3:.0f}K/year)"
@@ -1278,13 +1314,6 @@ with tabs[1]:
             ebitda_prose = f"modest 3-year EBITDA contribution of ${ebitda/1e6:.2f}M — there is meaningful room for improvement"
         else:
             ebitda_prose = f"a 3-year EBITDA loss of ${abs(ebitda)/1e6:.2f}M — immediate staffing restructuring is required"
-
-        # SWB characterization
-        swb_delta = swb_actual - swb_target
-        if swb_ok:
-            swb_prose = f"SWB/visit of ${swb_actual:.2f} sits ${abs(swb_delta):.2f} below the ${swb_target:.0f} target — cost efficiency is on track"
-        else:
-            swb_prose = f"SWB/visit of ${swb_actual:.2f} exceeds the ${swb_target:.0f} target by ${swb_delta:.2f} — a staffing cost discipline issue that warrants review"
 
         # Burnout characterization
         burnout_pct_of_revenue = burnout / revenue * 100
@@ -1698,10 +1727,10 @@ with tabs[1]:
 
     <div class="memo-section-label">Headline Verdict</div>
     <div class="memo-prose">
-      This clinic is projecting a <strong>{headline_ebitda}</strong>.
-      {headline_capture}.
-      Zone performance is <strong>{headline_zone}</strong>,
-      with {headline_swb}.
+      {headline_swb}.
+      Zone performance is <strong>{headline_zone}</strong>
+      with {headline_capture}.
+      EBITDA: {headline_ebitda}.
     </div>
 
     <div class="memo-section-label">What Your Current Inputs Are Producing</div>
