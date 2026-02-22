@@ -1301,6 +1301,11 @@ with tabs[1]:
         yr_data = {}
         for yr in [1, 2, 3]:
             yr_mos = [mo for mo in pol.months if mo.year == yr]
+            _yr_visits  = sum(m.visits_captured for m in yr_mos)
+            _yr_perm    = sum(m.permanent_cost   for m in yr_mos)
+            _yr_supp    = sum(m.support_cost     for m in yr_mos)
+            _yr_swb_act = (_yr_perm + _yr_supp) / _yr_visits if _yr_visits > 0 else 0
+            _yr_swb_var = cfg.swb_target_per_visit - _yr_swb_act  # positive = favorable
             yr_data[yr] = {
                 "G": sum(1 for m in yr_mos if m.zone == "Green"),
                 "Y": sum(1 for m in yr_mos if m.zone == "Yellow"),
@@ -1308,6 +1313,10 @@ with tabs[1]:
                 "peak": max(m.patients_per_provider_per_shift for m in yr_mos),
                 "avg_visits": sum(m.demand_visits_per_day for m in yr_mos) / 12,
                 "ebitda": sum(m.ebitda_contribution for m in yr_mos),
+                "visits": _yr_visits,
+                "swb_actual": _yr_swb_act,
+                "swb_variance": _yr_swb_var,
+                "swb_impact": _yr_swb_var * _yr_visits,
             }
 
         # Marginal APC signal
@@ -1493,9 +1502,19 @@ with tabs[1]:
     yr1_zones     = f"{yr1['G']}G / {yr1['Y']}Y / {yr1['R']}R &nbsp;&middot;&nbsp; Peak {yr1['peak']:.1f} pts/APC"
     yr2_zones     = f"{yr2['G']}G / {yr2['Y']}Y / {yr2['R']}R &nbsp;&middot;&nbsp; Peak {yr2['peak']:.1f} pts/APC"
     yr3_zones     = f"{yr3['G']}G / {yr3['Y']}Y / {yr3['R']}R &nbsp;&middot;&nbsp; Peak {yr3['peak']:.1f} pts/APC"
-    yr1_ebitda    = f"${yr1['ebitda']/1e3:.0f}K EBITDA"
-    yr2_ebitda    = f"${yr2['ebitda']/1e3:.0f}K EBITDA"
-    yr3_ebitda    = f"${yr3['ebitda']/1e3:.0f}K EBITDA"
+    def _swb_impact_label(yr_d, target):
+        imp  = yr_d["swb_impact"]
+        var  = yr_d["swb_variance"]
+        sign = "+" if imp >= 0 else "−"
+        clr  = "#0A6B4A" if imp >= 0 else "#B91C1C"
+        word = "favorable" if imp >= 0 else "unfavorable"
+        return (f"<span style='color:{clr};font-weight:700'>"
+                f"{sign}${abs(imp)/1e3:.0f}K vs budget</span>"
+                f"<span style='font-size:0.78em;color:#7A8799;'>"
+                f" &nbsp;(${yr_d['swb_actual']:.2f} actual vs ${target:.2f} target · {word})</span>")
+    yr1_ebitda = _swb_impact_label(yr1, cfg.swb_target_per_visit)
+    yr2_ebitda = _swb_impact_label(yr2, cfg.swb_target_per_visit)
+    yr3_ebitda = _swb_impact_label(yr3, cfg.swb_target_per_visit)
     hire_txt      = memo['hire_prose']
     burnout_txt   = memo['burnout_prose']
     marginal_txt  = memo['marginal_prose']
@@ -1632,10 +1651,11 @@ with tabs[1]:
     color: #4A5568;
 }}
 .memo-yr-ebitda {{
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     font-weight: 600;
     color: #003366;
-    margin-top: 0.3rem;
+    margin-top: 0.4rem;
+    line-height: 1.45;
 }}
 </style>
 
