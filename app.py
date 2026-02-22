@@ -1489,9 +1489,16 @@ with tabs[1]:
     badge_col     = zone_badge.get(memo["zone_health"], "#94A3B8")
     actions_html  = "".join(f"<li>{a}</li>" for a in memo["actions"])
     yr1 = memo["yr_data"][1]; yr2 = memo["yr_data"][2]; yr3 = memo["yr_data"][3]
-    ebitda_3yr_fmt= f"${es['ebitda']/1e6:.2f}M"
-    ebitda_lbl    = "3-Year EBITDA Contribution"
-    zones_fmt     = f"{s['green_months']}G &nbsp;/&nbsp; {s['yellow_months']}Y &nbsp;/&nbsp; {s['red_months']}R"
+    # Top-right KPI: cumulative SWB variance impact vs budget across all 3 years
+    _total_swb_impact = yr1["swb_impact"] + yr2["swb_impact"] + yr3["swb_impact"]
+    _swb_impact_color = "#0A6B4A" if _total_swb_impact >= 0 else "#B91C1C"
+    _swb_impact_sign  = "+" if _total_swb_impact >= 0 else "−"
+    _swb_impact_word  = "favorable" if _total_swb_impact >= 0 else "unfavorable"
+    _avg_actual_swb   = (yr1["swb_actual"] + yr2["swb_actual"] + yr3["swb_actual"]) / 3
+    ebitda_3yr_fmt    = f"{_swb_impact_sign}${abs(_total_swb_impact)/1e6:.2f}M"
+    ebitda_color      = _swb_impact_color
+    ebitda_lbl        = f"3-Year SWB Variance vs ${cfg.swb_target_per_visit:.0f} Target"
+    zones_fmt         = f"${_avg_actual_swb:.2f} avg actual &nbsp;·&nbsp; {_swb_impact_word}"
     gen_date      = memo['date']
     base_vis      = f"{cfg.base_visits_per_day:.0f}"
     growth_pct    = f"{cfg.annual_growth_pct:.0f}"
@@ -1674,7 +1681,7 @@ with tabs[1]:
     <div class="memo-kpi-block">
       <div class="memo-ebitda-num">{ebitda_3yr_fmt}</div>
       <div class="memo-ebitda-label">{ebitda_lbl}</div>
-      <div style="margin-top:0.5rem;font-size:0.72rem;color:{badge_col};font-weight:600;text-align:right;">
+      <div style="margin-top:0.5rem;font-size:0.72rem;color:{_swb_impact_color};font-weight:500;text-align:right;letter-spacing:0.02em;">
         {zones_fmt}
       </div>
     </div>
