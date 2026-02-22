@@ -346,7 +346,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.expander("BASE DEMAND", expanded=True):
-        base_visits = st.number_input("Visits / Day", 20.0, 300.0, 32.0, 5.0,
+        base_visits = st.number_input("Visits / Day", 1.0, 300.0, 32.0, 1.0,
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
         budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
             help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
