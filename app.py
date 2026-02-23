@@ -357,21 +357,30 @@ with st.sidebar:
         _y3_visits = base_visits * (1 + annual_growth/100) ** 2
         st.caption(f"Y1 baseline: **{base_visits:.0f}**/day  →  Y3 projected: **{_y3_visits:.0f}**/day")
 
-    with st.expander("QUARTERLY VOLUME DISTRIBUTION", expanded=True):
-        c1, c2 = st.columns(2); c3, c4 = st.columns(2)
-        with c1: q1 = st.number_input("Q1 Jan-Mar %", -50, 100, 20, 5, key="q1",
-                help="Volume adjustment vs base for Jan–Mar. +20 = flu season drives 20% more visits.")
-        with c2: q2 = st.number_input("Q2 Apr-Jun %", -50, 100,  0, 5, key="q2",
-                help="Volume adjustment vs base for Apr–Jun. 0 = baseline volume.")
-        with c3: q3 = st.number_input("Q3 Jul-Sep %", -50, 100,-10, 5, key="q3",
-                help="Volume adjustment vs base for Jul–Sep. -10 = summer slowdown, natural shed opportunity.")
-        with c4: q4 = st.number_input("Q4 Oct-Dec %", -50, 100,  5, 5, key="q4",
-                help="Volume adjustment vs base for Oct–Dec. +5 = early flu ramp before peak.")
-        _raw_impacts = [q1/100, q2/100, q3/100, q4/100]
-        # Normalize so the annual average = 0 → base_visits IS the annual average
-        _avg_impact  = sum(_raw_impacts) / 4
-        quarterly_impacts = [x - _avg_impact for x in _raw_impacts]
-        s_idx = [1.0 + quarterly_impacts[MONTH_TO_QUARTER[m]] for m in range(12)]
+    with st.expander("MONTHLY VOLUME DISTRIBUTION", expanded=True):
+        st.caption("Volume adjustment vs annual average for each month. Normalized so base visits/day = annual avg.")
+        # Classic urgent care defaults: Jan/Feb flu peak, spring flat, Jul dip, fall ramp
+        _mo_defaults = [30, 25, 10, 0, -5, -5, -15, -10, 0, 5, 10, 20]
+        _mo_names    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        _mo_vals = []
+        for _mi, (_mn, _md) in enumerate(zip(_mo_names, _mo_defaults)):
+            _mv = st.number_input(
+                f"{_mn} %", -50, 100, _md, 5,
+                key=f"mo_{_mi}",
+                help=f"Volume adjustment for {_mn} vs annual average. 0 = exactly average volume."
+            )
+            _mo_vals.append(_mv / 100.0)
+        # Normalize so monthly average = 0 → base_visits is true annual average
+        _mo_avg = sum(_mo_vals) / 12
+        _mo_norm = [x - _mo_avg for x in _mo_vals]
+        # Aggregate to quarterly for simulation (avg of 3 months per quarter)
+        quarterly_impacts = [
+            sum(_mo_norm[0:3])  / 3,   # Q1: Jan–Mar
+            sum(_mo_norm[3:6])  / 3,   # Q2: Apr–Jun
+            sum(_mo_norm[6:9])  / 3,   # Q3: Jul–Sep
+            sum(_mo_norm[9:12]) / 3,   # Q4: Oct–Dec
+        ]
+        s_idx = [1.0 + _mo_norm[m] for m in range(12)]
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
 
@@ -569,13 +578,12 @@ if not st.session_state.optimized:
     fr  = [v / budget_ppp * cfg.fte_per_shift_slot for v in mv]
     bft = (base_visits / budget_ppp) * cfg.fte_per_shift_slot
     fp  = make_subplots(specs=[[{"secondary_y": True}]])
-    for qi,(mq,bg) in enumerate(zip(Q_MONTH_GROUPS,Q_BG)):
-        fp.add_vrect(x0=mq[0]-0.5,x1=mq[-1]+0.5,fillcolor=bg,layer="below",line_width=0)
-        im=quarterly_impacts[qi]
-        fp.add_annotation(x=mq[1],y=max(mv)*1.09,
-                          text=f"<b>{QUARTER_LABELS[qi]}</b>  {chr(43) if im>=0 else chr(45)}{im*100:.0f}%",
-                          showarrow=False,font=dict(size=11,color=Q_COLORS[qi]),
-                          bgcolor="rgba(255,255,255,0.9)",borderpad=3)
+    for mi in range(12):
+        im = _mo_norm[mi]
+        fp.add_annotation(x=mi, y=max(mv)*1.09,
+                          text=f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",
+                          showarrow=False, font=dict(size=9, color=Q_COLORS[MONTH_TO_QUARTER[mi]]),
+                          bgcolor="rgba(255,255,255,0.85)", borderpad=2)
     fp.add_bar(x=MONTH_NAMES,y=mv,name="Seasonal volume",marker_color=C_BARS)
     fp.add_scatter(x=MONTH_NAMES,y=fr,name="FTE @ Budget",
                    line=dict(color=C_DEMAND,width=3),mode="lines+markers",
@@ -613,7 +621,7 @@ budget = cfg.budgeted_patients_per_provider_per_day
 # ══════════════════════════════════════════════════════════════════════════════
 # HERO CHART
 # ══════════════════════════════════════════════════════════════════════════════
-def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor, title=None):
+def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak_factor, title=None, monthly_impacts=None):
     yr1    = [mo for mo in pol.months if mo.year == 1]
     labels = [MONTH_NAMES[mo.calendar_month-1] for mo in yr1]
     visits_nf  = [base_visits * cfg.seasonality_index[mo.calendar_month-1] * peak_factor for mo in yr1]
@@ -631,12 +639,13 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
     fig.add_hline(y=base_visits,line_dash="dash",line_color=SLATE,line_width=1,
                   annotation_text=f"Base {base_visits:.0f}/day",annotation_position="right",
                   annotation_font=dict(size=9,color=SLATE),row=1,col=1)
-    for qi,(mq,_) in enumerate(zip(Q_MONTH_GROUPS,Q_BG)):
-        im=quarterly_impacts[qi]
-        fig.add_annotation(row=1,col=1,xref="x",yref="paper",x=mq[1],y=1.0,
-                           text=f"<b>{QUARTER_LABELS[qi]}</b>  {chr(43) if im>=0 else chr(45)}{im*100:.0f}%",
+    _m_impacts = monthly_impacts if monthly_impacts is not None else         [quarterly_impacts[MONTH_TO_QUARTER[m]] for m in range(12)]
+    for mi, im in enumerate(_m_impacts):
+        fig.add_annotation(row=1,col=1,xref="x",yref="paper",x=mi,y=1.0,
+                           text=f"{chr(43) if im>=0 else chr(45)}{abs(im*100):.0f}%",
                            showarrow=False,yanchor="bottom",
-                           font=dict(size=10,color=Q_COLORS[qi]),bgcolor="rgba(255,255,255,0.92)",borderpad=3)
+                           font=dict(size=9,color=Q_COLORS[MONTH_TO_QUARTER[mi]]),
+                           bgcolor="rgba(255,255,255,0.88)",borderpad=2)
 
     for qi,(mq,bg) in enumerate(zip(Q_MONTH_GROUPS,Q_BG)):
         fig.add_vrect(x0=mq[0]-0.5,x1=mq[-1]+0.5,fillcolor=bg,layer="below",line_width=0,row=2,col=1)
@@ -1087,7 +1096,7 @@ _c2.markdown(_yc2, unsafe_allow_html=True)
 _c3.markdown(_yc3, unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.75rem'></div>",unsafe_allow_html=True)
-st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor),
+st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor,monthly_impacts=_mo_norm),
                 use_container_width=True)
 
 # Hiring mode legend
@@ -2442,28 +2451,32 @@ with tabs[4]:
 # ── TAB 5: Seasonality ────────────────────────────────────────────────────────
 with tabs[5]:
     pol=active_policy(); mos=pol.months
-    st.markdown("## QUARTERLY VOLUME SETTINGS")
-    qcols=st.columns(4)
-    for qi,(qn,im,col) in enumerate(zip(QUARTER_NAMES,quarterly_impacts,Q_COLORS)):
-        with qcols[qi]:
-            vq=base_visits*(1+im)*peak_factor
-            fq=(vq/budget)*cfg.fte_per_shift_slot
-            st.metric(qn,f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",delta=f"{vq:.0f} visits -> {fq:.1f} FTE")
+    st.markdown("## MONTHLY VOLUME DISTRIBUTION")
+    mcols = st.columns(6)
+    for mi, (mn, im) in enumerate(zip(MONTH_NAMES, _mo_norm)):
+        with mcols[mi % 6]:
+            vm = base_visits * (1 + im) * peak_factor
+            fm = (vm / budget) * cfg.fte_per_shift_slot
+            st.metric(mn, f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",
+                      delta=f"{vm:.0f} vpd · {fm:.1f} FTE")
 
-    st.plotly_chart(render_hero_chart(pol,cfg,quarterly_impacts,base_visits,budget,peak_factor,title="Annual Demand Curve - Year 1"),use_container_width=True)
+    st.plotly_chart(render_hero_chart(pol,cfg,quarterly_impacts,base_visits,budget,peak_factor,
+                                      title="Annual Demand Curve - Year 1",monthly_impacts=_mo_norm),
+                    use_container_width=True)
 
-    st.markdown("## QUARTERLY SUMMARY  (36-Month Avg)")
-    qr=[]
-    for qi in range(1,5):
-        qm=[mo for mo in mos if mo.quarter==qi]
-        qr.append({"Quarter":QUARTER_NAMES[qi-1],
-                   "Impact":f"{chr(43) if quarterly_impacts[qi-1]>=0 else chr(45)}{quarterly_impacts[qi-1]*100:.0f}%",
-                   "Avg Visits/Day":f"{np.mean([mo.demand_visits_per_day for mo in qm]):.1f}",
-                   "Avg Paid FTE":f"{np.mean([mo.paid_fte for mo in qm]):.2f}",
-                   "Avg Pts/APC":f"{np.mean([mo.patients_per_provider_per_shift for mo in qm]):.1f}",
-                   "Red Months":sum(1 for mo in qm if mo.zone=="Red"),
-                   "In-Band %":f"{sum(1 for mo in qm if mo.within_band)/len(qm)*100:.0f}%"})
-    st.dataframe(pd.DataFrame(qr),use_container_width=True,hide_index=True)
+    st.markdown("## MONTHLY SUMMARY  (36-Month Avg)")
+    mr=[]
+    for mi, mn in enumerate(MONTH_NAMES):
+        mm=[mo for mo in mos if mo.calendar_month == mi+1]
+        if mm:
+            mr.append({"Month": mn,
+                       "Adjustment": f"{chr(43) if _mo_norm[mi]>=0 else chr(45)}{_mo_norm[mi]*100:.0f}%",
+                       "Avg Visits/Day": f"{np.mean([mo.demand_visits_per_day for mo in mm]):.1f}",
+                       "Avg Paid FTE":   f"{np.mean([mo.paid_fte for mo in mm]):.2f}",
+                       "Avg Pts/APC":    f"{np.mean([mo.patients_per_provider_per_shift for mo in mm]):.1f}",
+                       "Red Months":     sum(1 for mo in mm if mo.zone=="Red"),
+                       "In-Band %":      f"{sum(1 for mo in mm if mo.within_band)/len(mm)*100:.0f}%"})
+    st.dataframe(pd.DataFrame(mr), use_container_width=True, hide_index=True)
 
     st.markdown("## ATTRITION TRAJECTORY  (overload-amplified)")
     fa=go.Figure()
