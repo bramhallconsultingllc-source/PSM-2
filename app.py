@@ -256,16 +256,17 @@ h2 {{
     background: transparent;
 }}
 .stTabs [data-baseweb="tab"] {{
-    font-size: 0.70rem !important;
+    font-size: 0.62rem !important;
     font-weight: 500 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.11em !important;
+    letter-spacing: 0.09em !important;
     color: {MUTED} !important;
-    padding: 0.7rem 1.2rem !important;
+    padding: 0.65rem 0.6rem !important;
     border: none !important;
     border-bottom: 2px solid transparent !important;
     margin-bottom: -1px;
     background: transparent !important;
+    white-space: nowrap !important;
 }}
 .stTabs [aria-selected="true"] {{
     color: {INK} !important;
