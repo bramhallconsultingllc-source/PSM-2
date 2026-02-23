@@ -698,18 +698,18 @@ st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.5rem;'>",unsafe_allow_
 
 st.markdown("## RECOMMENDED POLICY")
 
-# ── Shared calculations ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHARED CALCULATIONS
+# ═══════════════════════════════════════════════════════════════════════════════
 _swb_actual     = s["annual_swb_per_visit"]
 _swb_target     = cfg.swb_target_per_visit
-_swb_delta_pv   = _swb_actual - _swb_target          # neg = favourable
+_swb_delta_pv   = _swb_actual - _swb_target
 _ann_visits_kpi = s["annual_visits"]
-_swb_impact_ann = -_swb_delta_pv * _ann_visits_kpi   # positive = saving vs budget
+_swb_impact_ann = -_swb_delta_pv * _ann_visits_kpi
 _total_cap_3yr  = sum(mo.visits_captured for mo in best.months)
 _swb_impact_3yr = -_swb_delta_pv * _total_cap_3yr
 _perm_3yr       = sum(mo.permanent_cost for mo in best.months)
 _supp_3yr       = sum(mo.support_cost   for mo in best.months)
-_apc_pv         = (_perm_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
-_sup_pv         = (_supp_3yr / 3) / _ann_visits_kpi if _ann_visits_kpi > 0 else 0
 _var_clr        = "#0A6B4A" if _swb_delta_pv <= 0 else "#B91C1C"
 _var_word       = "favorable" if _swb_delta_pv <= 0 else "unfavorable"
 _var_arrow      = "▼" if _swb_delta_pv <= 0 else "▲"
@@ -717,34 +717,39 @@ _impact_sign    = "+" if _swb_impact_ann >= 0 else "−"
 _impact_abs_ann = abs(_swb_impact_ann)
 _impact_abs_3yr = abs(_swb_impact_3yr)
 
-_es       = best.ebitda_summary
-_elabel_b = "EBITDA CONTRIBUTION FROM STAFFING" if cfg.monthly_fixed_overhead == 0 else "EBITDA"
-_fhtml    = (f"  <span style='color:#7A8799'>−</span>  <span style='color:#B91C1C'>Fixed ${_es['fixed']/1e3:.0f}K</span>"
-             if cfg.monthly_fixed_overhead > 0 else "")
+_es             = best.ebitda_summary
+_ann_swb        = _es["swb"]      / 3
+_ann_flex       = _es["flex"]     / 3
+_ann_turnover   = _es["turnover"] / 3
+_ann_burnout    = _es["burnout"]  / 3
+_ann_visits_3yr = _total_cap_3yr  / 3
+_ann_swb_goal   = _swb_target * _ann_visits_3yr
 
-# Annualised cost components (3yr avg)
-_ann_rev      = _es["revenue"]  / 3
-_ann_swb      = _es["swb"]      / 3
-_ann_flex     = _es["flex"]     / 3
-_ann_turnover = _es["turnover"] / 3
-_ann_burnout  = _es["burnout"]  / 3
-_ann_ebitda   = _es["ebitda"]   / 3
-_ann_fixed    = _es.get("fixed", 0) / 3
-_ann_fhtml    = (f"  <span style='color:#7A8799'>−</span>  <span style='color:#B91C1C'>Fixed ${_ann_fixed/1e3:.0f}K</span>"
-                 if cfg.monthly_fixed_overhead > 0 else "")
+_oa = s.get("total_overload_attrition", 0)
 
-# Zone summary string
-_oa         = s.get("total_overload_attrition", 0)
-_zone_str   = (f"<b style='color:#0A6B4A'>{s['green_months']}G</b>"
-               f"  <span style='color:#7A8799'>/</span>  "
-               f"<b style='color:#92600A'>{s['yellow_months']}Y</b>"
-               f"  <span style='color:#7A8799'>/</span>  "
-               f"<b style='color:#B91C1C'>{s['red_months']}R</b>"
-               f"  <span style='color:#7A8799;font-size:0.72rem'>&nbsp;over 36 months"
-               f"  ·  {s['pct_months_in_band']:.0f}% in-band"
-               f"  ·  {_es['capture_rate']*100:.1f}% visit capture</span>")
+# ─── VPD / provider stats ────────────────────────────────────────────────────
+_all_vpd_prov = [mo.patients_per_provider_per_shift for mo in best.months]
+_vpd_avg = sum(_all_vpd_prov) / len(_all_vpd_prov)
+_vpd_min = min(_all_vpd_prov)
+_vpd_max = max(_all_vpd_prov)
 
-# Marginal row (gold tint, conditional)
+# ─── Turnover risk label ─────────────────────────────────────────────────────
+_tot_turn_events = s.get("total_turnover_events", 0)
+_turn_cost_3yr   = _es["turnover"]
+if _turn_cost_3yr < 50_000:
+    _turn_risk_lbl = "Low risk"
+    _turn_risk_clr = "#0A6B4A"
+elif _turn_cost_3yr < 150_000:
+    _turn_risk_lbl = "Moderate"
+    _turn_risk_clr = "#92600A"
+else:
+    _turn_risk_lbl = "High risk"
+    _turn_risk_clr = "#B91C1C"
+
+# ─── SWB tile border color ───────────────────────────────────────────────────
+_swb_tile_clr = "#B91C1C" if _swb_delta_pv > 0 else "#0A6B4A"
+
+# ─── Marginal row ────────────────────────────────────────────────────────────
 _ma_row = ""
 if best.marginal_analysis:
     ma    = best.marginal_analysis
@@ -752,8 +757,6 @@ if best.marginal_analysis:
     _mc   = "#0A6B4A" if _net > 0 else "#92600A"
     _mpay = "never" if ma["payback_months"] == float("inf") else f"{ma['payback_months']:.0f} mo"
     _ma_row = (
-        f"<div style='border-top:1px solid #E2E8F0;padding:0.4rem 1.2rem 0.45rem;"
-        f"display:flex;align-items:center;gap:1.8rem;flex-wrap:wrap;background:#FDFAED;'>"
         f"<span style='color:#7A6200;font-size:0.60rem;font-weight:700;text-transform:uppercase;"
         f"letter-spacing:0.13em;'>+{ma['delta_fte']:.1f} FTE Marginal</span>"
         f"<span style='color:#4A5568;font-size:0.76rem'>Saves "
@@ -762,63 +765,302 @@ if best.marginal_analysis:
         f"<span style='color:#4A5568;font-size:0.76rem'>Net annual: "
         f"<b style='color:{_mc}'>${_net:+,.0f}</b></span>"
         f"<span style='color:#4A5568;font-size:0.76rem'>Payback: <b>{_mpay}</b></span>"
+    )
+
+# ─── Years-to-goal calculation ───────────────────────────────────────────────
+# Project forward: fixed staff cost stays ~constant; visits grow with annual_growth_pct.
+# SWB/visit = staff_cost / (vpd × op_days).  Find the year it crosses the target.
+_staff_cost_ann = (_perm_3yr + _supp_3yr) / 3        # annualised perm+support
+_base_vpd       = cfg.base_visits_per_day
+_growth         = cfg.annual_growth_pct / 100.0
+_op_days        = cfg.operating_days_per_week * 52
+_yr_goal        = None
+_yr_swb_strip   = []   # list of (year, swb_per_visit) for the strip
+for _yy in range(1, 26):
+    _vpd_proj   = _base_vpd * (1 + _growth) ** (_yy - 1)
+    _vis_proj   = _vpd_proj * _op_days
+    # FTE scales with visits once load floor is hit
+    _fte_proj   = max(best.base_fte, (_vpd_proj / max(_base_vpd, 1)) * best.base_fte)
+    _cost_proj  = _fte_proj * (_staff_cost_ann / max(best.base_fte, 0.01))
+    _swb_proj   = _cost_proj / _vis_proj if _vis_proj > 0 else 9999
+    _yr_swb_strip.append((_yy, _swb_proj))
+    if _swb_proj <= _swb_target and _yr_goal is None:
+        _yr_goal = _yy
+
+# Acceleration scenarios (simple projections)
+def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
+    for yy in range(1, 26):
+        g      = (growth_override or _growth)
+        vpd_p  = _base_vpd * (1 + g) ** (yy - 1)
+        vis_p  = vpd_p * _op_days
+        fte_p  = max(best.base_fte, (_vpd_proj / max(_base_vpd * load_mult, 1)) * best.base_fte)
+        cost_p = fte_p * (_staff_cost_ann / max(best.base_fte, 0.01)) * cost_mult
+        if vis_p > 0 and cost_p / vis_p <= _swb_target:
+            return yy
+    return None
+
+_accel_30   = _yrs_to_goal(growth_override=0.30)
+_accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost fewer FTE
+_accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
+_accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
+
+def _save_str(yrs):
+    if yrs is None or _yr_goal is None: return ""
+    diff = _yr_goal - yrs
+    if diff <= 0: return ""
+    return f"−{diff} yr{'s' if diff > 1 else ''}"
+
+# ─── SWB strip HTML ──────────────────────────────────────────────────────────
+def _strip_cell(yr, swb, target):
+    if swb <= target:
+        bg = "#ECFDF5"; clr = "#0A6B4A"; val = f"${swb:.0f} ✓"
+    elif swb <= target * 1.10:
+        bg = "#FFFBEB"; clr = "#92600A"; val = f"${swb:.0f}"
+    else:
+        bg = "#FEF2F2"; clr = "#B91C1C"; val = f"${swb:.0f}"
+    return (
+        f"<div style='flex:1;padding:0.3rem 0.4rem;background:{bg};"
+        f"border-right:1px solid #E2E8F0;min-width:0;'>"
+        f"<div style='font-size:0.55rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.09em;color:#7A8799;margin-bottom:1px;'>Yr {yr}</div>"
+        f"<div style='font-size:0.70rem;font-weight:700;color:{clr};"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{val}</div>"
         f"</div>"
     )
 
-# ── Policy levers — 4 metrics only ───────────────────────────────────────────
-k1,k2,k3,k4 = st.columns(4)
-k1.metric("Base FTE",     f"{best.base_fte:.1f}")
-k2.metric("Winter FTE",   f"{best.winter_fte:.1f}")
-k3.metric("Summer Floor", f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}")
-k4.metric("Post Req By",  MONTH_NAMES[best.req_post_month-1])
+_strip_cells = ""
+for (_syy, _sswb) in _yr_swb_strip[:7]:
+    _strip_cells += _strip_cell(_syy, _sswb, _swb_target)
 
-# ── Scorecard card ────────────────────────────────────────────────────────────
+_strip_html = (
+    f"<div style='display:flex;border:1px solid #E2E8F0;border-radius:3px;"
+    f"overflow:hidden;margin-top:0.5rem;'>{_strip_cells}</div>"
+)
+
+# ─── Acceleration rows HTML ──────────────────────────────────────────────────
+def _accel_row(label, yrs, bg, border_clr):
+    save = _save_str(yrs)
+    if not save: return ""
+    return (
+        f"<div style='display:flex;align-items:flex-start;gap:0.65rem;"
+        f"padding:0.42rem 0.6rem;background:{bg};border-radius:3px;"
+        f"border-left:3px solid {border_clr};margin-bottom:0.4rem;'>"
+        f"<div style='flex:1;font-size:0.72rem;font-weight:600;color:{border_clr};'>{label}"
+        f"<div style='font-size:0.67rem;font-weight:400;color:#4A5568;margin-top:0.1rem;'>"
+        f"Reaches $85 target by Year {yrs}</div></div>"
+        f"<div style='font-size:0.70rem;font-weight:700;color:{border_clr};"
+        f"white-space:nowrap;'>{save}</div>"
+        f"</div>"
+    )
+
+_accel_html = ""
+if _yr_goal and _yr_goal > 1:
+    _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
+    _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
+    _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
+    _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
+
+# ─── Per-year data for year cards ────────────────────────────────────────────
+_yr_data = {}
+for _yr in [1, 2, 3]:
+    _yr_mos   = [mo for mo in best.months if mo.year == _yr]
+    _yr_vis   = sum(mo.visits_captured   for mo in _yr_mos)
+    _yr_perm  = sum(mo.permanent_cost    for mo in _yr_mos)
+    _yr_supp  = sum(mo.support_cost      for mo in _yr_mos)
+    _yr_flex  = sum(mo.flex_cost         for mo in _yr_mos)
+    _yr_turn  = sum(mo.turnover_cost     for mo in _yr_mos)
+    _yr_burn  = sum(mo.burnout_penalty   for mo in _yr_mos)
+    _yr_swb_a = (_yr_perm + _yr_supp) / _yr_vis if _yr_vis > 0 else 0
+    _yr_goal_v= _swb_target * _yr_vis
+    _yr_act   = _yr_perm + _yr_supp
+    _yr_net_v = (_yr_goal_v - _yr_act) - _yr_flex - _yr_turn - _yr_burn
+    _yr_data[_yr] = {
+        "vis": _yr_vis, "flex": _yr_flex, "turn": _yr_turn, "burn": _yr_burn,
+        "swb_actual": _yr_swb_a, "goal": _yr_goal_v, "act": _yr_act, "net_var": _yr_net_v,
+        "G": sum(1 for m in _yr_mos if m.zone=="Green"),
+        "Y": sum(1 for m in _yr_mos if m.zone=="Yellow"),
+        "R": sum(1 for m in _yr_mos if m.zone=="Red"),
+        "peak": max(m.patients_per_provider_per_shift for m in _yr_mos),
+    }
+
+def _yr_card_html(d, yr_label, target):
+    vc   = "#0A6B4A" if d["net_var"] >= 0 else "#B91C1C"
+    sign = "+" if d["net_var"] >= 0 else "−"
+    word = "favorable" if d["net_var"] >= 0 else "unfavorable"
+    zones = f"{d['G']}G / {d['Y']}Y / {d['R']}R &nbsp;&middot;&nbsp; Peak {d['peak']:.1f} pts/APC"
+    return (
+        f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px;"
+        f"padding:0.85rem 1rem 0.8rem;box-shadow:0 1px 3px rgba(0,0,0,0.04);'>"
+        f"<div style='font-size:0.57rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.16em;color:#7A8799;margin-bottom:0.4rem;'>{yr_label}</div>"
+        f"<div style='font-size:0.75rem;color:#4A5568;margin-bottom:0.55rem;line-height:1.5;'>{zones}</div>"
+        f"<div style='font-size:0.74rem;line-height:1.85;'>"
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
+        f"<span style='color:#4A5568;'>SWB Goal</span>"
+        f"<span style='color:#003366;font-variant-numeric:tabular-nums;font-weight:500;'>${d['goal']/1e3:.0f}K</span></div>"
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
+        f"<span style='color:#4A5568;'>SWB Actual</span>"
+        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['act']/1e3:.0f}K</span></div>"
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
+        f"<span style='color:#4A5568;'>Flex</span>"
+        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['flex']/1e3:.0f}K</span></div>"
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
+        f"<span style='color:#4A5568;'>Turnover</span>"
+        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['turn']/1e3:.0f}K</span></div>"
+        f"<div style='display:flex;justify-content:space-between;border-bottom:2px solid #0F1923;'>"
+        f"<span style='color:#4A5568;'>Burnout</span>"
+        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['burn']/1e3:.0f}K</span></div>"
+        f"<div style='display:flex;justify-content:space-between;padding-top:0.15rem;'>"
+        f"<span style='color:#0F1923;font-weight:700;'>SWB Variance</span>"
+        f"<span style='color:{vc};font-weight:700;font-size:0.88rem;font-variant-numeric:tabular-nums;'>"
+        f"{sign}${abs(d['net_var'])/1e3:.0f}K</span></div>"
+        f"</div>"
+        f"<div style='margin-top:0.45rem;font-size:0.68rem;color:{vc};font-weight:600;'>"
+        f"${d['swb_actual']:.2f} actual vs ${target:.2f} target &nbsp;·&nbsp; {word}</div>"
+        f"</div>"
+    )
+
+_yc1 = _yr_card_html(_yr_data[1], "Year 1", _swb_target)
+_yc2 = _yr_card_html(_yr_data[2], "Year 2", _swb_target)
+_yc3 = _yr_card_html(_yr_data[3], "Year 3", _swb_target)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RENDER — 7 TILES
+# ═══════════════════════════════════════════════════════════════════════════════
+_tc1,_tc2,_tc3,_tc4,_tc5,_tc6,_tc7 = st.columns(7)
+
+def _tile(col, val, label, sub=None, border="#003366", val_color="#0F1923", val_size="1.65rem"):
+    col.markdown(
+        f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-top:3px solid {border};"
+        f"border-radius:3px;padding:0.85rem 1rem 0.75rem;"
+        f"box-shadow:0 1px 3px rgba(0,0,0,0.04);'>"
+        f"<div style='font-family:\"EB Garamond\",serif;font-size:{val_size};font-weight:500;"
+        f"color:{val_color};line-height:1;margin-bottom:0.25rem;'>{val}</div>"
+        f"<div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.11em;color:#7A8799;'>{label}</div>"
+        + (f"<div style='font-size:0.64rem;color:{val_color};margin-top:0.2rem;'>{sub}</div>" if sub else "")
+        + "</div>",
+        unsafe_allow_html=True
+    )
+
+# Policy levers — navy
+_tile(_tc1, f"{best.base_fte:.1f}",  "Base FTE")
+_tile(_tc2, f"{best.winter_fte:.1f}", "Winter FTE")
+_tile(_tc3, f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}", "Summer Floor")
+_tile(_tc4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
+
+# KPI tiles
+_swb_sub = f"{'▲' if _swb_delta_pv > 0 else '▼'} ${abs(_swb_delta_pv):.2f} vs ${_swb_target:.0f} target"
+_tile(_tc5, f"${_swb_actual:.2f}", "SWB / Visit",
+      sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr)
+
+_vpd_sub = f"↓ {_vpd_min:.1f} min &nbsp;·&nbsp; ↑ {_vpd_max:.1f} max"
+_tile(_tc6, f"{_vpd_avg:.1f}", "Visits / Provider",
+      sub=_vpd_sub, border="#7A6200", val_color="#0F1923")
+
+_turn_sub = f"{_turn_risk_lbl} &nbsp;·&nbsp; ${_turn_cost_3yr/1e3:.0f}K cost"
+_tile(_tc7, f"{_tot_turn_events:.1f}", "Turnover Events",
+      sub=_turn_sub, border=_turn_risk_clr, val_color=_turn_risk_clr)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY CARD
+# ═══════════════════════════════════════════════════════════════════════════════
+_yr_goal_str = (
+    f"<span style='font-family:\"EB Garamond\",serif;font-size:2.2rem;font-weight:500;"
+    f"color:{'#B91C1C' if (_yr_goal is None or _yr_goal > 3) else '#92600A'};line-height:1;'>"
+    f"{'Already met' if _yr_goal == 1 else (str(_yr_goal) + ' yrs' if _yr_goal else 'Beyond horizon')}"
+    f"</span>"
+)
+
+_no_accel_msg = (
+    f"<div style='font-size:0.76rem;color:#0A6B4A;padding:0.5rem 0;'>"
+    f"✓ SWB/visit is already at or below the ${_swb_target:.0f} target — goal is met.</div>"
+)
+
 st.markdown(
     f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {NAVY};"
     f"border-radius:4px;margin:0.75rem 0 0.4rem;overflow:hidden;font-size:0.82rem;'>"
 
-    # Row 1 — Annualised waterfall
+    # ── Row 1: SWB variance waterfall ────────────────────────────────────────
     f"<div style='padding:0.65rem 1.2rem 0.55rem;'>"
-    f"<div style='color:{MUTED};font-size:0.60rem;font-weight:700;text-transform:uppercase;"
-    f"letter-spacing:0.14em;margin-bottom:0.35rem;'>Annualised {_elabel_b} (3-yr avg)</div>"
-    f"<span style='color:{NAVY};font-weight:600'>Revenue ${_ann_rev/1e6:.2f}M</span>"
-    f"  <span style='color:{MUTED}'>−</span>  "
-    f"<span style='color:#B91C1C'>SWB ${_ann_swb/1e3:.0f}K</span>"
-    f"  <span style='color:{MUTED}'>−</span>  "
-    f"<span style='color:#B91C1C'>Flex ${_ann_flex/1e3:.0f}K</span>"
-    f"  <span style='color:{MUTED}'>−</span>  "
-    f"<span style='color:#B91C1C'>Turnover ${_ann_turnover/1e3:.0f}K</span>"
-    f"  <span style='color:{MUTED}'>−</span>  "
-    f"<span style='color:#B91C1C'>Burnout ${_ann_burnout/1e3:.0f}K</span>"
-    f"{_ann_fhtml}"
-    f"  <span style='color:{MUTED}'>=</span>  "
-    f"<span style='color:{C_GREEN};font-size:1.05rem;font-weight:700'>${_ann_ebitda/1e6:.2f}M/yr</span>"
+    f"<div style='color:{MUTED};font-size:0.58rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.16em;margin-bottom:0.4rem;'>SWB Variance Breakdown — Annualised (3-yr avg)</div>"
+    f"<span style='color:{NAVY};font-weight:600;'>SWB Goal ${_ann_swb_goal/1e3:.0f}K</span>"
+    f"  <span style='color:{MUTED};'>−</span>  "
+    f"<span style='color:#B91C1C;'>Actual ${_ann_swb/1e3:.0f}K</span>"
+    f"  <span style='color:{MUTED};'>−</span>  "
+    f"<span style='color:#B91C1C;'>Flex ${_ann_flex/1e3:.0f}K</span>"
+    f"  <span style='color:{MUTED};'>−</span>  "
+    f"<span style='color:#B91C1C;'>Turnover ${_ann_turnover/1e3:.0f}K</span>"
+    f"  <span style='color:{MUTED};'>−</span>  "
+    f"<span style='color:#B91C1C;'>Burnout ${_ann_burnout/1e3:.0f}K</span>"
+    f"  <span style='color:{MUTED};'>=</span>  "
+    f"<span style='color:{_var_clr};font-size:1.0rem;font-weight:700;'>"
+    f"{_impact_sign}${_impact_abs_ann/1e3:.0f}K/yr SWB variance</span>"
+    f"  <span style='color:{MUTED};font-size:0.72rem;'>({_var_word})</span>"
     f"</div>"
 
-    # Row 2 — SWB variance (the decision metric)
-    f"<div style='border-top:1px solid #E2E8F0;padding:0.45rem 1.2rem;background:#F8FAFC;"
-    f"display:flex;align-items:center;gap:2rem;flex-wrap:wrap;'>"
-    f"<div style='display:flex;align-items:baseline;gap:0.7rem;'>"
-    f"<span style='color:{MUTED};font-size:0.60rem;font-weight:700;text-transform:uppercase;"
-    f"letter-spacing:0.13em;white-space:nowrap;'>SWB / Visit Variance</span>"
-    f"<span style='color:{_var_clr};font-weight:700;font-size:1.1rem;line-height:1;'>"
-    f"{_var_arrow} ${abs(_swb_delta_pv):.2f}</span>"
-    f"<span style='color:{SLATE};font-size:0.76rem'>"
-    f"${_swb_actual:.2f} actual vs ${_swb_target:.2f} target</span>"
-    f"<span style='color:{MUTED}'>→</span>"
-    f"<span style='color:{_var_clr};font-weight:700;font-size:0.88rem'>"
-    f"{_impact_sign}${_impact_abs_ann/1e3:.0f}K/yr</span>"
-    f"<span style='color:{MUTED};font-size:0.72rem'>"
-    f"({_var_word} · {_impact_sign}${_impact_abs_3yr/1e3:.0f}K over 3 yrs)</span>"
-    f"</div>"
-    f"<div style='margin-left:auto;font-size:0.82rem;'>{_zone_str}</div>"
+    # ── Row 2: Two-column — years-to-goal LEFT, acceleration RIGHT ────────────
+    f"<div style='border-top:1px solid #E2E8F0;display:grid;grid-template-columns:1fr 1fr;'>"
+
+    # Left: years-to-goal + strip
+    f"<div style='padding:0.9rem 1.2rem;border-right:1px solid #E2E8F0;'>"
+    f"<div style='color:{MUTED};font-size:0.58rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.16em;margin-bottom:0.6rem;'>Time to SWB Goal — At Current Growth Rate</div>"
+    f"<div style='display:flex;align-items:baseline;gap:0.8rem;margin-bottom:0.4rem;'>"
+    f"{_yr_goal_str}"
+    f"<div style='font-size:0.78rem;color:#4A5568;line-height:1.5;'>"
+    f"At <b>{cfg.annual_growth_pct:.0f}% annual growth</b>, SWB/visit crosses<br>"
+    f"the ${_swb_target:.0f} target when visit volume reaches ~{int(_base_vpd * (1+_growth)**((_yr_goal or 7)-1))} vpd"
+    f"</div></div>"
+    f"<div style='font-size:0.68rem;color:#7A8799;margin-bottom:0.3rem;'>"
+    f"Current: ${_swb_actual:.2f}/visit &nbsp;·&nbsp; Goal: ${_swb_target:.2f} &nbsp;·&nbsp; Gap: ${abs(_swb_delta_pv):.2f}</div>"
+    f"{_strip_html}"
     f"</div>"
 
-    # Row 3 — Marginal (gold, conditional)
-    f"{_ma_row}"
+    # Right: acceleration levers (or "already met" message)
+    f"<div style='padding:0.9rem 1.2rem;'>"
+    f"<div style='color:{MUTED};font-size:0.58rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.16em;margin-bottom:0.65rem;'>How to Reach Goal Sooner</div>"
+    + (_no_accel_msg if not _accel_html else _accel_html)
+    + f"</div>"
+
+    + f"</div>"
+
+    # ── Row 3: Zones + marginal ───────────────────────────────────────────────
+    f"<div style='border-top:1px solid #E2E8F0;padding:0.42rem 1.2rem;"
+    f"background:#F8FAFC;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;'>"
+    f"<span style='color:{MUTED};font-size:0.58rem;font-weight:700;text-transform:uppercase;"
+    f"letter-spacing:0.13em;'>36-Month Zones</span>"
+    f"<b style='color:#0A6B4A;'>{s['green_months']}G</b>"
+    f" <span style='color:{MUTED};'>/</span> "
+    f"<b style='color:#92600A;'>{s['yellow_months']}Y</b>"
+    f" <span style='color:{MUTED};'>/</span> "
+    f"<b style='color:#B91C1C;'>{s['red_months']}R</b>"
+    f"<span style='color:{MUTED};font-size:0.72rem;'>"
+    f"&nbsp;·&nbsp; {s['pct_months_in_band']:.0f}% in-band"
+    f"&nbsp;·&nbsp; {_es['capture_rate']*100:.1f}% visit capture"
+    f"&nbsp;·&nbsp; {_oa:.1f} FTE overload attrition</span>"
+    + (f"<div style='margin-left:auto;display:flex;align-items:center;gap:1.2rem;"
+       f"background:#FDFAED;padding:0.28rem 0.75rem;border-radius:3px;"
+       f"border:1px solid #E8D88A;'>{_ma_row}</div>" if _ma_row else "")
+    + f"</div>"
     f"</div>",
     unsafe_allow_html=True
 )
+
+
+# ── Year cards ──────────────────────────────────────────────────────────────
+st.markdown(
+    f"<div style='margin:0.5rem 0 0.5rem;font-size:0.60rem;font-weight:700;"
+    f"text-transform:uppercase;letter-spacing:0.16em;color:{MUTED};'>"
+    f"WHAT YOUR CURRENT INPUTS ARE PRODUCING</div>",
+    unsafe_allow_html=True
+)
+_c1, _c2, _c3 = st.columns(3)
+_c1.markdown(_yc1, unsafe_allow_html=True)
+_c2.markdown(_yc2, unsafe_allow_html=True)
+_c3.markdown(_yc3, unsafe_allow_html=True)
 
 st.markdown("<div style='height:0.75rem'></div>",unsafe_allow_html=True)
 st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor),
