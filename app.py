@@ -837,6 +837,18 @@ _accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost few
 _accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
 _accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
 
+# PSR cross-train scenario: reduce PSR ratio from current to 0.5
+# PSR cost is part of support cost. Compute savings as fraction of total SWB cost.
+_psr_current  = cfg.support.psr_ratio
+_psr_target   = max(0.5, _psr_current * 0.5)   # halve PSR ratio (floor 0.5)
+_psr_only_ann = (_supp_3yr / 3) * ((_psr_current - _psr_target) / max(_psr_current, 0.01))                 * (cfg.support.psr_rate_hr / (cfg.support.psr_rate_hr + cfg.support.ma_rate_hr + 0.01))
+_psr_cost_mult= max(0.5, 1.0 - (_psr_only_ann / max(_staff_cost_ann, 1)))
+_accel_psr    = _yrs_to_goal(cost_mult=_psr_cost_mult) if _psr_current > 0.5 else None
+_psr_save_pct = round((1 - _psr_cost_mult) * 100)
+_psr_label    = (f"↓ Cross-train staff / reduce PSR ratio {_psr_current:.1f}→{_psr_target:.1f}"
+                 f"  <span style='font-size:0.63rem;color:#4A5568;font-weight:400;'>"
+                 f"(−{_psr_save_pct}% support cost)</span>")
+
 # ─── Strip + acceleration HTML (all deps now satisfied) ──────────────────────
 def _save_str(yrs):
     if yrs is None or _yr_goal is None: return ""
@@ -891,6 +903,8 @@ if not _goal_already_met:
     _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
     _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
     _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
+    if _accel_psr:
+        _accel_html += _accel_row(_psr_label, _accel_psr, "#FFFBEB", "#92600A")
     _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
 
 def _yr_card_html(d, yr_label, target):
