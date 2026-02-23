@@ -774,63 +774,6 @@ _staff_cost_ann = (_perm_3yr + _supp_3yr) / 3        # annualised perm+support
 _base_vpd       = cfg.base_visits_per_day
 _growth         = cfg.annual_growth_pct / 100.0
 _op_days        = cfg.operating_days_per_week * 52
-def _save_str(yrs):
-    if yrs is None or _yr_goal is None: return ""
-    diff = _yr_goal - yrs
-    if diff <= 0: return ""
-    return f"−{diff} yr{'s' if diff > 1 else ''}"
-
-# ─── SWB strip HTML ──────────────────────────────────────────────────────────
-def _strip_cell(yr, swb, target):
-    if swb <= target:
-        bg = "#ECFDF5"; clr = "#0A6B4A"; val = f"${swb:.0f} ✓"
-    elif swb <= target * 1.10:
-        bg = "#FFFBEB"; clr = "#92600A"; val = f"${swb:.0f}"
-    else:
-        bg = "#FEF2F2"; clr = "#B91C1C"; val = f"${swb:.0f}"
-    return (
-        f"<div style='flex:1;padding:0.3rem 0.4rem;background:{bg};"
-        f"border-right:1px solid #E2E8F0;min-width:0;'>"
-        f"<div style='font-size:0.55rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.09em;color:#7A8799;margin-bottom:1px;'>Yr {yr}</div>"
-        f"<div style='font-size:0.70rem;font-weight:700;color:{clr};"
-        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{val}</div>"
-        f"</div>"
-    )
-
-_strip_cells = ""
-for (_syy, _sswb) in _yr_swb_strip[:7]:
-    _strip_cells += _strip_cell(_syy, _sswb, _swb_target)
-
-_strip_html = (
-    f"<div style='display:flex;border:1px solid #E2E8F0;border-radius:3px;"
-    f"overflow:hidden;margin-top:0.5rem;'>{_strip_cells}</div>"
-)
-
-# ─── Acceleration rows HTML ──────────────────────────────────────────────────
-def _accel_row(label, yrs, bg, border_clr):
-    save = _save_str(yrs)
-    if not save: return ""
-    return (
-        f"<div style='display:flex;align-items:flex-start;gap:0.65rem;"
-        f"padding:0.42rem 0.6rem;background:{bg};border-radius:3px;"
-        f"border-left:3px solid {border_clr};margin-bottom:0.4rem;'>"
-        f"<div style='flex:1;font-size:0.72rem;font-weight:600;color:{border_clr};'>{label}"
-        f"<div style='font-size:0.67rem;font-weight:400;color:#4A5568;margin-top:0.1rem;'>"
-        f"Reaches $85 target by Year {yrs}</div></div>"
-        f"<div style='font-size:0.70rem;font-weight:700;color:{border_clr};"
-        f"white-space:nowrap;'>{save}</div>"
-        f"</div>"
-    )
-
-_accel_html = ""
-_goal_already_met = _swb_delta_pv <= 0   # current SWB is at or below target
-if not _goal_already_met:
-    _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
-    _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
-    _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
-    _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
-
 # ─── Per-year data for year cards ────────────────────────────────────────────
 _yr_data = {}
 for _yr in [1, 2, 3]:
@@ -889,6 +832,62 @@ _accel_30   = _yrs_to_goal(growth_override=0.30)
 _accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost fewer FTE
 _accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
 _accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
+
+# ─── Strip + acceleration HTML (all deps now satisfied) ──────────────────────
+def _save_str(yrs):
+    if yrs is None or _yr_goal is None: return ""
+    diff = _yr_goal - yrs
+    if diff <= 0: return ""
+    return f"−{diff} yr{'s' if diff > 1 else ''}"
+
+def _strip_cell(yr, swb, target):
+    if swb <= target:
+        bg = "#ECFDF5"; clr = "#0A6B4A"; val = f"${swb:.0f} ✓"
+    elif swb <= target * 1.10:
+        bg = "#FFFBEB"; clr = "#92600A"; val = f"${swb:.0f}"
+    else:
+        bg = "#FEF2F2"; clr = "#B91C1C"; val = f"${swb:.0f}"
+    return (
+        f"<div style='flex:1;padding:0.3rem 0.4rem;background:{bg};"
+        f"border-right:1px solid #E2E8F0;min-width:0;'>"
+        f"<div style='font-size:0.55rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.09em;color:#7A8799;margin-bottom:1px;'>Yr {yr}</div>"
+        f"<div style='font-size:0.70rem;font-weight:700;color:{clr};"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{val}</div>"
+        f"</div>"
+    )
+
+_strip_cells = ""
+for (_syy, _sswb) in _yr_swb_strip[:7]:
+    _strip_cells += _strip_cell(_syy, _sswb, _swb_target)
+
+_strip_html = (
+    f"<div style='display:flex;border:1px solid #E2E8F0;border-radius:3px;"
+    f"overflow:hidden;margin-top:0.5rem;'>{_strip_cells}</div>"
+)
+
+def _accel_row(label, yrs, bg, border_clr):
+    save = _save_str(yrs)
+    if not save: return ""
+    return (
+        f"<div style='display:flex;align-items:flex-start;gap:0.65rem;"
+        f"padding:0.42rem 0.6rem;background:{bg};border-radius:3px;"
+        f"border-left:3px solid {border_clr};margin-bottom:0.4rem;'>"
+        f"<div style='flex:1;font-size:0.72rem;font-weight:600;color:{border_clr};'>{label}"
+        f"<div style='font-size:0.67rem;font-weight:400;color:#4A5568;margin-top:0.1rem;'>"
+        f"Reaches ${_swb_target:.0f} target by Year {yrs}</div></div>"
+        f"<div style='font-size:0.70rem;font-weight:700;color:{border_clr};"
+        f"white-space:nowrap;'>{save}</div>"
+        f"</div>"
+    )
+
+_accel_html = ""
+_goal_already_met = _swb_delta_pv <= 0
+if not _goal_already_met:
+    _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
+    _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
+    _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
+    _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
 
 def _yr_card_html(d, yr_label, target):
     vc   = "#0A6B4A" if d["net_var"] >= 0 else "#B91C1C"
