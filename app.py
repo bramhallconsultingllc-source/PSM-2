@@ -776,40 +776,32 @@ _growth         = cfg.annual_growth_pct / 100.0
 _op_days        = cfg.operating_days_per_week * 52
 _yr_goal        = None
 _yr_swb_strip   = []   # list of (year, swb_per_visit) for the strip
-# Cost model: staff cost is FIXED at min FTE floor until demand forces a hire.
-# As visit volume grows, the fixed cost spreads over more visits → SWB/visit falls.
-# demand_fte(yr) = (vpd_yr / demand_vpd_at_base_fte) * base_fte
-# The "natural" VPD for the current base_fte is inferred from actual SWB/visit.
-_demand_vpd_base = _staff_cost_ann / (_swb_actual * _op_days) if _swb_actual > 0 else _base_vpd
-_cost_per_fte    = _staff_cost_ann / max(best.base_fte, 0.01)
+# Strip uses ACTUAL simulated SWB/visit for yrs 1-3 (already in _yr_data),
+# then extrapolates yrs 4-7 using the yr2→yr3 trend.
+# This is data-driven and captures real cost/volume dynamics from the simulation.
+_swb_yr = {yr: _yr_data[yr]["swb_actual"] for yr in [1, 2, 3]}
+_trend   = _swb_yr[3] - _swb_yr[2]   # $/visit per year (negative = improving)
 
-import math as _math
-def _ceil_half(x): return _math.ceil(x * 2) / 2   # round up to nearest 0.5 FTE
-
-for _yy in range(1, 26):
-    _vpd_proj  = _base_vpd * (1 + _growth) ** (_yy - 1)
-    _vis_proj  = _vpd_proj * _op_days
-    # FTE: fixed floor until demand requires more
-    _dem_fte   = (_vpd_proj / max(_demand_vpd_base, 1)) * best.base_fte
-    _fte_proj  = max(best.base_fte, _dem_fte)   # smooth — no step snapping
-    _cost_proj = _fte_proj * _cost_per_fte
-    _swb_proj  = _cost_proj / _vis_proj if _vis_proj > 0 else 9999
+for _yy in range(1, 11):
+    if _yy <= 3:
+        _swb_proj = _swb_yr[_yy]
+    else:
+        _swb_proj = max(0, _swb_yr[3] + _trend * (_yy - 3))
     _yr_swb_strip.append((_yy, _swb_proj))
     if _swb_proj <= _swb_target and _yr_goal is None:
         _yr_goal = _yy
 
-# Acceleration scenarios — same fixed-floor model
+# Acceleration scenarios: scale the yr2→yr3 trend by growth/cost multipliers
+# faster growth = steeper negative trend; lower cost = immediate offset
 def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
-    import math as _m2
-    def _ch(x): return _m2.ceil(x * 2) / 2
-    g_use = growth_override if growth_override is not None else _growth
+    g_ratio   = ((growth_override or _growth) / max(_growth, 0.001))
+    trend_adj = _trend * g_ratio * load_mult   # steeper improvement if faster growth
     for yy in range(1, 26):
-        vpd_p  = _base_vpd * (1 + g_use) ** (yy - 1)
-        vis_p  = vpd_p * _op_days
-        dem_f  = (vpd_p / max(_demand_vpd_base * load_mult, 1)) * best.base_fte
-        fte_p  = max(best.base_fte, dem_f)   # smooth continuous
-        cost_p = fte_p * _cost_per_fte * cost_mult
-        if vis_p > 0 and cost_p / vis_p <= _swb_target:
+        if yy <= 3:
+            swb_p = _swb_yr[yy] * cost_mult
+        else:
+            swb_p = max(0, _swb_yr[3] + trend_adj * (yy - 3)) * cost_mult
+        if swb_p <= _swb_target:
             return yy
     return None
 
@@ -1026,7 +1018,7 @@ st.markdown(
     f"{_yr_goal_str}"
     f"<div style='font-size:0.78rem;color:#4A5568;line-height:1.5;'>"
     f"At <b>{cfg.annual_growth_pct:.0f}% annual growth</b>, SWB/visit crosses<br>"
-    f"the ${_swb_target:.0f} target when visit volume reaches ~{int(_base_vpd * (1+_growth)**((_yr_goal or 7)-1))} vpd"
+    f"the ${_swb_target:.0f} target by Year {_yr_goal or '?'} at current trajectory"
     f"</div></div>"
     f"<div style='font-size:0.68rem;color:#7A8799;margin-bottom:0.3rem;'>"
     f"Current: ${_swb_actual:.2f}/visit &nbsp;·&nbsp; Goal: ${_swb_target:.2f} &nbsp;·&nbsp; Gap: ${abs(_swb_delta_pv):.2f}</div>"
