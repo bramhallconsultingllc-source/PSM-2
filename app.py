@@ -776,25 +776,39 @@ _growth         = cfg.annual_growth_pct / 100.0
 _op_days        = cfg.operating_days_per_week * 52
 _yr_goal        = None
 _yr_swb_strip   = []   # list of (year, swb_per_visit) for the strip
+# Cost model: staff cost is FIXED at min FTE floor until demand forces a hire.
+# As visit volume grows, the fixed cost spreads over more visits → SWB/visit falls.
+# demand_fte(yr) = (vpd_yr / demand_vpd_at_base_fte) * base_fte
+# The "natural" VPD for the current base_fte is inferred from actual SWB/visit.
+_demand_vpd_base = _staff_cost_ann / (_swb_actual * _op_days) if _swb_actual > 0 else _base_vpd
+_cost_per_fte    = _staff_cost_ann / max(best.base_fte, 0.01)
+
+import math as _math
+def _ceil_half(x): return _math.ceil(x * 2) / 2   # round up to nearest 0.5 FTE
+
 for _yy in range(1, 26):
-    _vpd_proj   = _base_vpd * (1 + _growth) ** (_yy - 1)
-    _vis_proj   = _vpd_proj * _op_days
-    # FTE scales with visits once load floor is hit
-    _fte_proj   = max(best.base_fte, (_vpd_proj / max(_base_vpd, 1)) * best.base_fte)
-    _cost_proj  = _fte_proj * (_staff_cost_ann / max(best.base_fte, 0.01))
-    _swb_proj   = _cost_proj / _vis_proj if _vis_proj > 0 else 9999
+    _vpd_proj  = _base_vpd * (1 + _growth) ** (_yy - 1)
+    _vis_proj  = _vpd_proj * _op_days
+    # FTE: fixed floor until demand requires more
+    _dem_fte   = (_vpd_proj / max(_demand_vpd_base, 1)) * best.base_fte
+    _fte_proj  = max(best.base_fte, _ceil_half(_dem_fte))
+    _cost_proj = _fte_proj * _cost_per_fte
+    _swb_proj  = _cost_proj / _vis_proj if _vis_proj > 0 else 9999
     _yr_swb_strip.append((_yy, _swb_proj))
     if _swb_proj <= _swb_target and _yr_goal is None:
         _yr_goal = _yy
 
-# Acceleration scenarios (simple projections)
+# Acceleration scenarios — same fixed-floor model
 def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
+    import math as _m2
+    def _ch(x): return _m2.ceil(x * 2) / 2
+    g_use = growth_override if growth_override is not None else _growth
     for yy in range(1, 26):
-        g      = (growth_override or _growth)
-        vpd_p  = _base_vpd * (1 + g) ** (yy - 1)
+        vpd_p  = _base_vpd * (1 + g_use) ** (yy - 1)
         vis_p  = vpd_p * _op_days
-        fte_p  = max(best.base_fte, (_vpd_proj / max(_base_vpd * load_mult, 1)) * best.base_fte)
-        cost_p = fte_p * (_staff_cost_ann / max(best.base_fte, 0.01)) * cost_mult
+        dem_f  = (vpd_p / max(_demand_vpd_base * load_mult, 1)) * best.base_fte
+        fte_p  = max(best.base_fte, _ch(dem_f))
+        cost_p = fte_p * _cost_per_fte * cost_mult
         if vis_p > 0 and cost_p / vis_p <= _swb_target:
             return yy
     return None
