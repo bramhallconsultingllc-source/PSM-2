@@ -1010,6 +1010,21 @@ _no_accel_msg = (
     f"✓ SWB/visit is already at or below the ${_swb_target:.0f} target — goal is met.</div>"
 )
 
+
+# ── Year cards ──────────────────────────────────────────────────────────────
+st.markdown(
+    f"<div style='margin:0.5rem 0 0.5rem;font-size:0.60rem;font-weight:700;"
+    f"text-transform:uppercase;letter-spacing:0.16em;color:{MUTED};'>"
+    f"WHAT YOUR CURRENT INPUTS ARE PRODUCING</div>",
+    unsafe_allow_html=True
+)
+_c1, _c2, _c3 = st.columns(3)
+_c1.markdown(_yc1, unsafe_allow_html=True)
+_c2.markdown(_yc2, unsafe_allow_html=True)
+_c3.markdown(_yc3, unsafe_allow_html=True)
+
+st.markdown("<div style='height:0.75rem'></div>",unsafe_allow_html=True)
+
 st.markdown(
     f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {NAVY};"
     f"border-radius:4px;margin:0.75rem 0 0.4rem;overflow:hidden;font-size:0.82rem;'>"
@@ -1082,20 +1097,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
-# ── Year cards ──────────────────────────────────────────────────────────────
-st.markdown(
-    f"<div style='margin:0.5rem 0 0.5rem;font-size:0.60rem;font-weight:700;"
-    f"text-transform:uppercase;letter-spacing:0.16em;color:{MUTED};'>"
-    f"WHAT YOUR CURRENT INPUTS ARE PRODUCING</div>",
-    unsafe_allow_html=True
-)
-_c1, _c2, _c3 = st.columns(3)
-_c1.markdown(_yc1, unsafe_allow_html=True)
-_c2.markdown(_yc2, unsafe_allow_html=True)
-_c3.markdown(_yc3, unsafe_allow_html=True)
-
-st.markdown("<div style='height:0.75rem'></div>",unsafe_allow_html=True)
 st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor,monthly_impacts=_mo_norm),
                 use_container_width=True)
 
@@ -1146,25 +1147,31 @@ with tabs[0]:
             zones    = [mo.zone for mo in qmos]
             dom_zone = max(set(zones), key=zones.count)
 
-            ma_day   = avg_pof * sup.ma_ratio
-            psr_day  = avg_pof * sup.psr_ratio
-            rt_day   = sup.rt_flat_fte
+            # Snap concurrent staff to nearest 0.25 FIRST, then derive FTE from
+            # the snapped value so Staff/Day and FTE columns are always consistent.
+            # (Deriving FTE from raw avg_pof then snapping independently causes
+            #  rows where Staff/Day looks identical but FTE differs.)
+            apc_day_snapped  = round(avg_pof * 4) / 4
+            ma_day_snapped   = round(avg_pof * sup.ma_ratio  * 4) / 4
+            psr_day_snapped  = round(avg_pof * sup.psr_ratio * 4) / 4
+            rt_day_snapped   = round(sup.rt_flat_fte          * 4) / 4
 
-            ma_fte   = ma_day  * fts
-            psr_fte  = psr_day * fts
-            rt_fte   = rt_day  * fts
-            total_fte= avg_pfte + ma_fte + psr_fte + rt_fte
+            apc_fte  = round(apc_day_snapped  * fts * 4) / 4
+            ma_fte   = round(ma_day_snapped   * fts * 4) / 4
+            psr_fte  = round(psr_day_snapped  * fts * 4) / 4
+            rt_fte   = round(rt_day_snapped   * fts * 4) / 4
+            total_fte= apc_fte + ma_fte + psr_fte + rt_fte
 
             rows.append({
                 "year": yr, "quarter": q, "zone": dom_zone,
                 "vpd": avg_vpd,
-                # staff per day
-                "apc_day":  avg_pof,
-                "ma_day":   ma_day,
-                "psr_day":  psr_day,
-                "rt_day":   rt_day,
-                # FTE
-                "apc_fte":  avg_pfte,
+                # staff per day (pre-snapped)
+                "apc_day":  apc_day_snapped,
+                "ma_day":   ma_day_snapped,
+                "psr_day":  psr_day_snapped,
+                "rt_day":   rt_day_snapped,
+                # FTE (derived from snapped concurrent, not raw avg_pfte)
+                "apc_fte":  apc_fte,
                 "ma_fte":   ma_fte,
                 "psr_fte":  psr_fte,
                 "rt_fte":   rt_fte,
