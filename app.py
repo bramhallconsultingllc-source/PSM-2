@@ -774,42 +774,6 @@ _staff_cost_ann = (_perm_3yr + _supp_3yr) / 3        # annualised perm+support
 _base_vpd       = cfg.base_visits_per_day
 _growth         = cfg.annual_growth_pct / 100.0
 _op_days        = cfg.operating_days_per_week * 52
-_yr_goal        = None
-_yr_swb_strip   = []   # list of (year, swb_per_visit) for the strip
-# Strip uses ACTUAL simulated SWB/visit for yrs 1-3 (already in _yr_data),
-# then extrapolates yrs 4-7 using the yr2→yr3 trend.
-# This is data-driven and captures real cost/volume dynamics from the simulation.
-_swb_yr = {yr: _yr_data[yr]["swb_actual"] for yr in [1, 2, 3]}
-_trend   = _swb_yr[3] - _swb_yr[2]   # $/visit per year (negative = improving)
-
-for _yy in range(1, 11):
-    if _yy <= 3:
-        _swb_proj = _swb_yr[_yy]
-    else:
-        _swb_proj = max(0, _swb_yr[3] + _trend * (_yy - 3))
-    _yr_swb_strip.append((_yy, _swb_proj))
-    if _swb_proj <= _swb_target and _yr_goal is None:
-        _yr_goal = _yy
-
-# Acceleration scenarios: scale the yr2→yr3 trend by growth/cost multipliers
-# faster growth = steeper negative trend; lower cost = immediate offset
-def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
-    g_ratio   = ((growth_override or _growth) / max(_growth, 0.001))
-    trend_adj = _trend * g_ratio * load_mult   # steeper improvement if faster growth
-    for yy in range(1, 26):
-        if yy <= 3:
-            swb_p = _swb_yr[yy] * cost_mult
-        else:
-            swb_p = max(0, _swb_yr[3] + trend_adj * (yy - 3)) * cost_mult
-        if swb_p <= _swb_target:
-            return yy
-    return None
-
-_accel_30   = _yrs_to_goal(growth_override=0.30)
-_accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost fewer FTE
-_accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
-_accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
-
 def _save_str(yrs):
     if yrs is None or _yr_goal is None: return ""
     diff = _yr_goal - yrs
@@ -889,6 +853,42 @@ for _yr in [1, 2, 3]:
         "R": sum(1 for m in _yr_mos if m.zone=="Red"),
         "peak": max(m.patients_per_provider_per_shift for m in _yr_mos),
     }
+
+_yr_goal        = None
+_yr_swb_strip   = []   # list of (year, swb_per_visit) for the strip
+# Strip uses ACTUAL simulated SWB/visit for yrs 1-3 (already in _yr_data),
+# then extrapolates yrs 4-7 using the yr2→yr3 trend.
+# This is data-driven and captures real cost/volume dynamics from the simulation.
+_swb_yr = {yr: _yr_data[yr]["swb_actual"] for yr in [1, 2, 3]}
+_trend   = _swb_yr[3] - _swb_yr[2]   # $/visit per year (negative = improving)
+
+for _yy in range(1, 11):
+    if _yy <= 3:
+        _swb_proj = _swb_yr[_yy]
+    else:
+        _swb_proj = max(0, _swb_yr[3] + _trend * (_yy - 3))
+    _yr_swb_strip.append((_yy, _swb_proj))
+    if _swb_proj <= _swb_target and _yr_goal is None:
+        _yr_goal = _yy
+
+# Acceleration scenarios: scale the yr2→yr3 trend by growth/cost multipliers
+# faster growth = steeper negative trend; lower cost = immediate offset
+def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
+    g_ratio   = ((growth_override or _growth) / max(_growth, 0.001))
+    trend_adj = _trend * g_ratio * load_mult   # steeper improvement if faster growth
+    for yy in range(1, 26):
+        if yy <= 3:
+            swb_p = _swb_yr[yy] * cost_mult
+        else:
+            swb_p = max(0, _swb_yr[3] + trend_adj * (yy - 3)) * cost_mult
+        if swb_p <= _swb_target:
+            return yy
+    return None
+
+_accel_30   = _yrs_to_goal(growth_override=0.30)
+_accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost fewer FTE
+_accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
+_accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
 
 def _yr_card_html(d, yr_label, target):
     vc   = "#0A6B4A" if d["net_var"] >= 0 else "#B91C1C"
