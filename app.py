@@ -357,7 +357,7 @@ with st.sidebar:
         _y3_visits = base_visits * (1 + annual_growth/100) ** 2
         st.caption(f"Y1 baseline: **{base_visits:.0f}**/day  →  Y3 projected: **{_y3_visits:.0f}**/day")
 
-    with st.expander("QUARTERLY SEASONALITY", expanded=True):
+    with st.expander("QUARTERLY VOLUME DISTRIBUTION", expanded=True):
         c1, c2 = st.columns(2); c3, c4 = st.columns(2)
         with c1: q1 = st.number_input("Q1 Jan-Mar %", -50, 100, 20, 5, key="q1",
                 help="Volume adjustment vs base for Jan–Mar. +20 = flu season drives 20% more visits.")
@@ -367,10 +367,13 @@ with st.sidebar:
                 help="Volume adjustment vs base for Jul–Sep. -10 = summer slowdown, natural shed opportunity.")
         with c4: q4 = st.number_input("Q4 Oct-Dec %", -50, 100,  5, 5, key="q4",
                 help="Volume adjustment vs base for Oct–Dec. +5 = early flu ramp before peak.")
-        quarterly_impacts = [q1/100, q2/100, q3/100, q4/100]
+        _raw_impacts = [q1/100, q2/100, q3/100, q4/100]
+        # Normalize so the annual average = 0 → base_visits IS the annual average
+        _avg_impact  = sum(_raw_impacts) / 4
+        quarterly_impacts = [x - _avg_impact for x in _raw_impacts]
         s_idx = [1.0 + quarterly_impacts[MONTH_TO_QUARTER[m]] for m in range(12)]
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
-        st.caption(f"Range: **{min(pv):.0f}** - **{max(pv):.0f}** visits/day")
+        st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
 
     with st.expander("LOAD BAND TARGET", expanded=True):
         st.caption("Optimizer targets a pts/APC range. FTE derived monthly from demand.")
