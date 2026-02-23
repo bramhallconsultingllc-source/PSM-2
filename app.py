@@ -933,39 +933,39 @@ _yc3 = _yr_card_html(_yr_data[3], "Year 3", _swb_target)
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDER — 7 TILES
 # ═══════════════════════════════════════════════════════════════════════════════
-_tc1,_tc2,_tc3,_tc4,_tc5,_tc6,_tc7 = st.columns(7)
-
 def _tile(col, val, label, sub=None, border="#003366", val_color="#0F1923", val_size="1.65rem"):
     col.markdown(
         f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-top:3px solid {border};"
-        f"border-radius:3px;padding:0.85rem 1rem 0.75rem;"
+        f"border-radius:3px;padding:0.75rem 0.9rem 0.65rem;"
         f"box-shadow:0 1px 3px rgba(0,0,0,0.04);'>"
         f"<div style='font-family:\"EB Garamond\",serif;font-size:{val_size};font-weight:500;"
-        f"color:{val_color};line-height:1;margin-bottom:0.25rem;'>{val}</div>"
-        f"<div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.11em;color:#7A8799;'>{label}</div>"
-        + (f"<div style='font-size:0.64rem;color:{val_color};margin-top:0.2rem;'>{sub}</div>" if sub else "")
+        f"color:{val_color};line-height:1;margin-bottom:0.2rem;'>{val}</div>"
+        f"<div style='font-size:0.57rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.10em;color:#7A8799;'>{label}</div>"
+        + (f"<div style='font-size:0.62rem;color:{val_color};margin-top:0.15rem;'>{sub}</div>" if sub else "")
         + "</div>",
         unsafe_allow_html=True
     )
 
-# Policy levers — navy
+# Row 1 — Policy levers (4 columns)
+_tc1, _tc2, _tc3, _tc4 = st.columns(4)
 _tile(_tc1, f"{best.base_fte:.1f}",  "Base FTE")
 _tile(_tc2, f"{best.winter_fte:.1f}", "Winter FTE")
 _tile(_tc3, f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}", "Summer Floor")
 _tile(_tc4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
 
-# KPI tiles
+# Row 2 — KPI tiles (3 columns, full width)
+_tk1, _tk2, _tk3 = st.columns(3)
 _swb_sub = f"{'▲' if _swb_delta_pv > 0 else '▼'} ${abs(_swb_delta_pv):.2f} vs ${_swb_target:.0f} target"
-_tile(_tc5, f"${_swb_actual:.2f}", "SWB / Visit",
+_tile(_tk1, f"${_swb_actual:.2f}", "SWB / Visit",
       sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr)
 
 _vpd_sub = f"↓ {_vpd_min:.1f} min &nbsp;·&nbsp; ↑ {_vpd_max:.1f} max"
-_tile(_tc6, f"{_vpd_avg:.1f}", "Visits / Provider",
+_tile(_tk2, f"{_vpd_avg:.1f}", "Visits / Provider — Avg",
       sub=_vpd_sub, border="#7A6200", val_color="#0F1923")
 
 _turn_sub = f"{_turn_risk_lbl} &nbsp;·&nbsp; ${_turn_cost_3yr/1e3:.0f}K cost"
-_tile(_tc7, f"{_tot_turn_events:.1f}", "Turnover Events",
+_tile(_tk3, f"{_tot_turn_events:.1f}", "Turnover Events (3yr)",
       sub=_turn_sub, border=_turn_risk_clr, val_color=_turn_risk_clr)
 
 # ═══════════════════════════════════════════════════════════════════════════════
