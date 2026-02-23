@@ -791,7 +791,7 @@ for _yy in range(1, 26):
     _vis_proj  = _vpd_proj * _op_days
     # FTE: fixed floor until demand requires more
     _dem_fte   = (_vpd_proj / max(_demand_vpd_base, 1)) * best.base_fte
-    _fte_proj  = max(best.base_fte, _ceil_half(_dem_fte))
+    _fte_proj  = max(best.base_fte, _dem_fte)   # smooth — no step snapping
     _cost_proj = _fte_proj * _cost_per_fte
     _swb_proj  = _cost_proj / _vis_proj if _vis_proj > 0 else 9999
     _yr_swb_strip.append((_yy, _swb_proj))
@@ -807,7 +807,7 @@ def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
         vpd_p  = _base_vpd * (1 + g_use) ** (yy - 1)
         vis_p  = vpd_p * _op_days
         dem_f  = (vpd_p / max(_demand_vpd_base * load_mult, 1)) * best.base_fte
-        fte_p  = max(best.base_fte, _ch(dem_f))
+        fte_p  = max(best.base_fte, dem_f)   # smooth continuous
         cost_p = fte_p * _cost_per_fte * cost_mult
         if vis_p > 0 and cost_p / vis_p <= _swb_target:
             return yy
@@ -868,7 +868,8 @@ def _accel_row(label, yrs, bg, border_clr):
     )
 
 _accel_html = ""
-if _yr_goal and _yr_goal > 1:
+_goal_already_met = _swb_delta_pv <= 0   # current SWB is at or below target
+if not _goal_already_met:
     _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
     _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
     _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
@@ -982,7 +983,7 @@ _tile(_tc7, f"{_tot_turn_events:.1f}", "Turnover Events",
 _yr_goal_str = (
     f"<span style='font-family:\"EB Garamond\",serif;font-size:2.2rem;font-weight:500;"
     f"color:{'#B91C1C' if (_yr_goal is None or _yr_goal > 3) else '#92600A'};line-height:1;'>"
-    f"{'Already met' if _yr_goal == 1 else (str(_yr_goal) + ' yrs' if _yr_goal else 'Beyond horizon')}"
+    f"{'Already met' if _goal_already_met else (str(_yr_goal) + ' yrs' if _yr_goal else 'Beyond horizon')}"
     f"</span>"
 )
 
