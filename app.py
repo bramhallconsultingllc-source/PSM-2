@@ -1183,12 +1183,110 @@ st.markdown(f"<hr style='border-color:{RULE};margin:1.5rem 0;'>",unsafe_allow_ht
 # ══════════════════════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AI ADVISOR — shared helpers
+# ══════════════════════════════════════════════════════════════════════════════
+import requests as _requests
+import json as _json
+
+def _openai_key():
+    """Return the OpenAI API key from Streamlit secrets, or None."""
+    try:
+        return st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        return None
+
+def _build_simulation_context(pol, cfg, MA):
+    """Serialize the full simulation state into a compact text block for the system prompt."""
+    es  = pol.ebitda_summary
+    s   = pol.summary
+    mos = pol.months
+
+    lines = [
+        "=== PSM SIMULATION STATE ===",
+        f"Base visits/day: {cfg.base_visits_per_day}",
+        f"Annual growth: {cfg.annual_growth_pct}%",
+        f"Budgeted pts/APC/day: {cfg.budgeted_patients_per_provider_per_day}",
+        f"APC annual cost (perm): ${cfg.annual_provider_cost_perm:,}",
+        f"APC annual cost (flex): ${cfg.annual_provider_cost_flex:,}",
+        f"Revenue/visit: ${cfg.net_revenue_per_visit}",
+        f"SWB target/visit: ${cfg.swb_target_per_visit}",
+        f"Annual attrition: {cfg.annual_attrition_pct}%  monthly: {cfg.monthly_attrition_rate*100:.3f}%",
+        f"Pipeline: {cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + {cfg.days_to_independent}d orient = {cfg.days_to_sign+cfg.days_to_credential+cfg.days_to_independent}d total",
+        f"Shifts: {cfg.fte_shifts_per_week} shifts/wk per APC, {cfg.shift_hours}h shift, {cfg.operating_days_per_week} days/wk",
+        f"Min coverage FTE: {cfg.min_coverage_fte}",
+        "",
+        "=== 3-YEAR OUTCOMES ===",
+        f"EBITDA: ${es['ebitda']:,.0f}",
+        f"Revenue: ${es['revenue']:,.0f}",
+        f"SWB: ${es['swb']:,.0f}",
+        f"Turnover cost: ${es['turnover']:,.0f}  ({s['total_turnover_events']:.1f} events)",
+        f"Burnout penalty: ${es['burnout']:,.0f}",
+        f"Visit capture: {es['capture_rate']*100:.1f}%",
+        f"SWB/visit actual: ${s['annual_swb_per_visit']:.2f}  target: ${cfg.swb_target_per_visit:.2f}",
+        f"Zone distribution: {s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R",
+        "",
+        "=== RECOMMENDED POLICY ===",
+        f"Base FTE: {pol.base_fte}  Winter FTE: {pol.winter_fte}",
+        "",
+        "=== HIRE EVENTS ===",
+    ]
+    for h in pol.hire_events:
+        lines.append(
+            f"  Y{h.year}-{MA[h.calendar_month-1]}: +{h.fte_hired:.2f} FTE  mode={h.mode}"
+            f"  post_by=Y{h.post_by_year}-{MA[h.post_by_month-1]}"
+            f"  productive=Y{h.independent_year}-{MA[h.independent_month-1]}"
+        )
+    lines.append("")
+    lines.append("=== MONTHLY DETAIL (demand_fte | paid_fte | zone | pts/APC) ===")
+    for mo in mos:
+        lines.append(
+            f"  Y{mo.year}-{MA[mo.calendar_month-1]}: "
+            f"demand={mo.demand_fte_required:.2f} paid={mo.paid_fte:.2f} "
+            f"zone={mo.zone} pts={mo.patients_per_provider_per_shift:.1f} "
+            f"vpd={mo.demand_visits_per_day:.1f}"
+        )
+    return "\n".join(lines)
+
+def _call_openai(messages, key, model="gpt-4o", temperature=0.4, max_tokens=900):
+    """Call OpenAI chat completions via requests. Returns (text, error_str)."""
+    try:
+        resp = _requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": messages,
+                  "temperature": temperature, "max_tokens": max_tokens},
+            timeout=45,
+        )
+        if resp.status_code != 200:
+            return None, f"OpenAI API error {resp.status_code}: {resp.text[:200]}"
+        return resp.json()["choices"][0]["message"]["content"], None
+    except Exception as e:
+        return None, str(e)
+
+def _advisor_system_prompt(sim_context):
+    return f"""You are a staffing strategy advisor embedded in a Permanent Staffing Model (PSM) tool for an urgent care clinic operator. You have full access to the clinic's 36-month simulation results.
+
+Your role:
+- Interpret simulation data and give specific, actionable guidance
+- Answer "now what?" questions when reality diverges from the plan
+- Flag risks, tradeoffs, and operational implications
+- Speak plainly — your audience is an operator and their CFO, not a data scientist
+- Always ground answers in the specific numbers from the simulation context below
+- Never invent staffing benchmarks or cite external statistics unless explicitly asked
+- When a situation falls outside the model (e.g. sudden departure, delayed start), reason through the impact using the monthly FTE and demand data
+- Keep responses concise — 3-5 sentences for simple questions, up to 3 short paragraphs for complex ones
+- Add a disclaimer on HR/legal questions: "This is operational planning guidance, not HR or legal advice"
+
+{sim_context}"""
+
 tabs = st.tabs([
     "Staffing Model", "Executive Summary",
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
     "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic", "Turnover Cost",
-    "Sensitivity",
+    "Sensitivity", "Advisor",
 ])
 
 # ── TAB 0: STAFFING MODEL ────────────────────────────────────────────────────
@@ -2147,6 +2245,175 @@ with tabs[1]:
 
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
     st.info("📋 PDF export — coming next build.", icon="📄")
+
+    # ── AI BRIEFING ───────────────────────────────────────────────────────────
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1rem;'>", unsafe_allow_html=True)
+    st.markdown("## AI ADVISOR BRIEFING")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
+        f"One-click CFO-quality memo interpreting this staffing policy — "
+        f"risks, tradeoffs, and what to watch. Powered by GPT-4o.</p>",
+        unsafe_allow_html=True)
+
+    _oai_key_brief = _openai_key()
+    if not _oai_key_brief:
+        st.warning("Add `OPENAI_API_KEY` to your Streamlit secrets to enable AI features.", icon="🔑")
+    else:
+        if st.button("✦ Generate Briefing", type="primary", key="gen_briefing"):
+            _sim_ctx = _build_simulation_context(pol, cfg, MA)
+            _brief_messages = [
+                {"role": "system", "content": _advisor_system_prompt(_sim_ctx)},
+                {"role": "user", "content": (
+                    "Write a concise CFO-quality briefing memo for this staffing policy. "
+                    "Structure it as: (1) Policy overview and what it achieves, "
+                    "(2) Key risks or watch items, "
+                    "(3) The single most important operational decision in the next 90 days. "
+                    "Be specific — reference actual months, FTE counts, and dollar amounts from the simulation. "
+                    "Plain prose, no bullet points, no headers. 3-4 paragraphs."
+                )},
+            ]
+            with st.spinner("Drafting briefing..."):
+                _brief_text, _brief_err = _call_openai(_brief_messages, _oai_key_brief, max_tokens=600)
+            if _brief_err:
+                st.error(f"Error: {_brief_err}")
+            else:
+                st.session_state["psm_briefing"] = _brief_text
+
+        if "psm_briefing" in st.session_state:
+            st.markdown(
+                f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;"
+                f"border-left:4px solid {NAVY};border-radius:4px;"
+                f"padding:1.1rem 1.3rem;font-size:0.87rem;line-height:1.7;"
+                f"color:{INK};margin-top:0.6rem;'>"
+                f"{st.session_state['psm_briefing'].replace(chr(10), '<br>')}"
+                f"</div>",
+                unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='font-size:0.68rem;color:{MUTED};margin-top:0.35rem;'>"
+                f"Generated by GPT-4o · grounded in your simulation data · "
+                f"not HR or legal advice</div>",
+                unsafe_allow_html=True)
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    # ── SENSITIVITY SNAPSHOT ─────────────────────────────────────────────────
+    st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.2rem;'>", unsafe_allow_html=True)
+    st.markdown("## KEY SENSITIVITIES")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1.2rem;'>"
+        f"Top inputs ranked by their impact on 3-year EBITDA. "
+        f"Each shows the swing from low to high scenario. "
+        f"See the <b>Sensitivity</b> tab for the full tornado chart.</p>",
+        unsafe_allow_html=True)
+
+    with st.spinner("Computing sensitivities..."):
+        _es_base   = pol.ebitda_summary["ebitda"]
+        _sens_scenarios = [
+            ("Revenue / Visit",        "net_revenue_per_visit",
+             max(60.0, cfg.net_revenue_per_visit * 0.80),
+             cfg.net_revenue_per_visit * 1.20,
+             f"${cfg.net_revenue_per_visit*0.80:.0f}", f"${cfg.net_revenue_per_visit*1.20:.0f}"),
+            ("Base Visits / Day",      "base_visits_per_day",
+             max(10.0, cfg.base_visits_per_day * 0.75),
+             cfg.base_visits_per_day * 1.35,
+             f"{cfg.base_visits_per_day*0.75:.0f} vpd", f"{cfg.base_visits_per_day*1.35:.0f} vpd"),
+            ("Pts / APC / Day Budget", "budgeted_patients_per_provider_per_day",
+             max(18.0, cfg.budgeted_patients_per_provider_per_day - 8),
+             cfg.budgeted_patients_per_provider_per_day + 8,
+             f"{cfg.budgeted_patients_per_provider_per_day-8:.0f} pts",
+             f"{cfg.budgeted_patients_per_provider_per_day+8:.0f} pts"),
+            ("APC Annual Cost",        "annual_provider_cost_perm",
+             cfg.annual_provider_cost_perm * 0.80,
+             cfg.annual_provider_cost_perm * 1.25,
+             f"${cfg.annual_provider_cost_perm*0.80/1e3:.0f}K",
+             f"${cfg.annual_provider_cost_perm*1.25/1e3:.0f}K"),
+            ("Annual Growth %",        "annual_growth_pct",
+             max(0.0, cfg.annual_growth_pct - 5),
+             cfg.annual_growth_pct + 10,
+             f"{max(0,cfg.annual_growth_pct-5):.0f}%", f"{cfg.annual_growth_pct+10:.0f}%"),
+        ]
+
+        def _run_sens(kwarg, val):
+            _f = {f: getattr(cfg, f) for f in cfg.__dataclass_fields__}
+            _f[kwarg] = val
+            try:
+                _p, _ = optimize(ClinicConfig(**_f))
+                return _p.ebitda_summary["ebitda"]
+            except Exception:
+                return _es_base
+
+        _sens_results = []
+        for _sl, _sk, _slo, _shi, _sll, _shl in _sens_scenarios:
+            _lo_e = _run_sens(_sk, _slo)
+            _hi_e = _run_sens(_sk, _shi)
+            _sens_results.append((_sl, _sll, _shl, _lo_e, _hi_e, abs(_hi_e - _lo_e)))
+        _sens_results.sort(key=lambda x: x[5], reverse=True)
+        _max_swing = _sens_results[0][5] if _sens_results else 1
+
+    # Render cards — 3 per row
+    _C_NEG_S = "#C0392B"
+    _C_POS_S = "#0A6B4A"
+    _card_cols = st.columns(3)
+    for _ci, (_sl, _sll, _shl, _lo_e, _hi_e, _swing) in enumerate(_sens_results):
+        _lo_d = _lo_e - _es_base
+        _hi_d = _hi_e - _es_base
+        _bar_pct = int(_swing / _max_swing * 100)
+        _unfav_w = int(abs(min(_lo_d, _hi_d)) / _max_swing * 50)
+        _fav_w   = int(abs(max(_lo_d, _hi_d)) / _max_swing * 50)
+        _rank    = _ci + 1
+        _rank_color = {1: "#7A6200", 2: NAVY, 3: NAVY}.get(_rank, MUTED)
+
+        with _card_cols[_ci % 3]:
+            st.markdown(
+                f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;"
+                f"border-top:3px solid {_rank_color};"
+                f"border-radius:4px;padding:0.85rem 1rem 0.8rem;"
+                f"box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:0.75rem;'>"
+
+                # Rank + label
+                f"<div style='display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.55rem;'>"
+                f"<span style='font-size:0.62rem;font-weight:700;color:{_rank_color};"
+                f"font-family:Courier New,monospace;'>#{_rank}</span>"
+                f"<span style='font-size:0.82rem;font-weight:700;color:{INK};'>{_sl}</span>"
+                f"</div>"
+
+                # Swing headline
+                f"<div style='font-size:1.10rem;font-weight:700;color:{NAVY};"
+                f"margin-bottom:0.4rem;'>"
+                f"${_swing/1e3:.0f}K swing</div>"
+
+                # Mini bar — red left, green right, meeting at center
+                f"<div style='display:flex;height:6px;border-radius:3px;"
+                f"overflow:hidden;margin-bottom:0.45rem;background:#F1F5F9;'>"
+                f"<div style='flex:1;display:flex;justify-content:flex-end;'>"
+                f"<div style='width:{_unfav_w}%;background:{_C_NEG_S};border-radius:3px 0 0 3px;'></div>"
+                f"</div>"
+                f"<div style='width:2px;background:#CBD5E0;flex-shrink:0;'></div>"
+                f"<div style='flex:1;'>"
+                f"<div style='width:{_fav_w}%;background:{_C_POS_S};border-radius:0 3px 3px 0;'></div>"
+                f"</div>"
+                f"</div>"
+
+                # Low / High labels
+                f"<div style='display:flex;justify-content:space-between;"
+                f"font-size:0.70rem;margin-bottom:0.3rem;'>"
+                f"<span style='color:{_C_NEG_S};'>"
+                f"▼ {_sll} → ${_lo_e/1e6:.2f}M</span>"
+                f"<span style='color:{_C_POS_S};'>"
+                f"▲ {_shl} → ${_hi_e/1e6:.2f}M</span>"
+                f"</div>"
+
+                f"</div>",
+                unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div style='font-size:0.72rem;color:{MUTED};margin:-0.2rem 0 0.4rem;'>"
+        f"Each card varies one input independently. All others held at current values. "
+        f"Full 8-input tornado in the <b>Sensitivity</b> tab.</div>",
+        unsafe_allow_html=True)
+    st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.2rem;'>", unsafe_allow_html=True)
 
     # ── MONTE CARLO SENSITIVITY ───────────────────────────────────────────────
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
@@ -3527,6 +3794,130 @@ with tabs[14]:
         f"<div style='font-size:0.72rem;color:{MUTED};margin-top:0.6rem;'>"
         f"Each row varies one input independently. All other inputs held at current sidebar values.</div>",
         unsafe_allow_html=True)
+
+
+with tabs[15]:
+    pol_adv = active_policy()
+    MA_ADV  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    st.markdown("## SITUATION ADVISOR")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{MUTED};margin:-0.4rem 0 0.8rem;'>"
+        f"Ask what to do when reality diverges from the plan — a provider leaves without notice, "
+        f"a new hire pushes their start date, a flu season arrives earlier than expected. "
+        f"The advisor has full context of your staffing model and answers are specific to your situation.</p>",
+        unsafe_allow_html=True)
+
+    _oai_key_adv = _openai_key()
+    if not _oai_key_adv:
+        st.warning("Add `OPENAI_API_KEY` to your Streamlit secrets (.streamlit/secrets.toml) to enable the advisor.", icon="🔑")
+        st.code("[secrets]\nOPENAI_API_KEY = \"sk-...your-key-here...\"", language="toml")
+    else:
+        # Build sim context once per session (reset when optimizer reruns)
+        _ctx_key = f"psm_adv_ctx_{id(pol_adv)}"
+        if _ctx_key not in st.session_state:
+            st.session_state[_ctx_key] = _build_simulation_context(pol_adv, cfg, MA_ADV)
+        _adv_ctx = st.session_state[_ctx_key]
+
+        # Init chat history
+        if "psm_adv_history" not in st.session_state:
+            st.session_state["psm_adv_history"] = []
+
+        # ── Suggested prompts ─────────────────────────────────────────────────
+        if not st.session_state["psm_adv_history"]:
+            st.markdown(
+                f"<div style='font-size:0.75rem;font-weight:600;color:{MUTED};"
+                f"text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.5rem;'>"
+                f"Suggested questions</div>",
+                unsafe_allow_html=True)
+            _suggestions = [
+                "A provider just resigned with 2 weeks notice instead of 90 days — what do I do?",
+                "My December hire pushed their start to February — which months are at risk?",
+                "Flu season is hitting 3 weeks early this year — am I covered?",
+                "I need to cut costs by $50K — where does this model have the most slack?",
+                "A new hire failed credentialing — how do I assess the gap?",
+            ]
+            _sug_cols = st.columns(2)
+            for _si, _sug in enumerate(_suggestions):
+                with _sug_cols[_si % 2]:
+                    if st.button(_sug, key=f"sug_{_si}", use_container_width=True):
+                        st.session_state["psm_adv_prefill"] = _sug
+
+        # ── Chat display ──────────────────────────────────────────────────────
+        if st.session_state["psm_adv_history"]:
+            _chat_html = ""
+            for _msg in st.session_state["psm_adv_history"]:
+                if _msg["role"] == "user":
+                    _chat_html += (
+                        f"<div style='display:flex;justify-content:flex-end;margin-bottom:0.7rem;'>"
+                        f"<div style='background:{NAVY};color:#E8F0F8;padding:0.6rem 0.9rem;"
+                        f"border-radius:12px 12px 3px 12px;max-width:78%;font-size:0.83rem;"
+                        f"line-height:1.5;'>{_msg['content']}</div></div>"
+                    )
+                else:
+                    _chat_html += (
+                        f"<div style='display:flex;justify-content:flex-start;margin-bottom:0.7rem;'>"
+                        f"<div style='background:#F0F4F8;color:{INK};padding:0.6rem 0.9rem;"
+                        f"border-radius:12px 12px 12px 3px;max-width:82%;font-size:0.83rem;"
+                        f"line-height:1.65;'>{_msg['content'].replace(chr(10), '<br>')}</div></div>"
+                    )
+            st.markdown(
+                f"<div style='background:#FAFBFC;border:1px solid #E2E8F0;border-radius:6px;"
+                f"padding:1rem 1rem 0.4rem;margin-bottom:0.75rem;max-height:480px;"
+                f"overflow-y:auto;'>{_chat_html}</div>",
+                unsafe_allow_html=True)
+
+        # ── Input area ────────────────────────────────────────────────────────
+        _prefill = st.session_state.pop("psm_adv_prefill", "")
+        _user_input = st.chat_input(
+            "Describe your situation or ask a question...",
+            key="psm_adv_input",
+        )
+        # Handle suggested prompt clicks
+        if _prefill and not _user_input:
+            _user_input = _prefill
+
+        if _user_input:
+            st.session_state["psm_adv_history"].append(
+                {"role": "user", "content": _user_input})
+
+            # Build full messages list: system + history
+            _adv_messages = [
+                {"role": "system", "content": _advisor_system_prompt(_adv_ctx)}
+            ] + st.session_state["psm_adv_history"]
+
+            with st.spinner("Thinking..."):
+                _adv_reply, _adv_err = _call_openai(
+                    _adv_messages, _oai_key_adv, max_tokens=500)
+
+            if _adv_err:
+                st.error(f"Error: {_adv_err}")
+                st.session_state["psm_adv_history"].pop()
+            else:
+                st.session_state["psm_adv_history"].append(
+                    {"role": "assistant", "content": _adv_reply})
+                st.rerun()
+
+        # ── Controls ──────────────────────────────────────────────────────────
+        if st.session_state["psm_adv_history"]:
+            _ctrl1, _ctrl2, _ = st.columns([1, 1, 4])
+            with _ctrl1:
+                if st.button("🗑 Clear conversation", key="adv_clear"):
+                    st.session_state["psm_adv_history"] = []
+                    st.rerun()
+            with _ctrl2:
+                if st.button("↺ Refresh context", key="adv_refresh",
+                             help="Re-reads the simulation after running the optimizer"):
+                    for _k in list(st.session_state.keys()):
+                        if _k.startswith("psm_adv_ctx_"):
+                            del st.session_state[_k]
+                    st.rerun()
+
+        st.markdown(
+            f"<div style='font-size:0.68rem;color:{MUTED};margin-top:0.5rem;'>"
+            f"Powered by GPT-4o · Grounded in your simulation data · "
+            f"Operational planning guidance only — not HR or legal advice</div>",
+            unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
