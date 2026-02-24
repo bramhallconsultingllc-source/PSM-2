@@ -2456,9 +2456,10 @@ with tabs[1]:
         yr_rows = [
             ["Visits captured",
              f"{yr1['visits']:,.0f}", f"{yr2['visits']:,.0f}", f"{yr3['visits']:,.0f}"],
-            ["Revenue",
-             f"${yr1['revenue']/1e3:.0f}K", f"${yr2['revenue']/1e3:.0f}K",
-             f"${yr3['revenue']/1e3:.0f}K"],
+            ["Est. Revenue",
+             f"${yr1['visits']*cfg.net_revenue_per_visit/1e3:.0f}K",
+             f"${yr2['visits']*cfg.net_revenue_per_visit/1e3:.0f}K",
+             f"${yr3['visits']*cfg.net_revenue_per_visit/1e3:.0f}K"],
             ["SWB actual/visit",
              f"${yr1['swb_actual']:.2f}", f"${yr2['swb_actual']:.2f}",
              f"${yr3['swb_actual']:.2f}"],
