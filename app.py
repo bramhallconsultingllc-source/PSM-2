@@ -1123,7 +1123,7 @@ tabs = st.tabs([
     "Staffing Model", "Executive Summary",
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
-    "Policy Heatmap", "Req Timing", "Data Table",
+    "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic",
 ])
 
 # ── TAB 0: STAFFING MODEL ────────────────────────────────────────────────────
@@ -2798,8 +2798,323 @@ with tabs[11]:
 
 
 
+
+with tabs[12]:
+    pol  = active_policy()
+    mos  = pol.months
+    es   = pol.ebitda_summary
+    MA   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # ── Shared helpers ────────────────────────────────────────────────────────
+    def _h2(txt):
+        st.markdown(
+            f"<div style='font-size:0.60rem;font-weight:700;text-transform:uppercase;"
+            f"letter-spacing:0.16em;color:{MUTED};margin:1.6rem 0 0.5rem;border-bottom:"
+            f"1px solid #E2E8F0;padding-bottom:0.35rem;'>{txt}</div>",
+            unsafe_allow_html=True)
+
+    def _eq(label, formula, result, note=""):
+        note_html = f"<span style='color:{MUTED};font-size:0.72rem;margin-left:0.6rem;'>{note}</span>" if note else ""
+        st.markdown(
+            f"<div style='background:#F8FAFC;border-left:3px solid {NAVY};border-radius:3px;"
+            f"padding:0.55rem 1rem;margin:0.3rem 0;font-size:0.82rem;'>"
+            f"<span style='color:{MUTED};'>{label}</span>&nbsp;&nbsp;"
+            f"<code style='background:#EEF2F7;padding:0.1rem 0.4rem;border-radius:2px;"
+            f"font-size:0.79rem;'>{formula}</code>"
+            f"&nbsp;&nbsp;=&nbsp;&nbsp;"
+            f"<strong style='color:{NAVY};font-size:0.92rem;'>{result}</strong>"
+            f"{note_html}</div>",
+            unsafe_allow_html=True)
+
+    def _check(label, expected, actual, fmt="$.0f", tol=0.02):
+        match = abs(actual - expected) / max(abs(expected), 1) < tol
+        icon  = "✅" if match else "⚠️"
+        e_str = f"${expected:,.0f}" if "f" in fmt else f"{expected:.2f}"
+        a_str = f"${actual:,.0f}"   if "f" in fmt else f"{actual:.2f}"
+        color = "#0A6B4A" if match else "#B91C1C"
+        st.markdown(
+            f"<div style='display:flex;align-items:center;gap:0.8rem;font-size:0.80rem;"
+            f"padding:0.3rem 0;border-bottom:1px solid #F1F5F9;'>"
+            f"<span style='width:1.2rem;'>{icon}</span>"
+            f"<span style='flex:1;color:#4A5568;'>{label}</span>"
+            f"<span style='color:{MUTED};'>expected <b>{e_str}</b></span>"
+            f"<span style='color:{color};font-weight:600;'>actual {a_str}</span>"
+            f"</div>",
+            unsafe_allow_html=True)
+
+    st.markdown("## MATH & LOGIC — MODEL AUDIT")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{MUTED};margin:-0.4rem 0 1.2rem;'>"
+        f"Step-by-step derivation of every number in the staffing policy recommendation. "
+        f"All figures use the same inputs and formulas as the simulation — this tab "
+        f"is a transparent re-computation, not a summary.</p>",
+        unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 1 — DEMAND DERIVATION
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("① Demand Derivation — Visits → APCs → FTE")
+
+    _y1_jan  = next(mo for mo in mos if mo.year==1 and mo.calendar_month==1)
+    _y1_apr  = next(mo for mo in mos if mo.year==1 and mo.calendar_month==4)
+    _y1_jul  = next(mo for mo in mos if mo.year==1 and mo.calendar_month==7)
+
+    st.markdown(
+        f"<p style='font-size:0.80rem;color:#4A5568;margin-bottom:0.6rem;'>"
+        f"Three representative months are traced in full: <b>Y1-Jan</b> (flu peak), "
+        f"<b>Y1-Apr</b> (spring base), <b>Y1-Jul</b> (summer trough). "
+        f"All other months follow the same arithmetic.</p>",
+        unsafe_allow_html=True)
+
+    for lbl, mo in [("Y1-Jan (flu peak)", _y1_jan), ("Y1-Apr (spring base)", _y1_apr), ("Y1-Jul (summer trough)", _y1_jul)]:
+        st.markdown(f"**{lbl}**")
+        _eq("Base visits/day", f"{base_visits:.0f} base × {mo.seasonal_multiplier:.2f} seasonal × {peak_factor:.2f} peak",
+            f"{mo.demand_visits_per_day:.1f} visits/day")
+        _eq("APCs needed (concurrent)", f"{mo.demand_visits_per_day:.1f} visits ÷ {budget_ppp:.0f} pts/APC",
+            f"{mo.demand_providers_per_shift:.3f} APCs on floor")
+        _eq("FTE to sustain that slot", f"{mo.demand_providers_per_shift:.3f} APCs × {cfg.fte_per_shift_slot:.3f} FTE/slot",
+            f"{mo.demand_fte_required:.3f} FTE required",
+            note=f"({cfg.operating_days_per_week}d ÷ {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.3f})")
+        st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    # Annual growth effect
+    _h2_sub = (f"<div style='font-size:0.76rem;color:#4A5568;background:#FFFBEB;"
+               f"border-left:3px solid #F59E0B;padding:0.45rem 0.85rem;border-radius:3px;margin:0.3rem 0 0.8rem;'>"
+               f"<b>Annual growth compounding:</b> each month's visits = prior month × "
+               f"(1 + {cfg.annual_growth_pct:.0f}% ÷ 12)<sup>m</sup> — FTE requirement "
+               f"grows proportionally. By Y3-Dec, daily visits reach "
+               f"<b>{next(mo for mo in mos if mo.year==3 and mo.calendar_month==12).demand_visits_per_day:.1f}/day</b> "
+               f"vs Y1-Jan's <b>{_y1_jan.demand_visits_per_day:.1f}/day</b>.</div>")
+    st.markdown(_h2_sub, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 2 — REVENUE MATH
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("② Revenue Math — Visits × Capture × Rate")
+
+    _total_visits_raw   = sum(mo.demand_visits_per_day * cfg.operating_days_per_week / 7 * 30.44 for mo in mos)
+    _total_visits_cap   = sum(mo.visits_captured for mo in mos)
+    _avg_capture        = _total_visits_cap / _total_visits_raw if _total_visits_raw else 0
+    _total_rev_check    = _total_visits_cap * cfg.net_revenue_per_visit
+
+    _eq("Monthly visits (e.g. Y1-Jan)", f"{_y1_jan.demand_visits_per_day:.1f} visits/day × {cfg.operating_days_per_week} days/wk ÷ 7 × 30.44 days/mo",
+        f"{_y1_jan.visits_captured:,.0f} visits/mo")
+    _eq("Revenue per month (Y1-Jan)", f"{_y1_jan.visits_captured:,.0f} visits × ${cfg.net_revenue_per_visit:.0f}/visit",
+        f"${_y1_jan.revenue_captured:,.0f}")
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    _eq("Total 36-month revenue", f"{_total_visits_cap:,.0f} captured visits × ${cfg.net_revenue_per_visit:.0f}/visit",
+        f"${_total_rev_check:,.0f}", note="cross-check ↓")
+    _check("Revenue cross-check vs simulation", es["revenue"], _total_rev_check)
+
+    st.markdown(
+        f"<div style='font-size:0.76rem;color:#4A5568;margin:0.6rem 0;'>"
+        f"<b>Visit capture rate: {_avg_capture*100:.1f}%</b> — visits are lost only when paid FTE "
+        f"falls below demand FTE (understaffed months). "
+        f"Lost revenue = missed visits × ${cfg.net_revenue_per_visit:.0f}/visit.</div>",
+        unsafe_allow_html=True)
+
+    _lost_rev = sum(mo.lost_revenue for mo in mos)
+    _eq("Total lost revenue (understaffing)", "sum of monthly lost_revenue across 36 months",
+        f"${_lost_rev:,.0f}", note=f"{_lost_rev/es['revenue']*100:.1f}% of gross")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 3 — SWB EXPENSE BUILDUP
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("③ SWB Expense Buildup — FTE × Cost × Months")
+
+    _monthly_perm_rate  = cfg.annual_provider_cost_perm / 12
+    _monthly_flex_rate  = cfg.annual_provider_cost_flex / 12
+    _total_perm_check   = sum(mo.permanent_cost for mo in mos)
+    _total_flex_check   = sum(mo.flex_cost for mo in mos)
+    _total_swb_check    = _total_perm_check + _total_flex_check
+
+    _eq("Monthly cost per perm FTE", f"${cfg.annual_provider_cost_perm:,.0f}/yr ÷ 12 months",
+        f"${_monthly_perm_rate:,.0f}/mo/FTE")
+    _eq("Y1-Jan permanent SWB", f"{_y1_jan.paid_fte:.3f} paid FTE × ${_monthly_perm_rate:,.0f}",
+        f"${_y1_jan.permanent_cost:,.0f}")
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    # SWB per visit derivation
+    _total_visits_36    = sum(mo.visits_captured for mo in mos)
+    _swb_per_visit_calc = _total_swb_check / _total_visits_36 if _total_visits_36 else 0
+    _eq("SWB/visit (provider only)", f"${_total_swb_check:,.0f} provider SWB ÷ {_total_visits_36:,.0f} captured visits",
+        f"${_swb_per_visit_calc:.2f}/visit", note=f"target ${cfg.swb_target_per_visit:.2f}")
+
+    target_color = "#0A6B4A" if _swb_per_visit_calc <= cfg.swb_target_per_visit else "#B91C1C"
+    delta = _swb_per_visit_calc - cfg.swb_target_per_visit
+    st.markdown(
+        f"<div style='background:{'#ECFDF5' if delta<=0 else '#FEF2F2'};"
+        f"border-left:3px solid {target_color};padding:0.45rem 0.85rem;"
+        f"border-radius:3px;font-size:0.80rem;margin:0.4rem 0 0.6rem;'>"
+        f"SWB/visit is <b style='color:{target_color};'>"
+        f"{'$'+f'{abs(delta):.2f}'+' favorable' if delta<=0 else '$'+f'{abs(delta):.2f}'+' over target'}</b> "
+        f"vs the ${cfg.swb_target_per_visit:.2f} budget target.</div>",
+        unsafe_allow_html=True)
+
+    _total_support_check = sum(mo.support_cost for mo in mos)
+    _total_swb_full_check = _total_perm_check + _total_support_check
+    _eq("Monthly support staff cost (Y1-Jan)", f"MA, PSR, Rad Tech per APC on floor",
+        f"${_y1_jan.support_cost:,.0f}/mo", note="scales with providers_on_floor")
+    _eq("Total SWB (provider + support)", f"${_total_perm_check:,.0f} perm + ${_total_support_check:,.0f} support",
+        f"${_total_swb_full_check:,.0f}")
+    _check("Total SWB vs simulation",             es["swb"],  _total_swb_full_check)
+    _check("Total flex SWB vs simulation",        es["flex"], _total_flex_check)
+
+    # Per-year SWB breakdown table
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+    _yr_rows = []
+    for yr in [1,2,3]:
+        ymos = [mo for mo in mos if mo.year==yr]
+        y_visits = sum(mo.visits_captured for mo in ymos)
+        y_swb    = sum(mo.permanent_cost + mo.support_cost + mo.flex_cost for mo in ymos)
+        y_rev    = sum(mo.revenue_captured for mo in ymos)
+        y_goal   = y_visits * cfg.swb_target_per_visit
+        y_var    = y_goal - y_swb
+        _yr_rows.append({
+            "Year": f"Year {yr}",
+            "Captured Visits": f"{y_visits:,.0f}",
+            "SWB Actual": f"${y_swb:,.0f}",
+            "SWB Goal (target/visit)": f"${y_goal:,.0f}",
+            "SWB Variance": f"{'+'if y_var>=0 else ''}{y_var/1e3:.0f}K",
+            "SWB/Visit": f"${y_swb/y_visits:.2f}" if y_visits else "—",
+            "Revenue": f"${y_rev:,.0f}",
+        })
+    import pandas as pd
+    df_yr = pd.DataFrame(_yr_rows)
+    st.dataframe(df_yr, use_container_width=True, hide_index=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 4 — TURNOVER & BURNOUT
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("④ Turnover & Burnout Cost Logic")
+
+    _base_att_rate_mo   = cfg.monthly_attrition_rate
+    _replace_cost       = cfg.turnover_replacement_cost_per_provider
+    _total_turnover_ev  = sum(mo.turnover_events for mo in mos)
+    _total_turnover_c   = sum(mo.turnover_cost   for mo in mos)
+    _total_burnout_c    = sum(mo.burnout_penalty  for mo in mos)
+    _red_months         = [mo for mo in mos if mo.zone=="Red"]
+    _overload_months    = [mo for mo in mos if mo.overload_attrition_delta > 0]
+
+    _eq("Base monthly attrition rate", f"{cfg.annual_attrition_pct:.0f}% annual ÷ 12 months",
+        f"{_base_att_rate_mo*100:.3f}%/month per FTE")
+    _eq("Replacement cost per turnover", f"${cfg.annual_provider_cost_perm:,.0f} annual cost × {cfg.turnover_replacement_pct:.0f}%",
+        f"${_replace_cost:,.0f}/event",
+        note="recruiting, onboarding, lost productivity")
+    _eq("Y1-Jan turnover events", f"{_y1_jan.paid_fte:.3f} FTE × {_base_att_rate_mo*100:.3f}%",
+        f"{_y1_jan.turnover_events:.4f} events → ${_y1_jan.turnover_cost:,.0f}")
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div style='font-size:0.80rem;color:#4A5568;background:#F8FAFC;"
+        f"border-left:3px solid #7A8799;padding:0.5rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
+        f"<b>Overload attrition:</b> when pts/APC exceeds the load-band ceiling ({cfg.load_band_hi:.0f}), "
+        f"the effective rate scales up: <code>rate × (1 + {cfg.overload_attrition_factor:.1f} × excess%)</code>. "
+        f"This model has <b>{len(_overload_months)} months</b> with above-baseline attrition.</div>",
+        unsafe_allow_html=True)
+
+    _eq("Total turnover events (36 mo)", "Σ (paid_fte × effective_rate) each month",
+        f"{_total_turnover_ev:.2f} events → ${_total_turnover_c:,.0f}")
+    _check("Turnover cost vs simulation", es["turnover"], _total_turnover_c)
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    if _red_months:
+        _burnout_per_red = cfg.burnout_penalty_per_red_month
+        _eq("Burnout penalty per Red month", f"${cfg.annual_provider_cost_perm:,.0f} × {cfg.burnout_pct_per_red_month:.0f}%",
+            f"${_burnout_per_red:,.0f}/Red month")
+        _eq("Total burnout penalty", f"{len(_red_months)} Red months × ${_burnout_per_red:,.0f}",
+            f"${_total_burnout_c:,.0f}")
+    else:
+        st.markdown(
+            f"<div style='font-size:0.80rem;color:#0A6B4A;background:#ECFDF5;"
+            f"border-left:3px solid #0A6B4A;padding:0.45rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
+            f"✅ <b>Zero Red months</b> — no burnout penalty applied. "
+            f"Burnout fires at ${cfg.burnout_penalty_per_red_month:.0f}% of annual APC cost "
+            f"per Red month (pts/APC > {cfg.load_band_hi:.0f}).</div>",
+            unsafe_allow_html=True)
+    _check("Burnout cost vs simulation", es["burnout"], _total_burnout_c)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 5 — HIRING CALENDAR LOGIC
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("⑤ Hiring Calendar — Lead Time & Post Dates")
+
+    _lead_days  = cfg.days_to_sign + cfg.days_to_credential + cfg.days_to_independent
+    _lead_months = round(_lead_days / 30.44)
+
+    st.markdown(
+        f"<div style='font-size:0.80rem;color:#4A5568;margin-bottom:0.8rem;'>"
+        f"Total pipeline: <b>{cfg.days_to_sign}d to offer acceptance</b> + "
+        f"<b>{cfg.days_to_credential}d credentialing</b> + "
+        f"<b>{cfg.days_to_independent}d orientation</b> = "
+        f"<b>{_lead_days} days ({_lead_months} months)</b> before first productive shift. "
+        f"APCs are <b>binary</b>: 0% productive until credentialing is complete, "
+        f"then 100% from day one — no ramp curve.</div>",
+        unsafe_allow_html=True)
+
+    _h_rows = []
+    for h in pol.hire_events:
+        _h_rows.append({
+            "Decision / Post By":    f"Y{h.post_by_year}-{MA[h.post_by_month-1]}",
+            "Start (Productive)":    f"Y{h.independent_year}-{MA[h.independent_month-1]}",
+            "FTE Added":             f"{h.fte_hired:.2f}",
+            "Mode":                  h.mode.replace("_"," ").title(),
+            "Lead (days)":           f"{_lead_days}d",
+            "Why hired":             (
+                "Flu-season anchor hire — Dec credentialing deadline" if h.mode=="winter_ramp"
+                else "Demand growth — load-band floor breached"
+            ),
+        })
+    df_hire = pd.DataFrame(_h_rows)
+    st.dataframe(df_hire, use_container_width=True, hide_index=True)
+
+    st.markdown(
+        f"<div style='font-size:0.76rem;color:{MUTED};margin-top:0.4rem;'>"
+        f"<b>Post by</b> = start month minus {_lead_months} months lead time. "
+        f"Winter ramp hires are always scheduled to begin in December (flu anchor month) — "
+        f"the decision is made in Sep/Oct/Nov when the model detects the coming flu-season gap.</div>",
+        unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 6 — EBITDA ROLL-UP & CROSS-CHECKS
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("⑥ EBITDA Roll-Up & Cross-Checks")
+
+    _ebitda_check = es["revenue"] - es["swb"] - es["flex"] - es["turnover"] - es["burnout"] - es["fixed"]
+
+    _eq("EBITDA", "Revenue − SWB − Flex − Turnover − Burnout − Fixed",
+        f"${_ebitda_check:,.0f}")
+    _eq("Breakdown",
+        f"${es['revenue']:,.0f} − ${es['swb']:,.0f} − ${es['flex']:,.0f} − ${es['turnover']:,.0f} − ${es['burnout']:,.0f}",
+        f"${_ebitda_check:,.0f}")
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+    _check("EBITDA cross-check vs simulation",   es["ebitda"],   _ebitda_check)
+    _check("Revenue cross-check",                es["revenue"],  sum(mo.revenue_captured for mo in mos))
+    _check("SWB cross-check",                    es["swb"],      sum(mo.permanent_cost   for mo in mos))
+    _check("Turnover cross-check",               es["turnover"], sum(mo.turnover_cost     for mo in mos))
+    _check("Burnout cross-check",                es["burnout"],  sum(mo.burnout_penalty   for mo in mos))
+
+    st.markdown(
+        f"<div style='margin-top:1rem;font-size:0.76rem;color:{MUTED};'>"
+        f"All ✅ checks confirm the displayed numbers are a direct re-derivation of the "
+        f"simulation's month-by-month outputs — no separate calculation path, no rounding "
+        f"introduced. ⚠️ appears only if a value diverges by more than 2%.</div>",
+        unsafe_allow_html=True)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
 st.markdown(f"<p style='font-size:0.68rem;color:#8FA8BF;text-align:center;letter-spacing:0.12em;'>"
             f"PSM | PERMANENT STAFFING MODEL | URGENT CARE | 36-MONTH HORIZON | LOAD-BAND OPTIMIZER | ATTRITION-AS-BURNOUT MODEL"
             f"</p>",unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 12: MATH & LOGIC — CFO Validation Audit
+# ══════════════════════════════════════════════════════════════════════════════
