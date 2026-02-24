@@ -2265,298 +2265,360 @@ with tabs[1]:
     # ── PDF EXPORT ────────────────────────────────────────────────────────────
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
-    def _build_exec_pdf(pol, memo, cfg, s, es, MA):
-        """Build executive summary PDF and return bytes."""
-        import io, datetime
+    def _build_exec_pdf(pol, memo, cfg, s, es, MA, yr_data_ext):
+        """Build executive summary PDF from simulation data."""
+        import io as _io
+        import re as _re
         from reportlab.lib.pagesizes import letter
-        from reportlab.lib import colors as rl_colors
+        from reportlab.lib import colors as rc
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.units import inch
         from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                         Table, TableStyle, HRFlowable, KeepTogether)
-        from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-        import re as _re
+                                         Table, TableStyle, HRFlowable)
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 
-        # Strip HTML tags for plain-text paragraphs
         def _strip(html):
-            return _re.sub(r'<[^>]+>', '', str(html)).replace('&nbsp;', ' ').replace('&middot;', '·').replace('&ndash;', '–').replace('&mdash;', '—').strip()
+            return _re.sub(r'<[^>]+>', '', str(html))                .replace('&nbsp;',' ').replace('&middot;','·')                .replace('&ndash;','–').replace('&mdash;','—').strip()
 
-        RN = rl_colors.HexColor("#003366")   # navy
-        RG = rl_colors.HexColor("#C9A227")   # gold
-        RS = rl_colors.HexColor("#4A5568")   # slate
-        RM = rl_colors.HexColor("#7A8799")   # muted
-        RI = rl_colors.HexColor("#0F1923")   # ink
-        RL = rl_colors.HexColor("#F1F5F9")   # light
-        RGR= rl_colors.HexColor("#0A6B4A")   # green
-        RRD= rl_colors.HexColor("#B91C1C")   # red
-        RAM= rl_colors.HexColor("#92600A")   # amber
-        RW = rl_colors.white
+        RN=rc.HexColor("#003366"); RG=rc.HexColor("#C9A227")
+        RS=rc.HexColor("#4A5568"); RM=rc.HexColor("#7A8799")
+        RI=rc.HexColor("#0F1923"); RL=rc.HexColor("#F1F5F9")
+        RGR=rc.HexColor("#0A6B4A"); RRD=rc.HexColor("#B91C1C")
+        RAM=rc.HexColor("#92600A"); RW=rc.white
 
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=letter,
-            leftMargin=0.85*inch, rightMargin=0.85*inch,
-            topMargin=0.75*inch, bottomMargin=0.75*inch)
-
-        # ── Styles ─────────────────────────────────────────────────────────────
         def sty(name, **kw):
-            defaults = dict(fontName="Helvetica", fontSize=9, textColor=RI,
-                            leading=13, spaceAfter=4)
-            defaults.update(kw)
-            return ParagraphStyle(name, **defaults)
+            d = dict(fontName="Helvetica", fontSize=9, textColor=RI,
+                     leading=13, spaceAfter=3, spaceBefore=0)
+            d.update(kw); return ParagraphStyle(name, **d)
 
-        S_eye  = sty("eye", fontSize=7, textColor=RM, spaceAfter=2)
-        S_h1   = sty("h1",  fontName="Helvetica-Bold", fontSize=20,
-                     textColor=RN, leading=24, spaceAfter=3)
-        S_sub  = sty("sub", fontSize=9, textColor=RS, spaceAfter=10)
-        S_secl = sty("scl", fontName="Helvetica-Bold", fontSize=7.5,
-                     textColor=RM, spaceBefore=14, spaceAfter=5)
-        S_body = sty("bod", fontSize=9, textColor=RS, leading=14, spaceAfter=5)
-        S_bold = sty("bld", fontName="Helvetica-Bold", fontSize=9,
-                     textColor=RI, spaceAfter=3)
-        S_kpil = sty("kpil", fontSize=7, textColor=RM, alignment=TA_RIGHT,
-                     spaceAfter=0, leading=9)
-        S_kpiv = sty("kpiv", fontName="Helvetica-Bold", fontSize=18,
-                     textColor=RN, alignment=TA_RIGHT, leading=20, spaceAfter=0)
-        S_ftr  = sty("ftr", fontSize=7.5, textColor=RM, alignment=TA_CENTER,
-                     spaceBefore=8)
-        S_act  = sty("act", fontSize=9, textColor=RS, leading=13,
-                     leftIndent=18, spaceAfter=4)
-        S_num  = sty("num", fontName="Helvetica-Bold", fontSize=8.5,
-                     textColor=RN, alignment=TA_CENTER)
+        def rule(color="#E2E8F0", thick=0.5, before=3, after=5):
+            return HRFlowable(width="100%", thickness=thick,
+                              color=rc.HexColor(color),
+                              spaceBefore=before, spaceAfter=after)
 
-        def rule():
-            return HRFlowable(width="100%", thickness=0.5,
-                              color=rl_colors.HexColor("#E2E8F0"),
-                              spaceBefore=4, spaceAfter=6)
-        def gold_rule():
-            return HRFlowable(width="100%", thickness=1.5, color=RG,
-                              spaceBefore=2, spaceAfter=8)
+        GRID = [("VALIGN",(0,0),(-1,-1),"TOP"),
+                ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
+                ("LEFTPADDING",(0,0),(-1,-1),7),("RIGHTPADDING",(0,0),(-1,-1),7),
+                ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0"))]
 
-        GRID = [
-            ("VALIGN",        (0,0),(-1,-1), "TOP"),
-            ("TOPPADDING",    (0,0),(-1,-1), 5),
-            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-            ("LEFTPADDING",   (0,0),(-1,-1), 6),
-            ("RIGHTPADDING",  (0,0),(-1,-1), 6),
-            ("GRID",          (0,0),(-1,-1), 0.25,
-             rl_colors.HexColor("#E2E8F0")),
-        ]
-
+        buf = _io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=letter,
+            leftMargin=0.75*inch, rightMargin=0.75*inch,
+            topMargin=0.65*inch, bottomMargin=0.65*inch)
         story = []
 
-        # ── Masthead ────────────────────────────────────────────────────────────
-        _ebitda = es["ebitda"]
+        # Computed values
+        _ebitda     = es["ebitda"]
         _ebitda_clr = RGR if _ebitda >= 0 else RRD
-        _swb_ok = not s["swb_violation"]
-        _swb_clr = RGR if _swb_ok else RRD
+        _ebitda_sign= "+" if _ebitda >= 0 else ""
+        _swb_a      = s["annual_swb_per_visit"]
+        _swb_t      = cfg.swb_target_per_visit
+        _swb_var    = _swb_a - _swb_t
+        _swb_clr    = RGR if _swb_var <= 0 else RRD
+        _swb_fav    = _swb_var <= 0
+        _cap_pct    = es["capture_rate"] * 100
+        _cap_clr    = RGR if _cap_pct >= 99.0 else RAM
+        _turn_clr   = RRD if es["turnover"] > 150_000 else (RAM if es["turnover"] > 50_000 else RGR)
+        _burn_clr   = RRD if s["red_months"] > 0 else RGR
 
-        mast = Table([
-            [
-                Paragraph("PREDICTIVE STAFFING MODEL  ·  EXECUTIVE SUMMARY", S_eye),
-                Paragraph(f"Generated {memo['date']}", S_kpil),
-            ],
-            [
-                Paragraph("Executive Summary", S_h1),
-                Paragraph(f"${_ebitda/1e6:.2f}M",
-                          sty("ev", fontName="Helvetica-Bold", fontSize=22,
-                              textColor=_ebitda_clr, alignment=TA_RIGHT, leading=24)),
-            ],
-            [
-                Paragraph(
-                    f"{cfg.base_visits_per_day:.0f} vpd baseline  ·  "
-                    f"{cfg.annual_growth_pct:.0f}% growth  ·  "
-                    f"Base {pol.base_fte:.2f} FTE / Winter {pol.winter_fte:.2f} FTE",
-                    S_sub),
-                Paragraph("3-Year EBITDA", S_kpil),
-            ],
-        ], colWidths=[4.2*inch, 2.4*inch])
+        # ── MASTHEAD ────────────────────────────────────────────────────────────
+        story.append(Paragraph(
+            "PREDICTIVE STAFFING MODEL  ·  EXECUTIVE SUMMARY",
+            sty("eye", fontSize=6.5, textColor=RM, spaceAfter=2, leading=9)))
+        mast = Table([[
+            [Paragraph("Staffing & EBITDA Outlook",
+                       sty("mh", fontName="Helvetica-Bold", fontSize=17,
+                           textColor=RN, leading=21, spaceAfter=2)),
+             Paragraph(f"Generated {memo['date']}  ·  {cfg.base_visits_per_day:.0f} vpd  ·  "
+                       f"{cfg.annual_growth_pct:.0f}% YoY growth  ·  "
+                       f"Base {pol.base_fte:.1f} FTE / Winter {pol.winter_fte:.1f} FTE",
+                       sty("ms", fontSize=8, textColor=RS))],
+            [Paragraph(f"{_ebitda_sign}${_ebitda/1e6:.2f}M",
+                       sty("ev", fontName="Helvetica-Bold", fontSize=20,
+                           textColor=_ebitda_clr, alignment=TA_RIGHT, leading=22, spaceAfter=1)),
+             Paragraph("3-YEAR EBITDA",
+                       sty("el", fontSize=6.5, textColor=RM,
+                           alignment=TA_RIGHT, leading=8, spaceAfter=2)),
+             Paragraph(f"${_swb_a:.2f} avg SWB/visit  ·  "
+                       f"{'favorable' if _swb_fav else 'over budget'}",
+                       sty("es", fontSize=7.5, textColor=_swb_clr,
+                           alignment=TA_RIGHT, leading=10))]
+        ]], colWidths=[4.1*inch, 2.65*inch])
         mast.setStyle(TableStyle([
-            ("VALIGN",     (0,0),(-1,-1), "BOTTOM"),
-            ("TOPPADDING", (0,0),(-1,-1), 0),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 0),
-            ("LEFTPADDING",(0,0),(-1,-1), 0),
-            ("RIGHTPADDING",(0,0),(-1,-1), 0),
+            ("VALIGN",(0,0),(-1,-1),"BOTTOM"),
+            ("TOPPADDING",(0,0),(-1,-1),0), ("BOTTOMPADDING",(0,0),(-1,-1),0),
+            ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
         ]))
         story.append(mast)
-        story.append(gold_rule())
+        story.append(rule("#C9A227", thick=1.5, before=6, after=8))
 
-        # ── KPI row ─────────────────────────────────────────────────────────────
-        yr1 = memo["yr_data"][1]
-        yr2 = memo["yr_data"][2]
-        yr3 = memo["yr_data"][3]
-
-        def kpi_cell(label, value, sub="", val_color=RN):
+        # ── KPI BAR (6 tiles) ───────────────────────────────────────────────────
+        def _kpi(lbl, val, sub, vc):
             return [
-                Paragraph(label, sty("kl", fontSize=6.5, textColor=RM,
-                                     fontName="Helvetica-Bold")),
-                Paragraph(value, sty("kv", fontSize=13, fontName="Helvetica-Bold",
-                                     textColor=val_color, leading=15)),
-                Paragraph(sub,   sty("ks", fontSize=7.5, textColor=RS, leading=10)),
+                Paragraph(lbl, sty(f"kl{lbl}", fontSize=6, textColor=RM,
+                                   fontName="Helvetica-Bold", leading=8, spaceAfter=1)),
+                Paragraph(val, sty(f"kv{lbl}", fontSize=12, fontName="Helvetica-Bold",
+                                   textColor=vc, leading=14, spaceAfter=1)),
+                Paragraph(sub, sty(f"ks{lbl}", fontSize=7, textColor=RS,
+                                   leading=9, spaceAfter=0)),
             ]
-
-        _capture_clr = RGR if es["capture_rate"] >= 0.99 else RAM
-        _swb_actual  = s["annual_swb_per_visit"]
-        _swb_var     = _swb_actual - cfg.swb_target_per_visit
-        kpi_data = [
-            kpi_cell("3-YR EBITDA",    f"${_ebitda/1e6:.2f}M",
-                     f"Rev ${es['revenue']/1e6:.2f}M", _ebitda_clr),
-            kpi_cell("VISIT CAPTURE",  f"{es['capture_rate']*100:.1f}%",
-                     f"{s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R",
-                     _capture_clr),
-            kpi_cell("SWB / VISIT",    f"${_swb_actual:.2f}",
-                     f"Target ${cfg.swb_target_per_visit:.2f}  ({'favorable' if _swb_var<=0 else 'over budget'})",
-                     _swb_clr),
-            kpi_cell("TURNOVER COST",  f"${es['turnover']/1e3:.0f}K",
-                     f"{s['total_turnover_events']:.1f} events (3yr)",
-                     RAM if es['turnover'] > 100_000 else RGR),
-            kpi_cell("BURNOUT COST",   f"${es['burnout']/1e3:.0f}K",
-                     f"{s['red_months']} Red months", RRD if s['red_months']>0 else RGR),
+        kpi_cols = [
+            _kpi("BASE FTE",    f"{pol.base_fte:.1f}",
+                 f"Winter {pol.winter_fte:.1f} FTE", RN),
+            _kpi("SWB / VISIT", f"${_swb_a:.2f}",
+                 f"{'▼' if _swb_fav else '▲'} ${abs(_swb_var):.2f} vs ${_swb_t:.0f} target",
+                 _swb_clr),
+            _kpi("VISIT CAPTURE", f"{_cap_pct:.1f}%",
+                 f"{s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R",
+                 _cap_clr),
+            _kpi("TURNOVER (3YR)", f"${es['turnover']/1e3:.0f}K",
+                 f"{s['total_turnover_events']:.1f} events", _turn_clr),
+            _kpi("BURNOUT COST",  f"${es['burnout']/1e3:.0f}K",
+                 f"{s['red_months']} Red months", _burn_clr),
+            _kpi("3-YR EBITDA",  f"${_ebitda/1e6:.2f}M",
+                 f"Rev ${es['revenue']/1e6:.2f}M", _ebitda_clr),
         ]
-        kpi_tbl = Table([[cell[0] for cell in kpi_data],
-                          [cell[1] for cell in kpi_data],
-                          [cell[2] for cell in kpi_data]],
-                         colWidths=[1.32*inch]*5)
-        kpi_tbl.setStyle(TableStyle([
-            ("VALIGN",        (0,0),(-1,-1), "TOP"),
-            ("TOPPADDING",    (0,0),(-1,-1), 4),
-            ("BOTTOMPADDING", (0,0),(-1,-1), 4),
-            ("LEFTPADDING",   (0,0),(-1,-1), 6),
-            ("BACKGROUND",    (0,0),(-1,-1), RL),
-            ("GRID",          (0,0),(-1,-1), 0.25,
-             rl_colors.HexColor("#E2E8F0")),
+        krows = list(zip(*kpi_cols))
+        ktbl  = Table(list(krows), colWidths=[1.13*inch]*6)
+        ktbl.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+            ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
+            ("LEFTPADDING",(0,0),(-1,-1),6), ("BACKGROUND",(0,0),(-1,-1),RL),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
         ]))
-        story.append(kpi_tbl)
-        story.append(Spacer(1, 8))
+        story.append(ktbl)
+        story.append(Spacer(1, 6))
 
-        # ── Narrative sections ──────────────────────────────────────────────────
-        def section(title, prose):
-            return [
-                Paragraph(title, S_secl),
-                Paragraph(_strip(prose), S_body),
-            ]
-
-        story += section("FINANCIAL PERFORMANCE",  memo["ebitda_prose"])
-        story += section("STAFFING ZONE HEALTH",   memo["zone_prose"])
-        story += section("SWB / VISIT ANALYSIS",   memo["swb_prose"])
-        story += section("HIRING & PIPELINE",       memo["hire_prose"])
-        if memo.get("burnout_prose"):
-            story += section("BURNOUT & ATTRITION", memo["burnout_prose"])
-
-        rule(); story.append(rule())
-
-        # ── Year-by-year table ──────────────────────────────────────────────────
-        story.append(Paragraph("YEAR-BY-YEAR SUMMARY", S_secl))
-
-        def _var_str(yr_d):
-            imp = yr_d["swb_impact"]
-            sign = "+" if imp >= 0 else ""
-            return f"{sign}${imp/1e3:.0f}K vs budget"
-
-        yr_headers = ["", "Year 1", "Year 2", "Year 3"]
-        yr_rows = [
-            ["Visits captured",
-             f"{yr1['visits']:,.0f}", f"{yr2['visits']:,.0f}", f"{yr3['visits']:,.0f}"],
-            ["Est. Revenue",
-             f"${yr1['visits']*cfg.net_revenue_per_visit/1e3:.0f}K",
-             f"${yr2['visits']*cfg.net_revenue_per_visit/1e3:.0f}K",
-             f"${yr3['visits']*cfg.net_revenue_per_visit/1e3:.0f}K"],
-            ["SWB actual/visit",
-             f"${yr1['swb_actual']:.2f}", f"${yr2['swb_actual']:.2f}",
-             f"${yr3['swb_actual']:.2f}"],
-            ["SWB variance",
-             _var_str(yr1), _var_str(yr2), _var_str(yr3)],
-            ["Zone (G/Y/R)",
-             f"{yr1['G']}G/{yr1['Y']}Y/{yr1['R']}R",
-             f"{yr2['G']}G/{yr2['Y']}Y/{yr2['R']}R",
-             f"{yr3['G']}G/{yr3['Y']}Y/{yr3['R']}R"],
-            ["Peak pts/APC",
-             f"{yr1['peak']:.1f}", f"{yr2['peak']:.1f}", f"{yr3['peak']:.1f}"],
-        ]
-
-        S_yh = sty("yh", fontName="Helvetica-Bold", fontSize=8.5, textColor=RN)
-        S_yl = sty("yl", fontName="Helvetica-Bold", fontSize=8, textColor=RS)
-        S_yv = sty("yv", fontSize=8.5, textColor=RI)
-
-        yr_tdata = [[Paragraph(c, S_yh if i==0 else S_yh) for i,c in enumerate(yr_headers)]]
-        for row in yr_rows:
-            yr_tdata.append([Paragraph(row[0], S_yl)] +
-                             [Paragraph(c, S_yv) for c in row[1:]])
-        yr_tbl = Table(yr_tdata, colWidths=[1.6*inch, 1.6*inch, 1.6*inch, 1.6*inch])
-        yr_tbl.setStyle(TableStyle(GRID + [
-            ("BACKGROUND",    (0,0),(-1,0), RN),
-            ("TEXTCOLOR",     (0,0),(-1,0), RW),
-            ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
-            ("FONTSIZE",      (0,0),(-1,0), 8.5),
-            ("ROWBACKGROUNDS",(0,1),(-1,-1), [rl_colors.white, RL]),
-        ]))
-        story.append(yr_tbl)
-        story.append(Spacer(1, 8))
-
-        # ── Hire calendar ──────────────────────────────────────────────────────
+        # ── HEADLINE VERDICT ────────────────────────────────────────────────────
+        story.append(Paragraph("HEADLINE VERDICT",
+                                sty("hl", fontName="Helvetica-Bold", fontSize=7,
+                                    textColor=RM, spaceBefore=6, spaceAfter=4)))
+        story.append(Paragraph(_strip(memo["ebitda_prose"]),
+                                sty("hb1", fontSize=8.5, textColor=RS, leading=13, spaceAfter=3)))
+        story.append(Paragraph(_strip(memo["zone_prose"]),
+                                sty("hb2", fontSize=8.5, textColor=RS, leading=13, spaceAfter=3)))
         story.append(rule())
-        story.append(Paragraph("HIRE CALENDAR", S_secl))
-        h_headers = ["Decision / Post By", "Start (Productive)", "FTE Added", "Mode", "Why"]
+
+        # ── YEAR CARDS ──────────────────────────────────────────────────────────
+        story.append(Paragraph("WHAT YOUR CURRENT INPUTS ARE PRODUCING",
+                                sty("wcl", fontName="Helvetica-Bold", fontSize=7,
+                                    textColor=RM, spaceAfter=4)))
+
+        def _yr_card(n, yd):
+            _vc   = RGR if yd["net_var"] >= 0 else RRD
+            _sign = "+" if yd["net_var"] >= 0 else ""
+            _word = "favorable" if yd["net_var"] >= 0 else "unfavorable"
+            return [
+                Paragraph(f"YEAR {n}", sty(f"yh{n}", fontSize=6.5, textColor=RM,
+                           fontName="Helvetica-Bold", leading=9, spaceAfter=2)),
+                Paragraph(f"{yd['G']}G / {yd['Y']}Y / {yd['R']}R  ·  Peak {yd['peak']:.1f} pts/APC",
+                           sty(f"yz{n}", fontSize=7.5, textColor=RS, leading=10, spaceAfter=4)),
+                Paragraph(f"SWB Goal    ${yd['goal']/1e3:.0f}K",
+                           sty(f"y1{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
+                Paragraph(f"SWB Actual  -${yd['act']/1e3:.0f}K",
+                           sty(f"y2{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
+                Paragraph(f"Flex        -${yd.get('flex',0)/1e3:.0f}K",
+                           sty(f"y3{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
+                Paragraph(f"Turnover    -${yd.get('turn',0)/1e3:.0f}K",
+                           sty(f"y4{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
+                Paragraph(f"Burnout     -${yd.get('burn',0)/1e3:.0f}K",
+                           sty(f"y5{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=3)),
+                Paragraph(f"SWB Variance  {_sign}${abs(yd['net_var'])/1e3:.0f}K",
+                           sty(f"yv{n}", fontName="Helvetica-Bold", fontSize=9,
+                               textColor=_vc, leading=11, spaceAfter=2)),
+                Paragraph(f"${yd['swb_actual']:.2f} actual vs ${cfg.swb_target_per_visit:.2f} target  ·  {_word}",
+                           sty(f"ys{n}", fontSize=7, textColor=_vc, leading=9)),
+            ]
+
+        yr1d = yr_data_ext[1]; yr2d = yr_data_ext[2]; yr3d = yr_data_ext[3]
+        ytbl = Table([[_yr_card(1,yr1d), _yr_card(2,yr2d), _yr_card(3,yr3d)]],
+                     colWidths=[2.25*inch]*3)
+        ytbl.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+            ("TOPPADDING",(0,0),(-1,-1),7), ("BOTTOMPADDING",(0,0),(-1,-1),7),
+            ("LEFTPADDING",(0,0),(-1,-1),8), ("RIGHTPADDING",(0,0),(-1,-1),8),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
+            ("BACKGROUND",(0,0),(-1,-1),rc.HexColor("#FAFBFC")),
+        ]))
+        story.append(ytbl)
+        story.append(Spacer(1, 4))
+        story.append(rule())
+
+        # ── SWB VARIANCE BREAKDOWN ──────────────────────────────────────────────
+        _ann_vis  = sum(mo.visits_captured for mo in pol.months) / 3
+        _ann_goal = cfg.swb_target_per_visit * _ann_vis
+        _ann_act  = sum(mo.permanent_cost + mo.support_cost for mo in pol.months) / 3
+        _ann_flex = sum(mo.flex_cost        for mo in pol.months) / 3
+        _ann_turn = sum(mo.turnover_cost    for mo in pol.months) / 3
+        _ann_burn = sum(mo.burnout_penalty  for mo in pol.months) / 3
+        _ann_var  = _ann_goal - _ann_act - _ann_flex - _ann_turn - _ann_burn
+        _av_clr   = RGR if _ann_var >= 0 else RRD
+        _av_sign  = "+" if _ann_var >= 0 else ""
+        _av_word  = "favorable" if _ann_var >= 0 else "unfavorable"
+        story.append(Paragraph("SWB VARIANCE BREAKDOWN — ANNUALISED (3-YR AVG)",
+                                sty("svl", fontName="Helvetica-Bold", fontSize=7,
+                                    textColor=RM, spaceAfter=4)))
+        story.append(Paragraph(
+            f"SWB Goal ${_ann_goal/1e3:.0f}K  –  Actual ${_ann_act/1e3:.0f}K  –  "
+            f"Flex ${_ann_flex/1e3:.0f}K  –  Turnover ${_ann_turn/1e3:.0f}K  –  "
+            f"Burnout ${_ann_burn/1e3:.0f}K  =  "
+            f"{_av_sign}${abs(_ann_var)/1e3:.0f}K/yr SWB variance  ({_av_word})",
+            sty("svb", fontSize=8.5, textColor=RS, leading=13, spaceAfter=4)))
+        story.append(rule())
+
+        # ── HIRE CALENDAR ────────────────────────────────────────────────────────
+        story.append(Paragraph("HIRE CALENDAR",
+                                sty("hcl", fontName="Helvetica-Bold", fontSize=7,
+                                    textColor=RM, spaceAfter=4)))
         _lead = cfg.days_to_sign + cfg.days_to_credential + cfg.days_to_independent
-        h_rows = []
+        S_hh  = sty("hh", fontName="Helvetica-Bold", fontSize=7.5, textColor=RW)
+        S_hv  = sty("hv", fontSize=8, textColor=RI)
+        h_data = [[Paragraph(c, S_hh) for c in ["Post By","Productive","FTE","Mode","Driver"]]]
         for h in pol.hire_events:
-            h_rows.append([
-                f"Y{h.post_by_year}-{MA[h.post_by_month-1]}",
-                f"Y{h.independent_year}-{MA[h.independent_month-1]}",
-                f"+{h.fte_hired:.2f}",
-                h.mode.replace("_"," ").title(),
-                "Flu anchor" if h.mode=="winter_ramp" else "Growth",
+            h_data.append([
+                Paragraph(f"Y{h.post_by_year}-{MA[h.post_by_month-1]}", S_hv),
+                Paragraph(f"Y{h.independent_year}-{MA[h.independent_month-1]}", S_hv),
+                Paragraph(f"+{h.fte_hired:.2f}", S_hv),
+                Paragraph(h.mode.replace("_"," ").title(), S_hv),
+                Paragraph("Flu anchor" if h.mode=="winter_ramp" else "Growth demand", S_hv),
             ])
-        S_hh = sty("hh", fontName="Helvetica-Bold", fontSize=8, textColor=RW)
-        S_hv = sty("hv", fontSize=8, textColor=RI)
-        h_tdata = [[Paragraph(c, S_hh) for c in h_headers]]
-        for row in h_rows:
-            h_tdata.append([Paragraph(c, S_hv) for c in row])
-        h_tbl = Table(h_tdata,
-                      colWidths=[1.2*inch, 1.2*inch, 0.7*inch, 1.1*inch, 2.4*inch])
+        h_tbl = Table(h_data,
+                      colWidths=[0.85*inch, 0.85*inch, 0.6*inch, 1.3*inch, 3.15*inch])
         h_tbl.setStyle(TableStyle(GRID + [
-            ("BACKGROUND",    (0,0),(-1,0), RN),
-            ("TEXTCOLOR",     (0,0),(-1,0), RW),
-            ("FONTNAME",      (0,0),(-1,0), "Helvetica-Bold"),
-            ("ROWBACKGROUNDS",(0,1),(-1,-1), [rl_colors.white, RL]),
+            ("BACKGROUND",(0,0),(-1,0),RN),
+            ("TEXTCOLOR",(0,0),(-1,0),RW),
+            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+            ("FONTSIZE",(0,0),(-1,0),7.5),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[rc.white,RL]),
         ]))
         story.append(h_tbl)
-        story.append(Spacer(1,6))
         story.append(Paragraph(
-            f"Total pipeline: {cfg.days_to_sign}d sign + {cfg.days_to_credential}d "
-            f"credential + {cfg.days_to_independent}d orient = {_lead}d. "
-            f"APCs are binary — 0% productive until credentialing complete.",
-            sty("note", fontSize=7.5, textColor=RM, leading=10)))
+            f"Pipeline: {cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + "
+            f"{cfg.days_to_independent}d onboard = {_lead}d.  "
+            f"APCs are 0% productive until credentialing completes.",
+            sty("hn", fontSize=7.5, textColor=RM, leading=10, spaceAfter=3)))
 
-        # ── Recommended actions ─────────────────────────────────────────────────
+        # ── NARRATIVE SECTIONS ─────────────────────────────────────────────────
+        for sec_lbl, sec_key in [
+            ("SWB / VISIT ANALYSIS", "swb_prose"),
+            ("HIRING & PIPELINE",    "hire_prose"),
+            ("BURNOUT & ATTRITION",  "burnout_prose"),
+        ]:
+            if memo.get(sec_key):
+                story.append(rule())
+                story.append(Paragraph(sec_lbl, sty(f"nl{sec_key}",
+                    fontName="Helvetica-Bold", fontSize=7,
+                    textColor=RM, spaceBefore=4, spaceAfter=4)))
+                story.append(Paragraph(_strip(memo[sec_key]),
+                    sty(f"nb{sec_key}", fontSize=8.5, textColor=RS,
+                        leading=13, spaceAfter=4)))
+
+        # ── RECOMMENDED ACTIONS ─────────────────────────────────────────────────
         story.append(rule())
-        story.append(Paragraph("RECOMMENDED ACTIONS", S_secl))
+        story.append(Paragraph("RECOMMENDED ACTIONS",
+                                sty("al", fontName="Helvetica-Bold", fontSize=7,
+                                    textColor=RM, spaceAfter=4)))
         for i, action in enumerate(memo["actions"], 1):
-            story.append(Paragraph(f"{i}.  {_strip(action)}", S_act))
+            story.append(Paragraph(f"{i}.  {_strip(action)}",
+                sty(f"ac{i}", fontSize=8.5, textColor=RS,
+                    leading=13, leftIndent=16, spaceAfter=4)))
 
-        # ── AI Briefing (if generated) ─────────────────────────────────────────
+        # ── 3-YEAR OUTLOOK ───────────────────────────────────────────────────────
+        if memo.get("growth_prose"):
+            story.append(rule())
+            story.append(Paragraph("3-YEAR OUTLOOK",
+                sty("gl", fontName="Helvetica-Bold", fontSize=7,
+                    textColor=RM, spaceAfter=4)))
+            story.append(Paragraph(_strip(memo["growth_prose"]),
+                sty("gb", fontSize=8.5, textColor=RS, leading=13, spaceAfter=4)))
+
+        # ── AI BRIEFING ──────────────────────────────────────────────────────────
         if st.session_state.get("psm_briefing"):
             story.append(rule())
-            story.append(Paragraph("AI ADVISOR BRIEFING", S_secl))
+            story.append(Paragraph("AI ADVISOR BRIEFING",
+                sty("abl", fontName="Helvetica-Bold", fontSize=7,
+                    textColor=RM, spaceAfter=4)))
             for para in st.session_state["psm_briefing"].split("\n\n"):
                 if para.strip():
-                    story.append(Paragraph(para.strip(), S_body))
+                    story.append(Paragraph(para.strip(),
+                        sty("abp", fontSize=8.5, textColor=RS, leading=13, spaceAfter=4)))
 
-        # ── Footer ──────────────────────────────────────────────────────────────
-        story.append(gold_rule())
+        # ── ZONE + MARGINAL FOOTER ───────────────────────────────────────────────
+        story.append(rule())
+        _ma      = pol.marginal_analysis or {}
+        _net_ann = _ma.get("net_annual_impact", 0)
+        _pay_mo  = _ma.get("payback_months", float("inf"))
+        _pay_str = "never" if _pay_mo == float("inf") else f"{_pay_mo:.0f} mo"
+        _rs      = _ma.get("red_months_saved", 0)
+        _ys      = _ma.get("yellow_months_saved", 0)
+        _mn_clr  = RGR if _net_ann >= 0 else RRD
+        _mn_sign = "+" if _net_ann >= 0 else ""
+        _gm = s["green_months"]; _ym = s["yellow_months"]; _rm = s["red_months"]
+        _oa = s.get("total_overload_attrition", 0)
+
+        zone_tbl = Table([[
+            Paragraph("36-MONTH ZONES", sty("zl", fontSize=6.5, textColor=RM,
+                       fontName="Helvetica-Bold", leading=9)),
+            Paragraph(f"{_gm}G", sty("zg", fontSize=12, fontName="Helvetica-Bold",
+                       textColor=RGR, leading=14, alignment=TA_CENTER)),
+            Paragraph("/", sty("zd1", fontSize=10, textColor=RM,
+                       alignment=TA_CENTER, leading=14)),
+            Paragraph(f"{_ym}Y", sty("zy2", fontSize=12, fontName="Helvetica-Bold",
+                       textColor=RAM, leading=14, alignment=TA_CENTER)),
+            Paragraph("/", sty("zd2", fontSize=10, textColor=RM,
+                       alignment=TA_CENTER, leading=14)),
+            Paragraph(f"{_rm}R", sty("zr3", fontSize=12, fontName="Helvetica-Bold",
+                       textColor=RRD, leading=14, alignment=TA_CENTER)),
+            Paragraph(f"·  {es['capture_rate']*100:.1f}% visit capture  ·  "
+                      f"{_oa:.1f} FTE overload attrition",
+                      sty("zn", fontSize=7.5, textColor=RS, leading=10)),
+        ]], colWidths=[1.3*inch,0.35*inch,0.2*inch,0.35*inch,0.2*inch,0.35*inch,4.0*inch])
+        zone_tbl.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+            ("LEFTPADDING",(0,0),(-1,-1),6),
+            ("BACKGROUND",(0,0),(-1,-1),RL),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
+        ]))
+
+        marg_tbl = Table([[
+            Paragraph("+0.5 FTE MARGINAL", sty("ml", fontSize=6.5, textColor=RM,
+                       fontName="Helvetica-Bold", leading=9)),
+            Paragraph(f"Saves {_rs}R + {_ys}Y zone-months",
+                      sty("ms", fontSize=7.5, textColor=RS, leading=10)),
+            Paragraph(f"Net annual: ${_mn_sign}{_net_ann/1e3:.0f}K",
+                      sty("mn", fontSize=7.5, textColor=_mn_clr,
+                          fontName="Helvetica-Bold", leading=10)),
+            Paragraph(f"Payback: {_pay_str}",
+                      sty("mp", fontSize=7.5, textColor=RS, leading=10)),
+        ]], colWidths=[1.3*inch, 2.0*inch, 1.8*inch, 1.65*inch])
+        marg_tbl.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+            ("LEFTPADDING",(0,0),(-1,-1),6),
+            ("BACKGROUND",(0,0),(-1,-1),rc.HexColor("#F8FAFC")),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
+        ]))
+
+        story.append(zone_tbl)
+        story.append(Spacer(1, 3))
+        story.append(marg_tbl)
+
+        # ── FOOTER ──────────────────────────────────────────────────────────────
+        story.append(rule("#C9A227", thick=1.5, before=8, after=4))
         story.append(Paragraph(
             f"Predictive Staffing Model  ·  Urgent Care  ·  36-Month Horizon  ·  "
             f"Generated {memo['date']}",
-            S_ftr))
+            sty("ftr", fontSize=7, textColor=RM, alignment=TA_CENTER)))
 
         doc.build(story)
         return buf.getvalue()
-
     # ── Export button ──────────────────────────────────────────────────────────
     _pc1, _pc2, _pc3 = st.columns([1, 1, 4])
     with _pc1:
         if st.button("⬇ Export PDF", key="export_pdf", use_container_width=True):
             with st.spinner("Building PDF..."):
-                _pdf_bytes = _build_exec_pdf(pol, memo, cfg, s, es, MA)
+                _pdf_bytes = _build_exec_pdf(pol, memo, cfg, s, es, MA, _yr_data)
             st.session_state["psm_exec_pdf"] = _pdf_bytes
             st.success("PDF ready — click Download below.", icon="✅")
     with _pc2:
