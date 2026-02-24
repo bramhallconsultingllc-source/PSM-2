@@ -256,6 +256,21 @@ h2 {{
     background: {NAVY};
     padding: 0.4rem 0.4rem 0;
     border-radius: 6px 6px 0 0;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(255,255,255,0.25) transparent !important;
+    flex-wrap: nowrap !important;
+}}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {{
+    height: 4px;
+}}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {{
+    background: rgba(255,255,255,0.25);
+    border-radius: 2px;
+}}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-track {{
+    background: transparent;
 }}
 .stTabs [data-baseweb="tab"] {{
     font-size: 0.62rem !important;
@@ -521,17 +536,46 @@ with st.sidebar:
                    f"{annual_att:.1f}%/yr -> **{annual_att * _ex_mult:.1f}%/yr**")
 
     with st.expander("TURNOVER & PENALTY RATES"):
-        st.caption("Costs as % of annual APC salary.")
-        tp1,tp2=st.columns(2); tp3,tp4=st.columns(2)
-        with tp1: turnover_pct  = st.number_input("Replacement Cost (% salary)", 10.0, 150.0, 40.0, 5.0,
-            help="Cost to replace one departing APC as % of annual salary. Includes recruiting, onboarding, and lost productivity during ramp. 40% of $200k = $80k per departure.")
+        # ── Replacement cost — model-derived default with override ────────────
+        # All-in direct cost breakdown (matches Turnover Cost tab):
+        #   Recruiting 20% + Paid pipeline 6.9mo + Flex premium + Admin = ~90%
+        _lead_days_t  = days_sign + days_cred + days_ind
+        _pipeline_mo  = _lead_days_t / 30.44
+        _recruiting   = perm_cost_i * 0.20
+        _pipeline_c   = (perm_cost_i / 12) * _pipeline_mo
+        _flex_prem    = (flex_cost_i - perm_cost_i) / 365 * (_lead_days_t + 30) * 0.5
+        _admin_c      = 5_000
+        _derived_pct  = (_recruiting + _pipeline_c + _flex_prem + _admin_c) / perm_cost_i * 100
+        _derived_pct_r = round(_derived_pct / 5) * 5   # snap to nearest 5%
+
+        st.caption(f"Model-derived all-in replacement cost: **{_derived_pct_r:.0f}%** "
+                   f"(${perm_cost_i*_derived_pct_r/100:,.0f}) · see **Turnover Cost** tab for breakdown")
+        _use_derived = st.toggle("Use model-derived rate", value=True,
+            help=f"ON = use the {_derived_pct_r:.0f}% derived from your pipeline inputs. "
+                 f"OFF = enter a custom override.")
+        if _use_derived:
+            turnover_pct = float(_derived_pct_r)
+            st.markdown(f"<div style='font-size:0.76rem;color:#0A6B4A;padding:0.2rem 0;'>"
+                        f"✓ Using <b>{turnover_pct:.0f}%</b> = <b>${perm_cost_i*turnover_pct/100:,.0f}</b> / departure</div>",
+                        unsafe_allow_html=True)
+        else:
+            turnover_pct = st.slider("Replacement Cost Override (% salary)", 10.0, 200.0,
+                                     float(_derived_pct_r), 5.0,
+                                     help="Override the model-derived rate. 100% = one full year's salary per departure.")
+            st.caption(f"Override: **{turnover_pct:.0f}%** = **${perm_cost_i*turnover_pct/100:,.0f}** / departure")
+
+        st.markdown("<div style='height:0.3rem'></div>", unsafe_allow_html=True)
+
+        # ── Burnout & optimizer penalties ─────────────────────────────────────
+        tp2,tp3 = st.columns(2)
         with tp2: burnout_pct   = st.number_input("Burnout Penalty (% sal/red mo)", 5.0, 100.0, 25.0, 5.0,
-            help="Economic penalty per Red zone month as % of annual APC salary. Represents risk of accelerated attrition, reduced quality, and provider wellbeing costs. 25% of $200k = $50k per Red month.")
+            help="Economic penalty per Red zone month as % of annual APC salary. 25% = $43,750 per Red month on a $175k salary.")
         with tp3: overstaff_pen = st.number_input("Overstaff ($/FTE-mo)", 500, 20_000, 3_000, 500, format="%d",
-            help="Penalty per FTE-month of overstaffing. Represents idle cost, scheduling friction, and opportunity cost of excess headcount. Keeps optimizer from over-hiring.")
-        with tp4: swb_pen       = st.number_input("SWB Violation ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d",
-            help="One-time penalty added to the optimizer score if annual SWB/visit exceeds your target. Large value forces optimizer to treat SWB compliance as a near-hard constraint.")
-        st.caption(f"Replacement: **${perm_cost_i*turnover_pct/100:,.0f}**  |  Burnout/red mo: **${perm_cost_i*burnout_pct/100:,.0f}**")
+            help="Penalty per FTE-month of overstaffing. Keeps optimizer from over-hiring.")
+        swb_pen = st.number_input("SWB Violation ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d",
+            help="One-time penalty if annual SWB/visit exceeds target. Large value = near-hard constraint.")
+        st.caption(f"Burnout/red mo: **${perm_cost_i*burnout_pct/100:,.0f}**  |  "
+                   f"Overstaff: **${overstaff_pen:,}/FTE-mo**")
 
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
     run_opt = st.button("RUN OPTIMIZER", type="primary", use_container_width=True)
@@ -1132,7 +1176,7 @@ tabs = st.tabs([
     "Staffing Model", "Executive Summary",
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
-    "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic",
+    "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic", "Turnover Cost",
 ])
 
 # ── TAB 0: STAFFING MODEL ────────────────────────────────────────────────────
@@ -3115,6 +3159,167 @@ with tabs[12]:
         f"simulation's month-by-month outputs — no separate calculation path, no rounding "
         f"introduced. ⚠️ appears only if a value diverges by more than 2%.</div>",
         unsafe_allow_html=True)
+
+
+
+with tabs[13]:
+    pol  = active_policy()
+    mos  = pol.months
+    MA   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    st.markdown("## TURNOVER COST — FULL BREAKDOWN")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{MUTED};margin:-0.4rem 0 1.4rem;'>"
+        f"All-in replacement cost derived from your pipeline inputs. "
+        f"Toggle between the model-derived rate and a custom override in the "
+        f"<b>Turnover & Penalty Rates</b> sidebar expander.</p>",
+        unsafe_allow_html=True)
+
+    # ── Recompute components (mirrors sidebar logic) ──────────────────────────
+    _lead_days_tc   = cfg.days_to_sign + cfg.days_to_credential + cfg.days_to_independent
+    _pipeline_mo_tc = _lead_days_tc / 30.44
+    _vacancy_days   = 30   # typical days from departure to signed replacement offer
+    _total_dark     = _vacancy_days + _lead_days_tc
+
+    _recruiting_tc  = cfg.annual_provider_cost_perm * 0.20
+    _pipeline_tc    = (cfg.annual_provider_cost_perm / 12) * _pipeline_mo_tc
+    _flex_prem_tc   = (cfg.annual_provider_cost_flex - cfg.annual_provider_cost_perm) / 365 * _total_dark * 0.5
+    _admin_tc       = 5_000
+    _direct_total   = _recruiting_tc + _pipeline_tc + _flex_prem_tc + _admin_tc
+    _derived_pct_tc = _direct_total / cfg.annual_provider_cost_perm * 100
+    _model_pct      = cfg.turnover_replacement_pct   # what's actually in the model
+    _model_cost     = cfg.annual_provider_cost_perm * (_model_pct / 100)
+
+    # ── Component breakdown table ─────────────────────────────────────────────
+    def _cost_row(icon, label, formula, amount, note=""):
+        pct = amount / cfg.annual_provider_cost_perm * 100
+        note_html = f"<span style='color:{MUTED};font-size:0.72rem;'>{note}</span>" if note else ""
+        return (
+            f"<tr style='border-bottom:1px solid #F1F5F9;'>"
+            f"<td style='padding:0.55rem 0.8rem;font-size:0.85rem;'>{icon}</td>"
+            f"<td style='padding:0.55rem 0.5rem;font-size:0.82rem;color:{INK};font-weight:500;'>{label}</td>"
+            f"<td style='padding:0.55rem 0.5rem;font-size:0.78rem;color:{MUTED};font-family:monospace;'>{formula}</td>"
+            f"<td style='padding:0.55rem 0.8rem;font-size:0.85rem;font-weight:600;color:{NAVY};text-align:right;'>${amount:,.0f}</td>"
+            f"<td style='padding:0.55rem 0.8rem;font-size:0.78rem;color:{MUTED};text-align:right;'>{pct:.0f}%</td>"
+            f"<td style='padding:0.55rem 0.8rem;font-size:0.76rem;color:#4A5568;'>{note_html}</td>"
+            f"</tr>"
+        )
+
+    rows_html = ""
+    rows_html += _cost_row("🔍", "Recruiting",
+        f"${cfg.annual_provider_cost_perm:,} × 20%",
+        _recruiting_tc,
+        "Agency fee / job boards / interview time / HR burden")
+    rows_html += _cost_row("📋", "Paid pipeline — no revenue",
+        f"${cfg.annual_provider_cost_perm/12:,.0f}/mo × {_pipeline_mo_tc:.1f} mo",
+        _pipeline_tc,
+        f"{cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + {cfg.days_to_independent}d orient — APC on payroll, zero visits")
+    rows_html += _cost_row("🔄", "Flex/locum premium",
+        f"${cfg.annual_provider_cost_flex - cfg.annual_provider_cost_perm:,}/yr premium × {_total_dark}d × 50%",
+        _flex_prem_tc,
+        f"Incremental cost above perm rate to backfill during {_vacancy_days}d vacancy + {_lead_days_tc}d pipeline")
+    rows_html += _cost_row("🗂️", "Onboarding & admin burden",
+        "flat estimate",
+        _admin_tc,
+        "Credentialing admin, IT setup, orientation staff time, EMR access")
+
+    # Totals row
+    rows_html += (
+        f"<tr style='border-top:2px solid {NAVY};background:#F8FAFC;'>"
+        f"<td colspan='2' style='padding:0.65rem 0.8rem;font-size:0.88rem;font-weight:700;color:{NAVY};'>TOTAL — Direct Costs</td>"
+        f"<td style='padding:0.65rem 0.5rem;font-size:0.78rem;color:{MUTED};font-family:monospace;'>sum of above</td>"
+        f"<td style='padding:0.65rem 0.8rem;font-size:1.0rem;font-weight:700;color:{NAVY};text-align:right;'>${_direct_total:,.0f}</td>"
+        f"<td style='padding:0.65rem 0.8rem;font-size:0.88rem;font-weight:700;color:{NAVY};text-align:right;'>{_derived_pct_tc:.0f}%</td>"
+        f"<td style='padding:0.65rem 0.8rem;font-size:0.78rem;color:{MUTED};'>of ${cfg.annual_provider_cost_perm:,} annual salary</td>"
+        f"</tr>"
+    )
+
+    st.markdown(
+        f"<table style='width:100%;border-collapse:collapse;font-family:inherit;'>"
+        f"<thead><tr style='border-bottom:2px solid {NAVY};'>"
+        f"<th style='width:2rem;'></th>"
+        f"<th style='padding:0.5rem;text-align:left;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.12em;color:{MUTED};'>Component</th>"
+        f"<th style='padding:0.5rem;text-align:left;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.12em;color:{MUTED};'>Formula</th>"
+        f"<th style='padding:0.5rem;text-align:right;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.12em;color:{MUTED};'>Amount</th>"
+        f"<th style='padding:0.5rem;text-align:right;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.12em;color:{MUTED};'>% Salary</th>"
+        f"<th style='padding:0.5rem;text-align:left;font-size:0.65rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.12em;color:{MUTED};'>Notes</th>"
+        f"</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        f"</table>",
+        unsafe_allow_html=True)
+
+    # ── Revenue loss callout ───────────────────────────────────────────────────
+    _apc_daily_rev  = cfg.budgeted_patients_per_provider_per_day * cfg.net_revenue_per_visit
+    _gross_rev_loss = _apc_daily_rev * _total_dark
+    st.markdown(
+        f"<div style='background:#FFFBEB;border-left:3px solid #F59E0B;border-radius:3px;"
+        f"padding:0.7rem 1rem;margin:1rem 0;font-size:0.82rem;'>"
+        f"<b style='color:#92600A;'>⚠️ Revenue loss excluded from above total</b> — "
+        f"if the vacant slot goes completely unfilled for {_total_dark} days, gross revenue impact is "
+        f"<b>${_gross_rev_loss:,.0f}</b> "
+        f"({cfg.budgeted_patients_per_provider_per_day:.0f} pts/day × ${cfg.net_revenue_per_visit:.0f}/visit × {_total_dark}d). "
+        f"In practice, flex coverage and load redistribution recover a portion of this — "
+        f"your model tracks actual lost revenue separately in the monthly simulation rather than "
+        f"double-counting it here.</div>",
+        unsafe_allow_html=True)
+
+    # ── Current model rate vs derived ─────────────────────────────────────────
+    st.markdown(f"### Model Rate in Use")
+    _delta      = _model_cost - _direct_total
+    _delta_pct  = _model_pct - _derived_pct_tc
+    _color      = "#0A6B4A" if abs(_delta_pct) < 10 else ("#B91C1C" if _delta < 0 else "#92600A")
+    _status     = "within 10% of derived — well calibrated" if abs(_delta_pct) < 10 else (
+                  "below derived cost — may understate turnover penalty" if _delta < 0
+                  else "above derived cost — conservative assumption")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Model rate (active)", f"{_model_pct:.0f}%", f"${_model_cost:,.0f}/event")
+    c2.metric("Derived all-in rate", f"{_derived_pct_tc:.0f}%", f"${_direct_total:,.0f}/event")
+    c3.metric("Gap", f"{_delta_pct:+.0f}pp", f"${abs(_delta):,.0f} {'under' if _delta<0 else 'over'}")
+
+    st.markdown(
+        f"<div style='background:{'#ECFDF5' if abs(_delta_pct)<10 else '#FEF2F2'};"
+        f"border-left:3px solid {_color};border-radius:3px;padding:0.55rem 1rem;"
+        f"font-size:0.80rem;margin-top:0.4rem;'>"
+        f"<b style='color:{_color};'>{_status.capitalize()}.</b> "
+        f"Adjust in <b>Turnover & Penalty Rates</b> sidebar expander — "
+        f"toggle off the model-derived rate to enter a custom override.</div>",
+        unsafe_allow_html=True)
+
+    # ── 36-month turnover event summary ──────────────────────────────────────
+    st.markdown("### 36-Month Turnover Activity")
+    _total_events = sum(mo.turnover_events for mo in mos)
+    _total_cost   = sum(mo.turnover_cost   for mo in mos)
+    _overload_mos = [(mo.year, mo.calendar_month, mo.overload_attrition_delta)
+                     for mo in mos if mo.overload_attrition_delta > 0.001]
+
+    co1, co2, co3, co4 = st.columns(4)
+    co1.metric("Total turnover events",    f"{_total_events:.1f}")
+    co2.metric("Total turnover cost",      f"${_total_cost:,.0f}")
+    co3.metric("Cost per event (model)",   f"${_model_cost:,.0f}")
+    co4.metric("Overload-amplified months",f"{len(_overload_mos)}")
+
+    if _overload_mos:
+        st.markdown(
+            f"<div style='font-size:0.78rem;color:#92600A;background:#FFFBEB;"
+            f"border-left:3px solid #F59E0B;padding:0.5rem 0.85rem;border-radius:3px;margin-top:0.4rem;'>"
+            f"<b>Overload attrition active in {len(_overload_mos)} months</b> — "
+            f"pts/APC exceeded load ceiling, amplifying base attrition rate by "
+            f"up to {cfg.overload_attrition_factor:.1f}×. Months: "
+            + ", ".join(f"Y{y}-{MA[m-1]}" for y,m,_ in _overload_mos[:8])
+            + ("…" if len(_overload_mos) > 8 else "")
+            + "</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<div style='font-size:0.78rem;color:#0A6B4A;background:#ECFDF5;"
+            f"border-left:3px solid #0A6B4A;padding:0.5rem 0.85rem;border-radius:3px;margin-top:0.4rem;'>"
+            f"✅ No overload-amplified attrition — all months within load band.</div>",
+            unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
