@@ -177,7 +177,7 @@ html, body, [class*="css"] {{
 /* Run button */
 [data-testid="stSidebar"] .stButton > button {{
     background: {NAVY} !important;
-    color: white !important;
+    color: #A8BDD4 !important;
     border: none;
     border-radius: 3px;
     font-size: 0.75rem !important;
@@ -251,10 +251,10 @@ h2 {{
 
 /* ── TABS ─────────────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {{
-    border-bottom: 2px solid {NAVY};
-    gap: 2px;
-    background: {RULE_LT};
-    padding: 0.35rem 0.4rem 0;
+    border-bottom: none;
+    gap: 1px;
+    background: {NAVY};
+    padding: 0.4rem 0.4rem 0;
     border-radius: 6px 6px 0 0;
 }}
 .stTabs [data-baseweb="tab"] {{
@@ -262,26 +262,25 @@ h2 {{
     font-weight: 600 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.10em !important;
-    color: {SLATE} !important;
+    color: #A8BDD4 !important;
     padding: 0.5rem 0.75rem !important;
     border: 1px solid transparent !important;
     border-bottom: none !important;
     border-radius: 4px 4px 0 0 !important;
-    margin-bottom: -2px !important;
+    margin-bottom: 0 !important;
     background: transparent !important;
     white-space: nowrap !important;
     transition: background 0.15s, color 0.15s !important;
 }}
 .stTabs [data-baseweb="tab"]:hover {{
-    background: #E8EEF5 !important;
-    color: {NAVY} !important;
+    background: rgba(255,255,255,0.10) !important;
+    color: #FFFFFF !important;
 }}
 .stTabs [aria-selected="true"] {{
     color: {NAVY} !important;
     background: #FFFFFF !important;
-    border-color: {NAVY} {NAVY} #FFFFFF !important;
+    border-color: rgba(255,255,255,0.15) rgba(255,255,255,0.15) #FFFFFF !important;
     font-weight: 700 !important;
-    border-bottom: 2px solid #FFFFFF !important;
 }}
 
 /* ── ALERTS ───────────────────────────────────────────────────── */
