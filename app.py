@@ -800,12 +800,18 @@ _vpd_min = min(_all_vpd_prov)
 _vpd_max = max(_all_vpd_prov)
 
 # ─── Turnover risk label ─────────────────────────────────────────────────────
+# Scale thresholds by annualised attrition rate, not absolute dollars,
+# so the label stays meaningful regardless of clinic size or salary level.
 _tot_turn_events = s.get("total_turnover_events", 0)
 _turn_cost_3yr   = _es["turnover"]
-if _turn_cost_3yr < 50_000:
+_ann_attrition   = cfg.annual_attrition_pct   # 0–50 %
+if _ann_attrition == 0 or _tot_turn_events < 0.1:
+    _turn_risk_lbl = "None"
+    _turn_risk_clr = "#0A6B4A"
+elif _ann_attrition < 10:
     _turn_risk_lbl = "Low risk"
     _turn_risk_clr = "#0A6B4A"
-elif _turn_cost_3yr < 150_000:
+elif _ann_attrition < 20:
     _turn_risk_lbl = "Moderate"
     _turn_risk_clr = "#92600A"
 else:
