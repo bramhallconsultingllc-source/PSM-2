@@ -1,5 +1,5 @@
 """
-PSM — Permanent Staffing Model  v6
+PSM — Predictive Staffing Model  v6
 McKinsey-grade editorial design.
 
 New in v6:
@@ -177,7 +177,7 @@ html, body, [class*="css"] {{
 /* Run button */
 [data-testid="stSidebar"] .stButton > button {{
     background: {NAVY} !important;
-    color: #A8BDD4 !important;
+    color: #D6E6F2 !important;
     border: none;
     border-radius: 3px;
     font-size: 0.75rem !important;
@@ -364,11 +364,29 @@ for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_poli
 with st.sidebar:
     st.markdown(f"""
     <div style='padding:1.4rem 1.1rem 1.1rem;border-bottom:2px solid {C_GOLD};margin-bottom:0.5rem;background:{CANVAS};'>
-      <div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.20em;color:{MUTED};margin-bottom:0.4rem;'>Permanent Staffing Model</div>
+      <div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.20em;color:{MUTED};margin-bottom:0.4rem;'>Predictive Staffing Model</div>
       <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.25rem;font-weight:500;color:{INK};line-height:1.2;letter-spacing:-0.01em;'>Staffing Optimizer</div>
       <div style='margin-top:6px;width:28px;height:2px;background:{C_GOLD};border-radius:1px;'></div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Getting Started tile ─────────────────────────────────────────────────
+    _gs_pdf_b64 = "JVBERi0xLjQKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUiAvRjMgNiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EgL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcgL05hbWUgL0YxIC9TdWJ0eXBlIC9UeXBlMSAvVHlwZSAvRm9udAo+PgplbmRvYmoKMyAwIG9iago8PAovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9OYW1lIC9GMiAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL0NvbnRlbnRzIDEyIDAgUiAvTWVkaWFCb3ggWyAwIDAgNjEyIDc5MiBdIC9QYXJlbnQgMTEgMCBSIC9SZXNvdXJjZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0NvbnRlbnRzIDEzIDAgUiAvTWVkaWFCb3ggWyAwIDAgNjEyIDc5MiBdIC9QYXJlbnQgMTEgMCBSIC9SZXNvdXJjZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAvSW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EtT2JsaXF1ZSAvRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZyAvTmFtZSAvRjMgL1N1YnR5cGUgL1R5cGUxIC9UeXBlIC9Gb250Cj4+CmVuZG9iago3IDAgb2JqCjw8Ci9Db250ZW50cyAxNCAwIFIgL01lZGlhQm94IFsgMCAwIDYxMiA3OTIgXSAvUGFyZW50IDExIDAgUiAvUmVzb3VyY2VzIDw8Ci9Gb250IDEgMCBSIC9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+IC9Sb3RhdGUgMCAvVHJhbnMgPDwKCj4+IAogIC9UeXBlIC9QYWdlCj4+CmVuZG9iago4IDAgb2JqCjw8Ci9Db250ZW50cyAxNSAwIFIgL01lZGlhQm94IFsgMCAwIDYxMiA3OTIgXSAvUGFyZW50IDExIDAgUiAvUmVzb3VyY2VzIDw8Ci9Gb250IDEgMCBSIC9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+IC9Sb3RhdGUgMCAvVHJhbnMgPDwKCj4+IAogIC9UeXBlIC9QYWdlCj4+CmVuZG9iago5IDAgb2JqCjw8Ci9QYWdlTW9kZSAvVXNlTm9uZSAvUGFnZXMgMTEgMCBSIC9UeXBlIC9DYXRhbG9nCj4+CmVuZG9iagoxMCAwIG9iago8PAovQXV0aG9yIChcKGFub255bW91c1wpKSAvQ3JlYXRpb25EYXRlIChEOjIwMjYwMjI0MTczOTU1KzAwJzAwJykgL0NyZWF0b3IgKFwodW5zcGVjaWZpZWRcKSkgL0tleXdvcmRzICgpIC9Nb2REYXRlIChEOjIwMjYwMjI0MTczOTU1KzAwJzAwJykgL1Byb2R1Y2VyIChSZXBvcnRMYWIgUERGIExpYnJhcnkgLSBcKG9wZW5zb3VyY2VcKSkgCiAgL1N1YmplY3QgKFwodW5zcGVjaWZpZWRcKSkgL1RpdGxlIChcKGFub255bW91c1wpKSAvVHJhcHBlZCAvRmFsc2UKPj4KZW5kb2JqCjExIDAgb2JqCjw8Ci9Db3VudCA0IC9LaWRzIFsgNCAwIFIgNSAwIFIgNyAwIFIgOCAwIFIgXSAvVHlwZSAvUGFnZXMKPj4KZW5kb2JqCjEyIDAgb2JqCjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXSAvTGVuZ3RoIDI0NzcKPj4Kc3RyZWFtCkdhdG09YkF1QFklYy4iNFlYdCpDZjpwQ0w7aT1mIlFLInNwMy1IUUE7T1IqUTlzdVVtJ1VyTWktIzQ6amdGbyFLYVk+KE83dUFmLGFfaC5fOiczSUAlKytPYmFGRihbSkVuKFhJNUpfXjBVbV0nQmJucWxKQzNgTWtGIzM4RkJqZlU5QFMtNFdgY0s7UjBJPV9sISpxS2shOGNqTC9OdDZZUlJwTTAlQS1XJmdkKUdANThhXURlQSU1LEZIYVwrJFljTWhubjRKRTpoMFNiXlJAbzJsNipScnFyTUJrbzU9XypValFSbVQzdCNUbzh1bi9LZGZrbT9VPF1gbTY/KDFtS1ZCZ0ZOYjhNXkhJcS9MNWMja1c+SCpxJmBTOS8hSmspMlFZJXI2ZjBWPyEoKnVlcFUnMWFJaiZCRVFFby5VMF1zbUBvIjIxMTJFWFhLTzI8bUsrXERKbE43XUZlRVBQSHFCY08nV0VsIThSMTBmUWBaUDdYMlA+JGosXmZBSERcWTFlREhrPEFHSkxdZkBhdC4qakNHRkdIMjdrUXBebCgoUUlRR3FfY1FmPEhUVUgzb2QjOHJVUiwiOlBxOSlGOD5TZVI4K2JGRic9T1NcOl4wZjknTCY4Kygua0psbT0/K2dXaTdpaVVRbjpXKjFYNzNeRVtEOSNCM1NFNTlbZGk4JD5uMmZTbzQ4TC1JWDlMclZkcU0ncUc0SCdRVzprS10iImI2MFFMMmBSSzElY14hXF5HZWJNSjRGYGFUNF5OWEVRV1peJic0PGwqaktWcXFpOkA6XVQhNEklT04vUSMvbkk0Ui9tMDFQL2A+Jz9gW21GI0Mncj9HVEYkWkdJZmthYlw/T24sXmpSLj00UFU0KCojO3Q/YSg7cWxaKzxUPE89OWo5KDVhZUk8I2goL0VaNlg7ZjdgcjRqc2FaU2teIz8xJVBEMmRtSjpSb1tNTjA8IktqRkhkVFYiOUJxVzpFIXFndTVgRFZyYFFPNGVfI1FmYVEnPCQtOCR1X2I6XjZYW01uQms2TDlMcERpVWttQ3VuRyJkMzRdODBRW2hcYmhkNy1APUkjL0AoZWBaT0xYZGNOYis9S0BTRyFCUFBONXJdcDhEPUA1JEcrWEIjUHBASGRMOlxqJF9AWykwTEsqIWNYTj50XVlJSU0jZV9hL1A9aiZwRXI7KjdqcUAvW29KVloqVjxcXi4lITthSjdbXl5xalddWSFlKzlZO2dQdWFWMThRLypeV2dyWC5rUnI3ZyUtM0NAUCU4PSYndSUuYUcwIyZMaDRhU3MhRCcvIyUrW19JanBPNkksako3NFE+Wm9oc1llVF1JRmtPcUVcLCROWHBTbmxZKTpeNGJQVzEvR2UqPT4lNDckQlRdJkYxXUhdJFFGaFBNVjdoNj1YXTNMLy9zWVdQO1InYlMoJFtcWnBJOyUxP3FRPk5kVThROV09Tk9dZjdOXChlcTtxaSxcYVJkXXRdaEBDOmBCJ2l0LFYwWSg1cy00RklHcWwiYk1qQ00hTiY/Q1IxTzpSUWxPLk1yVGNVcFRsaFUhLGomZmhKSSVQVHJaJmA4JEgwQ0kjZE4iKmxZVSdwI1hIQicpTD0vJ1FQMlxVbkhwazFDa0whbklFcitJXi1OPjo8OGQhaS0yKlEqUi5yXERjcz9IcSlaZjJqaGJeZkIqREBYKylsLVBgckFELTdmcFhOUSU/ZkMyMzIrSCxPIzIwLm5zYjxcMlBLRFM8c1kjRk0ob1J0Rk9Ga3JmQFxaTzdKNFpEMyVcPiNzbGFESGBfVipAJWQjTUYkX1ZfXC9Pcyp1LC0uJkFXZHVITExyOVUqOW1YYjt0JmApTFM6TGVPVD1kcGdjcEdrUi9OPFBGRWlpQmxqbXFoKWwvVldzXWhsYSI0SjNOSkIycjg7SG9KKnUsSzlhJiJsMCdgbS5PMWY4cVBuTGM9QiVSNiNIMyksT2wram4tNSk1Ti9ELlJtUFBhWnFUNjZVODBbailENGFpOEFjUCdvYW5AWjVFIVs2SiRzRWdHJypVQENWLi4iLksvYCk9QVNZajFGaGdVQyJOJF4+cytXNmRDTTsvZUFwcFIpZ0hzTyMwRUI3QVBDVCJsO1pbQXVEUForUDkzOEJyOyU9cCpuL1ZLV1JTTFh0NEhYXyoxO00vZjpPXWZKJVZfSVRIKVtmbEJbNWModVdOMSZQKW5xXHBHXjVHbkBeOSNEakM5LlhVYltRNEQ+SCI8VWw0JFsyRlUvIktxYjQnWiNSI2wxYS1gOEI/Sy1cOVI1Y11KWigqJXJuVidYLChTRjpWcCRRYF9wUSZlMCFHTDxZI1RQUUNwaytebFluQEdFaSctUWNsayQpRD8zTlsiVEpsQDFCP0VhcFwvPmwhP0w0PGVASW0vazU3Z25UdEJLOC5YOmksX1o5S25pNyxeV05jR3NRRzpDPkAyPl9eR0JaaiV1cVkmXzJ0RF4iZnBZOiI1Lzs0MUQ+KnJgRltBOnVCcixEZUtpWUhHOGJKaFVEcWNsPjdALFZIdENXVTwkQGlbVzF0XV1XTjxmNCEzcC8nakViR1hmWWQ0VVFuZU5NNV9VdEM1XS1wIUpZO2Y5QkJgbXA4K2BDLVVpbCxHZVAyS1M4SmEjL0VibiJtUyIpMEVLV21lcTtpJVduLWpyMm1FaSJhYiV0ZzlWOkFNMltHJ3JfRjlLTS9oO0ltRF5IUEg6OzpjX0ElXz9FSkQ+Xi0ibDJAcmNnRUcpZGMkZDdoXXAlKkItaGw+Pm1samcjPD1QIj4uaT9cOlNIKU80RSZxVT9rL2w7TC4lNF4/UzcnSzpVV3BJPzZGLTNOYTFaZU5wazBbIlU7XVA6V2BrMChFZT8nJjZDJmYnNjpXMVBfT0ZwcClIPz1SakE4LkhnM0QiL0IwRz1JO1o1WlZfI1tfJUF0PU9JSHJvIm8ySidydHJvV0RRVDdxJCVXa21VIiNtX2tqQ2xPZ1ZvRSliNS4sbyUvRGk5YCMkUV5yJEY3b2FbalB0TUcrYl9gZTA5NnApcidUMS9iPEdxN01EIj00OzlObTlARSsnPC1fNGNocV0yWVU6W3RdIU5gbytbbEIqa1xzJy0ua1RLNUlaYG1QK2UqUm5rLEtpTSJJVDRyYmlqYExDVy0sbDlPUE0zUCFCSDE3NW9IS1glLXMsIz1YLitHM1kuMyNvV3FFN2AqRSMrRltXVFhfbERKNW9GcHBeRVpBQFJDUSdCOSxkZT9NIUNFRm50P2NVKDMiRSpZKlpmcytRS1g6W1w8SDZNLn4+ZW5kc3RyZWFtCmVuZG9iagoxMyAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0gL0xlbmd0aCAyMzcwCj4+CnN0cmVhbQpHYiEjXWdKWmNzJjpOXmxxTHBNNihQSnJXUz5xIWY/a1RvWC9MWDItPEYsbERBNT1DYFptM1tYXjQqW2FRPk1Gb1ldM1FGMCFJSSxsVltFQGRrKHIkcilpZkZQUTtiWEUsXTk7QU9EaThqVmZiKUIuc2E8cm5YaVY0bzU3PHA8PFRMbFcza1xkOCFGcUQmNkk3MU1rXWYhYDBsImhmayQxbF48QSpOJ1pAbiF1SmBOXj9hKyIiVDlFMzRJWFwtZ0E8bChNZThMSkA1YyFQPks/WC5rdEhMZHFvPyYlL1xhPDUjcmkqW1psKkgiP3VjWWRfQDM/SStlWyMlVCYvR1Y0KlctciRHUS84XEI1OiZlPGArNCtUKVQqbiRMMG5wbUVkR2ZuQUEjQz1ZLjYwKmxPKyJzMXMwIyUxUG5EZ1U9T0NLbEYnQmFZLWlqM1w2aVo9NThlNEtuOSpVKWJMVyFKOkd0Xy9jLEs1WytuSVBoKitcN282TFVXSjxYSGpaLSspPFVTaHUoakspV25xIWliYklyZWhvP3BgZUpqL2YzWT1JaydqbkNEb2ImYiJBZUBvWGFbTVFIJSNrKV5LJFw3YnNDR0I2SEBGXGJQZChXQnFlSldwTjVXSW4mLiVVYF1AKDEwbjI3YT5MMSNYRVhHYUNuLExHOEImImpePVQ0Zmo3XllyNzopUlNTMDdGI1xcR1UobC02a2gxVV1kLjxRU2s7XSc6Y1pbLFRvVzteOUxdZUVuJnFvK3BGb3M6cEY7cFleQUUoPVc6TG4tX1pYRmI2S20nSFNiQEpncWl0NmVeR1x1YDgya1EtUkE4NmUwSU1sVk9sTixJbWhVWEQ1OGU+XU0kbEloa1M4MT5XVElNNlcsSGFaK1hrSHJeNENoPEc5Uk9tI0FMJiNaMTg7UFFuKj51RyJGXSYhTzlLP1pgLmtGK3EwZmMlXkxQbjtncyhYOFMnaUtkVmY4RWNidXErQ1c2SlQyZV9dYTVPNmtbXGooNnUmU0RDWDVBX1hmI0wiUW0jRCdSW2lHQjs8W3JWK2JnbilHZixRWTt0Sk1tU1BKQHNCbVEoK2w2W0VfRW8nXWMqSzU/ND5lTkQ+V2Z0bkpLTU9ZYHAzTSkudFtXLDMtajBRPkZKK0dLKWdebUZeU2QnRG48WExca2pUWkdFRWBFbSxTZGRObVYoOz51TkQiQnUxPz0lTC9cNUhcL0tSUUxlQixbOzQrV2FjZVdDYWotN0BAJy0hJiM+TUppLTUjNiJnNEFWLFgwJTphO2cnIVRiJWYvaHAucnVocVQ8QCZFQW1SblpdSzotdTYpVilxJE51XF9AQyNdcGYxbUJfYSg8JSFTP1ZqTGYnYWRYVms2Ly1PK0pdblZMY2A2KnM7KilbQz1dTDNVSzs3I1dQQEMlbSU/Uy0pXHE1bjBXNHBWbDpjZTckQFBoWmAnciZKYlZLO3JUKDhZKWBzXUoybmxWWV80Mz1CJEcvIyRgWDA7T15faT88clduUThGJUFQJWtKJ1lEIVEuRjIsSTBdbGVTUz4yWDhgN0QqSWhqbUBjbHJnXklyM0glISNoS0ZLXiR1TitTQlwyJkE2X0BYKipsSENhYFVSW1lHJ3BXS0ttZT0oRkowcXFHVm5JSGRMIjdTY3BOaTdla1QqbGVXdUo/VmM1WW1cXUBWJCgwLFdGbDkoPV8yVzBDaG5kYTMrXl9DNFs3ajxlayZYLWxXYSNxcEY3WnVFKU0rXzUtZUVYLERBJyhiYEgsZylCbDxnMy5IZnNiMCItWikocldzODUnRTZyPituVCgmOC8wW3MjUlImTlJOUl1MZSFyUD9bXXJOZDxOJ15QWCQ+b3AjXFQ8Yk1cYGg7NWhKaHMxXVtZdFhtISM7Qm9TNzFQdDcnRkhILy8lNUEtQTUpL3Q2LERSQz9OYycnQmBdcmNHNFUuZTRALyZcbzdSb3RAbWRJQ2suQiJyakRCOllYQmpNTC0qRm1PNDU6NktfU2k6U0BASVgpTlMzO1dxRT8oUUksKzJbUjQ5bUQpNG9KJkpBXU5AbXRwOyQqaDlsRUxqR2RUSE8zTGMyZT9TKCkpQHRAb25uXmtAUjEobDFuMi40SmhaSlxNNlhZVUhOWjdWUCI5TFtXakNSYUI5KUlrdCI9KDs9YlVya0FPcGw5Z0lsOlBaZSIjLlRlPT1EUlU9Wk9ZPkg5L1lnJWwhLGowMEdoakVeI2QoLj1WX01ALy5ZNUZzNWxzMEJtLE87clNeRjpwWGJvZnBxSSlmNk4qMHBDLUw6VCZEOW1ON2oyZ2YnXVpFRy5TNDQ+byhoVF8xR3M3XGNoWDg2YVVhOkQ+NFJXTzRQMjdUOChzdWMucW1kU04zLkxYdXVLb2VMKFVJVkZAdTYtNGQuTCNxXWI1W3A1SGkkbC1cV0prJFEkY1pGRkBVZkZPOzFpcG4wWEMpalg3RUtqNDdbTEVacDxmY2otIiZvKEtmLG0iNENEcHE7cCgyZ1wtRiVsaypWWzNsSksyNGxIVmRdP3FlZFpBL14nWjo5JjR0KiRHcVwhaSJLXmxBWi0lX240ZU5ObFdZdWc/LE9aZFskMykzaXJNcGpRMm1qQic2XW48IjgkaS1ePmc0UFhWKiU+Pz5scU0nZXVJaUJFLHAwZ1Y7R2UmPUZYI1FRLEJVL0RYLjd1YkA0TmYnOjJoYl0+Ji5BbyJqQS1eXmFNKlpmVyMoJSM+JEFJaW1PQ15wbWljUEUrOWk6P3FCWC9mKEVnX2NfV0ZxRlBPPCxdWmc0VjRoLSYsUWpCRmVxOSE1KD9PPy1GbkYoWmhPVmRiTkBNR3I8UypnbiFFR28kRyJHbkMsMlpKSkcpVFQ/a1IpMW5YTyxYTDtiKFVQWzRHRTJJUi0pUzl1PE5GNGZGVUBkRTVRWT4vYztsXj5bL1xKOjc/cm9rNF5pI0xxQFAuLSc2O01yc18uKGcqQFMmbVZkOWFIPyNIVE4tRy02KjlaXSM1TjBiY0FYZC90IjFxWU1bUEgsTFg1OlZuOXBRM2c+QVY1Ny0rLCdyUGcxQmg/XEFicmVPVjNzOTdOdCpMcFk2ZkxnVj9CV2I4dUxvJ1oqYHBSQ08jK2I6TzUzSjAkPVlBQSZuJVBhMlpQOWs8SitZLHFLfj5lbmRzdHJlYW0KZW5kb2JqCjE0IDAgb2JqCjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXSAvTGVuZ3RoIDI3NDcKPj4Kc3RyZWFtCkdhdTBFQ04lcnMoQipaLkVEXDpAWydeYDdgLm5DRig2MFc7aFdFZU5nKG1mby1xPDhnUltDOXRMM0QnUmhfVzAqJ1sqP3VZO1NdbUg6Nic2M0hPWiJwS1ReaGo1bFsmMyRXYDBVWlo4IjNBL1BsakdeMnFjLy1maEc0YlVPQyR1SFMlJCM8cFM9KjdRV2c2LjheQFlbImBoQD1dMWlnVzlFRWA5XkE1MShYNGMuN0siRWtXQW5KTVBrWV5hVF4iP1ZabDI1X0QpaCRtXV9OSDlGK1NPXkRfZSUnLD04KjRuT0ImJT0mMVFNMTpkckJRaXFKKztoRF9tI09ZZUVTSl1KSD0iYzUjNVw3ck9sbEdCWFJoNFBPWEhoJ1BlcjJlXGUnSDY7XWtRPTFEbS1DWyNlOXUkMi08b1NrXzxMbV4mPjVxLiI6R2hyP2NpK2tpUmhab1VOJkAsOyVFbkk/I1piLV1ZM2VzKUVrS2NsckxHaEVBa2YxL2RsP14jZSRKZURNUi1oZik6KzFNXSZyaV08P2RhTCxeRCFHJGtkO0wxMiFGZygkXy9nVCRZUz5dclY/RExqVmVjPixgXlQqXSxkKkNKTEgkTERQcCsoOmRWclJ0O3I9OnEwcVkhJT8nI1VcVDUjUjhyOF5XdFo5VlxtUV9VWmU6UlxWInFPXVQ1Ljxvakkjb3JFX15WOig2cl1ET2RzTjtCLjpmQkZpK0ctSlE7UzduZEYkRjtqUXU6QEZbJVdoSUppQVNCNjJIOVEsMGBWTmtKUmhzYW11WFQxMWgrVmZPJUtJTUBEMHNKR3AhbyVTczFfT0EiLF4hcG49WGpEY2RBb24+VGlPTENhQXBWanM2USlxNihGSjcjcmw0bWAnVmpjIVVKRiUlZzA0WCh1NV9QWENBXzZaMk1bNG9GQmd0M1csUHVZYW8kaDhxVGM2X0JeRzdQREh0bVpWXjthKTdQbklyU1olczovZD1xcDdGcVJRRkgtZjE7Yz4ocixEdW5rPUtaOmVOLDpWSGs3YWkrQXFqRU8+VC0oRU9ARmFNRzErSkUkXylpR1lIbz5VOFs4WEIsKkVCcj02YFA+N2sncE9cOCtvPGRLPzohR1s0IThsXGpWNXU9LWVCcj5vaTpgTy0iOFRDNDFqNVBFQEBOUFNpb3VHNmM+LDsnKGdkY3M1PEYrXz9PLjNBQmxiQDFnbiQzUTlPdDUzUixiQj49K0VAamtXV2MmRTV0akUoOFdNNXNLNC4iYnJ1YEliPCZtVS9RQUBjOkRGaDVlJlspYU5BVztbXko7KFlgPiEnbiFqblw4biQmMF5tayMsLFhjISpGaUNjPWRkQjA/YmY5OFpGKF5oRihLYVxzdGlRKV8/WTF1aElDK3VEO0psOTZYaXBeOmpyOCRdOmBdWmlkNV91YG9dXzo1SD82L1kyIzg/Mjk3PSpXbjg4ZmZMU0Y/cTlhVCFNJCdFWDdgIVYzWUJ1Ul9BR2xDXUspZDFcZywsOERtLFElZyFAYEptLUdWSUEzQVg8W1RrTzxBQlVvSWAia3ViTmlzUyEhISdVJltuZmRXUkpRW0NuYD5cJDdTTDhNVD0+JD1IJmxoLidrZ244UTNmTzhpZk4uXj5ya0pAXDJpVlVUJnEvKkxqYC1TMFU0bjklLDhJUkxUbyNbcnIkVj87MW1ZT2o+P14yMjE5KzMpQFpKLU9GN2kocDdRR2pIUCFTakZVR0cpOGciR0YlbjNDUTtzWD0rcCJgZCkrZT1qUGYjJTVPazMsbkJqMDtQbEI0P19MaGlmKDhXL0p0b05pNzJOVzVXMlg9K0cyZCJnaTM8YmguWkcrOjdaYkxdN01sZE10dShjR3MtJ01SYHUsRTpSLFVXcT9PKWdjQEIxVCVxJW1wPCsxXTVgOFRPJGY/LmoxK050VGBZKzI+Xiw1UmVpXzcvNE8yTT9jSVAqXWZfKzo3bWAxbFhTYmZvOk8jR0hXUyhXRz1qTUAuQT46K00vM2QsJVFkQF03b0olUCQsK2VCUCpVIitGTCMlKyJOXl40bEklXXQ3Pm9BNW5jTV1EJHAqakBfNURuPy4zWmhrTzo8dTYoWT11YW1wPXNPVltXMj5ALjo4NlZFTTxnNV1vVFAtdHBnR2duPkw9QV9iMVs7TjsvOG4jWjAxPGtpWHJEPkhgdW8rZ2wjPi5GO2cnb208MFNCKzpgU19zKDRQOjsuK1VxbGJTTVtAKThVV0RPKkFoWztVSSw5PiYhLzo+XDJDUSZqRGJVSTI4PVAwWyIwJ0EqPGoyITUvRUwpVDJzWkssQ2wvbERzXiRTaWFWIyptK2hqY2kqLT40ZXVFb2RNaiUmMmJzLUBCLCI0Tl1YRVFScSksWypedGs0MmtmZU5xVz8nIjVERVY6Z2RCUjFGJ1dhbVMoRltUTCNzJC9XRShFcEZIbGwnRlBiN3NBaGwlMUxkNltOQllwInFXKW5xSDciJDZ1b1MrT1NjRWRccUJxcio3ciRIcUhWbHRqJiNuQDBiKkBQNyZlVHJQJls3LkRvLz0vbW1JMV1oXGxxNWdeQClLOSonYW9UVVI4VDxzMChfQipRWjBqXkA1Tz9CUlJHWl9GPmpfSTRtZDEvZyMiIjpYYUpTMFxfaEA9ZW0sUlxncm4iMkE6Lz82RyhdIS1iVCdhVysvdGY4UWQtdWoqXDBtUFtDakRVKlBIIWkqW3MjISU/cWZCIyJkL3FGa1xYRC0nQUdUQSVsMFQ4PGljOVQ9Pz1XLzM4UEVCIVVZTGAyTWVtKFkqPGhZLlgpbzI2bmVxI19PUCJmZSNmWU9rJEY2WV9jY0RjOkNldFZ0Lj4oaDcyaTpbSmQ6MEpmZG8/OGUsUzkoJVFhTzxjKEsnUV8pVmxaSEgqODklTUtmQVErQVBXYHMuM09IPDJrL29QTigqbC1PcGIyWUMoPUojPkRBKEozO2dFZCRIbW5SKk1kSHVDYE5dT25SbFd1XG9kZTchNmhwZWIlU0ZoVjRdJG1lRicxYFxGNkFoVjo5VlhwWl0maWluO0kxYyZVWGktTWM0WVBPJyx1KVk+Jz0nZHEkSFdlKixraXEyVmEvX1AjaS81cmNWIz4zJkg+VDs4c0VwPi04OnNFRFxUUTUjTVFUblRlLCUtPlxUYGopTDUhKmIjUic1JVxvSFFVbFNYa2QuWDYpbV5mcyE+JT1SYGs8LiJjNzZuS2UhRG5uIkNqNzJKODs2XyVvNDdRZSkpXFQrMUNkMkVpdVl1LXE4N1BMTiEzbVVZRV5fIzouTzBCbkkqVjVyQ3U/YENzP3VTKStCQThBN1RGaDYvW3VqTWozcEQ+W2NCVz1AVEBYXkktbTBtXE5cXzBARG0zbG07W0VTSGtXLHFDJnBmIzZBM1xEdXFuIWcwYGtEbzBFImhMc0BkWnJDPkYrSTQ7RnJhUGBsalNbPmZNdDkvX1NVUjVdZFdiOC5BNklLLXFFdGExPiNJWFFCO25fUi0tJycmQ1Q+SFI+JSRlaW4oPzlgaGFJLDRtSk5uTTk6a0dqME1bYydcZipzdE1HaypvUyxTLUAuOnRoU1MsTSslcytAMFRIX0leNi9ON088LT4uNWpHc1o9U1BgaWBjY1kmJlVINCtuL2YzSTFjIjxJRk1kIVwqV34+ZW5kc3RyZWFtCmVuZG9iagoxNSAwIG9iago8PAovRmlsdGVyIFsgL0FTQ0lJODVEZWNvZGUgL0ZsYXRlRGVjb2RlIF0gL0xlbmd0aCAxMTA0Cj4+CnN0cmVhbQpHYXRtOTlsbyZJJ1lOYTVdTW1qNi5ScCorK1diWXA/KU1mbDowajolRkYmTC86ZFBRbC8tJV9uJixHVHU6bUIjJmUpPTlkZD4zQyk4JWE4LkkxJkxQSStbcWk+LCVXXUhNcmo5TWxDTkssdUkiaiNKKTxySidIVV9SSDc6PkdvWFtVXS0uIz1QaGpYUy5YVHImTmAlPzJsa05HMkw8WnNhIzxNYGI8Mi8xUzlDTCIyZ0BUNVBkWk4kY0JKNUEtbD9iIUY7PkVUI3EpXmU/YisjTWo2ZilMPVkjXU8vZEBzX3BRM0JdblJFJyU8JGpTOW0wR2tPW00/WFhSOjY9X1FDdWtiXG0lYkFWKUlyInBmMC1WPz0sbz5YbiMuIVJmNidKS1wvK1xlQllQZDUwPEZjWEJyJ1Npbi9lV3FFTG9pW04vUFpmaydPLDBXJ2FFZSttcklfPV80dTNRRDxBT1U9LSwmT2w8XjhnS2tQMzRETHA/Pl0waz9dJ0kmIWFJMSdKTzU5RzRqSVJHbDNhJUBNW3BzMFElOVYzJCdDV1cmPkxAdW8qVzZrcjNIPV9bbWk+RCM8ZDFwYnJDRlwvUV46ZD9JcEIocTEwVCxDRnJbTG9ETWwjOkhtM1xsSyJFLWxsMVwjKVhgL18vcTFyNVVqTDMlTUs7YVAsPjQsdEBRLmYjQUBIZS5ySEotWyVvVW0/NTshaitrVDZmWyleXklPNz01WGRlIkI9ckgrRExILVRMPF5XKUlqIz9bY0BqNlwuYHM7U2IyPm1kLTJNP1tNUWs+VXAjZ1U5SkR0UGwsaHJPJ1NjYmpxT3FXTTVjcSM+UmIsRiFIXVlrbVVbSyxYLm1KUy4/UUNnX1ZzaEZULERsRnA0aUdLQ2VMVSdNXD9WcC06M0hbSi5uN3BccFdbbF5kL0hhbC40VFxGNmlZVlpGPWVVTGtbXVs+Py9RX0xAPV9LRG4yU291RjNnYk85Tk5TcyksMDlhQlVrajElc21ucktDOWhiSHFoXWgoZW0wQG1WME9FNkNYUVMyaV8jNmApN1VaTEtlSTRJJDlmUjBbWzpJMylmSEkjQi4jO1k5NW0mU3FMLkFtP0krKGlldUwzaV1ERDFnRF1wRGgxSHEqXkEtKWNtLDQ/b3BsJ11LNT43X1EsVk1GQi9VQi90NFgqITFPX29GNV8nInNZPGZhYkdVQ01sczRjRHRsISFLTF1fJzRKcytbJTQtK0RZNV0nNVQjNy5ONGVFQElQLzhtcTVMWDtPL2IjZmVTTnBlQVQzN1VcLThyNGhUUUpQMzVcc09lUz1gRE9ZOlpENS9AYCx0Z19UWVFtb1NIY0FWaTRnTDU4NFlbX007MmJgSGIqcFZZRU1eZWJIQUQnUChbdEVZJik4QDM6OkdCY0N1bWRob2U8WXBrI11IY0lCRTsnQCIxJTc0ckFeREFIJ21YLD09PGIpYU0jUFFOfj5lbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCAxNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwNjEgMDAwMDAgbiAKMDAwMDAwMDExMiAwMDAwMCBuIAowMDAwMDAwMjE5IDAwMDAwIG4gCjAwMDAwMDAzMzEgMDAwMDAgbiAKMDAwMDAwMDUyNiAwMDAwMCBuIAowMDAwMDAwNzIxIDAwMDAwIG4gCjAwMDAwMDA4MzYgMDAwMDAgbiAKMDAwMDAwMTAzMSAwMDAwMCBuIAowMDAwMDAxMjI2IDAwMDAwIG4gCjAwMDAwMDEyOTUgMDAwMDAgbiAKMDAwMDAwMTU3NiAwMDAwMCBuIAowMDAwMDAxNjU0IDAwMDAwIG4gCjAwMDAwMDQyMjMgMDAwMDAgbiAKMDAwMDAwNjY4NSAwMDAwMCBuIAowMDAwMDA5NTI0IDAwMDAwIG4gCnRyYWlsZXIKPDwKL0lEIApbPGI5YjkzMmNlOGMwYTM0NTU4Y2JkYjJhMWZiN2NjNGQzPjxiOWI5MzJjZThjMGEzNDU1OGNiZGIyYTFmYjdjYzRkMz5dCiUgUmVwb3J0TGFiIGdlbmVyYXRlZCBQREYgZG9jdW1lbnQgLS0gZGlnZXN0IChvcGVuc291cmNlKQoKL0luZm8gMTAgMCBSCi9Sb290IDkgMCBSCi9TaXplIDE2Cj4+CnN0YXJ0eHJlZgoxMDcyMAolJUVPRgo="
+    st.markdown(
+        f"<a href='data:application/pdf;base64,{_gs_pdf_b64}' download='PSM_Getting_Started.pdf' "
+        f"style='text-decoration:none;'>"
+        f"<div style='display:flex;align-items:center;gap:0.7rem;"
+        f"background:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid {C_GOLD};"
+        f"border-radius:4px;padding:0.55rem 0.8rem;margin-bottom:0.6rem;"
+        f"cursor:pointer;transition:background 0.15s;'>"
+        f"<span style='font-size:1.1rem;'>📘</span>"
+        f"<div>"
+        f"<div style='font-size:0.72rem;font-weight:700;color:{INK};'>Getting Started Guide</div>"
+        f"<div style='font-size:0.63rem;color:{MUTED};'>Click to download PDF reference</div>"
+        f"</div>"
+        f"<span style='margin-left:auto;font-size:0.65rem;color:{MUTED};'>↓ PDF</span>"
+        f"</div></a>",
+        unsafe_allow_html=True)
 
     with st.expander("BASE DEMAND", expanded=True):
         base_visits = st.number_input("Visits / Day", 1.0, 300.0, 32.0, 1.0,
@@ -444,7 +462,7 @@ with st.sidebar:
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05,
             help="The FTE value assigned to one APC contract. 0.9 = each APC counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
 
-    with st.expander("STAFFING POLICY"):
+    with st.expander("STAFFING MODEL"):
         flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=11,
                                          format_func=lambda x: MONTH_NAMES[x-1],
                                          help="The month by which you need fully independent APCs on floor. Drives requisition posting deadline calculation.")
@@ -764,7 +782,7 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
 # DASHBOARD HEADER + KPIs
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("## PERMANENT STAFFING MODEL")
-st.title("Staffing Policy Recommendation")
+st.title("Staffing Model")
 st.markdown(f"<p style='font-size:0.87rem;color:{SLATE};margin-top:-0.5rem;margin-bottom:1.5rem;'>"
             f"36-month horizon | load-band optimizer | attrition-as-burnout model</p>",unsafe_allow_html=True)
 st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.5rem;'>",unsafe_allow_html=True)
@@ -1266,7 +1284,7 @@ def _call_openai(messages, key, model="gpt-4o", temperature=0.4, max_tokens=900)
         return None, str(e)
 
 def _advisor_system_prompt(sim_context):
-    return f"""You are a staffing strategy advisor embedded in a Permanent Staffing Model (PSM) tool for an urgent care clinic operator. You have full access to the clinic's 36-month simulation results.
+    return f"""You are a staffing strategy advisor embedded in a Predictive Staffing Model (PSM) tool for an urgent care clinic operator. You have full access to the clinic's 36-month simulation results.
 
 Your role:
 - Interpret simulation data and give specific, actionable guidance
@@ -2161,7 +2179,7 @@ with tabs[1]:
 <div class="memo-wrap">
   <div class="memo-masthead">
     <div>
-      <div class="memo-eyebrow">Permanent Staffing Model &nbsp;·&nbsp; Executive Summary</div>
+      <div class="memo-eyebrow">Predictive Staffing Model &nbsp;·&nbsp; Executive Summary</div>
       <div class="memo-title-main">Staffing & EBITDA Outlook</div>
       <div class="memo-subtitle">
         Generated {gen_date} &nbsp;·&nbsp;
@@ -2252,7 +2270,7 @@ with tabs[1]:
     st.markdown("## AI ADVISOR BRIEFING")
     st.markdown(
         f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
-        f"One-click CFO-quality memo interpreting this staffing policy — "
+        f"One-click CFO-quality memo interpreting this staffing model — "
         f"risks, tradeoffs, and what to watch. Powered by GPT-4o.</p>",
         unsafe_allow_html=True)
 
@@ -2265,7 +2283,7 @@ with tabs[1]:
             _brief_messages = [
                 {"role": "system", "content": _advisor_system_prompt(_sim_ctx)},
                 {"role": "user", "content": (
-                    "Write a concise CFO-quality briefing memo for this staffing policy. "
+                    "Write a concise CFO-quality briefing memo for this staffing model. "
                     "Structure it as: (1) Policy overview and what it achieves, "
                     "(2) Key risks or watch items, "
                     "(3) The single most important operational decision in the next 90 days. "
@@ -2421,7 +2439,7 @@ with tabs[1]:
     st.markdown("## MONTE CARLO SENSITIVITY")
     st.markdown(
         f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1.2rem;'>"
-        "500 trials — holds the recommended staffing policy fixed and randomizes the four "
+        "500 trials — holds the recommended staffing model fixed and randomizes the four "
         "inputs you cannot control: volume growth, attrition rate, net revenue per visit, "
         "and overload sensitivity. Shows the range of outcomes if key assumptions prove wrong.</p>",
         unsafe_allow_html=True
@@ -3177,7 +3195,7 @@ with tabs[12]:
     st.markdown("## MATH & LOGIC — MODEL AUDIT")
     st.markdown(
         f"<p style='font-size:0.84rem;color:{MUTED};margin:-0.4rem 0 1.2rem;'>"
-        f"Step-by-step derivation of every number in the staffing policy recommendation. "
+        f"Step-by-step derivation of every number in the staffing model recommendation. "
         f"All figures use the same inputs and formulas as the simulation — this tab "
         f"is a transparent re-computation, not a summary.</p>",
         unsafe_allow_html=True)
