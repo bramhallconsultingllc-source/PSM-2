@@ -1183,6 +1183,7 @@ tabs = st.tabs([
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
     "Cost Breakdown", "Marginal APC", "Stress Test",
     "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic", "Turnover Cost",
+    "Sensitivity",
 ])
 
 # ── TAB 0: STAFFING MODEL ────────────────────────────────────────────────────
@@ -3327,6 +3328,200 @@ with tabs[13]:
             f"✅ No overload-amplified attrition — all months within load band.</div>",
             unsafe_allow_html=True)
 
+
+
+with tabs[14]:
+    pol  = active_policy()
+    es0  = pol.ebitda_summary
+    base_ebitda = es0["ebitda"]
+
+    st.markdown("## SENSITIVITY — EBITDA TORNADO")
+    st.markdown(
+        f"<p style='font-size:0.84rem;color:{MUTED};margin:-0.4rem 0 1.2rem;'>"
+        f"Each bar shows how 3-year EBITDA changes when one input is varied from low to high, "
+        f"holding all others at your current values. Bars are sorted by total swing — "
+        f"the inputs at the top move the needle most.</p>",
+        unsafe_allow_html=True)
+
+    _tornado_scenarios = [
+        ("Revenue / Visit",        "net_revenue_per_visit",
+         max(60.0, cfg.net_revenue_per_visit * 0.80),
+         cfg.net_revenue_per_visit * 1.20,
+         f"${cfg.net_revenue_per_visit*0.80:.0f}", f"${cfg.net_revenue_per_visit*1.20:.0f}",
+         "Net revenue per patient visit (±20%)"),
+        ("Base Visits / Day",      "base_visits_per_day",
+         max(10.0, cfg.base_visits_per_day * 0.75),
+         cfg.base_visits_per_day * 1.35,
+         f"{cfg.base_visits_per_day*0.75:.0f} vpd", f"{cfg.base_visits_per_day*1.35:.0f} vpd",
+         "Daily baseline visit volume (−25% / +35%)"),
+        ("Pts / APC / Day Budget", "budgeted_patients_per_provider_per_day",
+         max(18.0, cfg.budgeted_patients_per_provider_per_day - 8),
+         cfg.budgeted_patients_per_provider_per_day + 8,
+         f"{cfg.budgeted_patients_per_provider_per_day-8:.0f} pts",
+         f"{cfg.budgeted_patients_per_provider_per_day+8:.0f} pts",
+         "Budgeted patient throughput per APC per shift (±8 pts)"),
+        ("APC Annual Cost",        "annual_provider_cost_perm",
+         cfg.annual_provider_cost_perm * 0.80,
+         cfg.annual_provider_cost_perm * 1.25,
+         f"${cfg.annual_provider_cost_perm*0.80/1e3:.0f}K",
+         f"${cfg.annual_provider_cost_perm*1.25/1e3:.0f}K",
+         "Total annual compensation per permanent APC (±20–25%)"),
+        ("Annual Growth %",        "annual_growth_pct",
+         max(0.0, cfg.annual_growth_pct - 5),
+         cfg.annual_growth_pct + 10,
+         f"{max(0,cfg.annual_growth_pct-5):.0f}%", f"{cfg.annual_growth_pct+10:.0f}%",
+         "Compounding annual volume growth rate"),
+        ("Annual Attrition %",     "annual_attrition_pct",
+         max(0.0, cfg.annual_attrition_pct - 10),
+         min(50.0, cfg.annual_attrition_pct + 15),
+         f"{max(0,cfg.annual_attrition_pct-10):.0f}%",
+         f"{min(50,cfg.annual_attrition_pct+15):.0f}%",
+         "Annual APC turnover rate"),
+        ("Credentialing Days",     "days_to_credential",
+         max(30, cfg.days_to_credential - 45),
+         min(270, cfg.days_to_credential + 60),
+         f"{max(30,cfg.days_to_credential-45)}d",
+         f"{min(270,cfg.days_to_credential+60)}d",
+         "Days from signed offer to credentialed and seeing patients"),
+        ("SWB Target / Visit",     "swb_target_per_visit",
+         max(40.0, cfg.swb_target_per_visit - 20),
+         cfg.swb_target_per_visit + 20,
+         f"${cfg.swb_target_per_visit-20:.0f}", f"${cfg.swb_target_per_visit+20:.0f}",
+         "SWB budget target per visit (shifts optimizer pressure)"),
+    ]
+
+    with st.spinner("Running sensitivity analysis — computing 16 scenarios..."):
+        def _run_tornado(kwarg, val):
+            _fields = {f: getattr(cfg, f) for f in cfg.__dataclass_fields__}
+            _fields[kwarg] = val
+            try:
+                _p, _ = optimize(ClinicConfig(**_fields))
+                return _p.ebitda_summary["ebitda"]
+            except Exception:
+                return base_ebitda
+
+        _results = []
+        for _lbl, _kw, _lo_v, _hi_v, _lo_lbl, _hi_lbl, _desc in _tornado_scenarios:
+            _lo_e = _run_tornado(_kw, _lo_v)
+            _hi_e = _run_tornado(_kw, _hi_v)
+            _swing = abs(_hi_e - _lo_e)
+            _results.append((_lbl, _kw, _lo_v, _hi_v, _lo_lbl, _hi_lbl, _desc, _lo_e, _hi_e, _swing))
+        _results.sort(key=lambda x: x[9], reverse=True)
+
+    _c_base, _c_note = st.columns([1, 2])
+    with _c_base:
+        st.metric("Base Case EBITDA (3yr)", f"${base_ebitda/1e6:.3f}M")
+    with _c_note:
+        st.markdown(
+            f"<div style='font-size:0.78rem;color:{MUTED};padding-top:0.6rem;'>"
+            f"Inputs ranked by total swing. Change any sidebar value and revisit this tab to refresh.</div>",
+            unsafe_allow_html=True)
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    _C_NEG = "#C0392B"
+    _C_POS = "#0A6B4A"
+    _labels, _lo_ds, _hi_ds, _lo_lbls, _hi_lbls, _swings, _lo_abs, _hi_abs = [], [], [], [], [], [], [], []
+    for _lbl, _kw, _lo_v, _hi_v, _lo_lbl, _hi_lbl, _desc, _lo_e, _hi_e, _swing in _results:
+        _labels.append(_lbl); _lo_ds.append(_lo_e - base_ebitda); _hi_ds.append(_hi_e - base_ebitda)
+        _lo_lbls.append(_lo_lbl); _hi_lbls.append(_hi_lbl); _swings.append(_swing)
+        _lo_abs.append(_lo_e); _hi_abs.append(_hi_e)
+
+    _fig_t = go.Figure()
+    _n = len(_labels)
+    _max_delta = max((max(abs(_lo_ds[i]), abs(_hi_ds[i])) for i in range(_n)), default=1)
+
+    for _i in range(_n):
+        _ld, _hd = _lo_ds[_i], _hi_ds[_i]
+        _left_d  = min(_ld, _hd);  _right_d = max(_ld, _hd)
+        _left_is_lo = _ld <= _hd
+        _left_lbl  = _lo_lbls[_i] if _left_is_lo else _hi_lbls[_i]
+        _right_lbl = _hi_lbls[_i] if _left_is_lo else _lo_lbls[_i]
+        _left_abs  = _lo_abs[_i]  if _left_is_lo else _hi_abs[_i]
+        _right_abs = _hi_abs[_i]  if _left_is_lo else _lo_abs[_i]
+
+        _fig_t.add_trace(go.Bar(
+            name="Unfavorable" if _i == 0 else "", y=[_labels[_i]], x=[_left_d],
+            orientation="h", base=0, marker_color=_C_NEG, marker_opacity=0.85,
+            showlegend=(_i == 0), legendgroup="low",
+            text=_left_lbl, textposition="inside",
+            textfont=dict(size=10, color="white"),
+            insidetextanchor="end",
+            hovertemplate=f"<b>{_labels[_i]}</b><br>Scenario: {_left_lbl}<br>EBITDA: ${_left_abs/1e6:.3f}M<br>Delta: {_left_d/1e3:+.0f}K<extra></extra>",
+        ))
+        _fig_t.add_trace(go.Bar(
+            name="Favorable" if _i == 0 else "", y=[_labels[_i]], x=[_right_d],
+            orientation="h", base=0, marker_color=_C_POS, marker_opacity=0.85,
+            showlegend=(_i == 0), legendgroup="high",
+            text=_right_lbl, textposition="inside",
+            textfont=dict(size=10, color="white"),
+            insidetextanchor="start",
+            hovertemplate=f"<b>{_labels[_i]}</b><br>Scenario: {_right_lbl}<br>EBITDA: ${_right_abs/1e6:.3f}M<br>Delta: {_right_d/1e3:+.0f}K<extra></extra>",
+        ))
+
+    _swing_annotations = [
+        dict(x=_max_delta * 1.08, y=_labels[_i], xref="x", yref="y",
+             text=f"<b>${_swings[_i]/1e3:.0f}K</b>",
+             showarrow=False, font=dict(size=10, color=NAVY, family="Courier New"),
+             xanchor="left")
+        for _i in range(_n)
+    ] + [
+        dict(x=-_max_delta * 0.02, y=_n - 0.9, xref="x", yref="y",
+             text="◀ Unfavorable", showarrow=False,
+             font=dict(size=9, color=_C_NEG, family="Courier New"), xanchor="right"),
+        dict(x=_max_delta * 0.02, y=_n - 0.9, xref="x", yref="y",
+             text="Favorable ▶", showarrow=False,
+             font=dict(size=9, color=_C_POS, family="Courier New"), xanchor="left"),
+        dict(x=_max_delta * 1.08, y=_n - 0.9, xref="x", yref="y",
+             text="Swing", showarrow=False,
+             font=dict(size=9, color=MUTED, family="Courier New"), xanchor="left"),
+    ]
+
+    _fig_t.update_layout(
+        barmode="overlay",
+        height=max(380, _n * 60 + 120),
+        margin=dict(l=0, r=100, t=40, b=52),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="inherit", size=11, color=INK),
+        xaxis=dict(
+            title="3-Year EBITDA delta vs base case",
+            tickformat="$,.0f",
+            gridcolor="#E2E8F0", zeroline=True,
+            zerolinecolor=NAVY, zerolinewidth=2,
+            range=[-_max_delta * 1.05, _max_delta * 1.18],
+        ),
+        yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)",
+                   tickfont=dict(size=11, color=INK)),
+        legend=dict(orientation="h", y=1.06, x=0, font=dict(size=10)),
+        annotations=_swing_annotations,
+    )
+
+    st.plotly_chart(_fig_t, use_container_width=True)
+
+    # Detail table
+    st.markdown(
+        f"<div style='font-size:0.60rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.16em;color:{MUTED};border-bottom:1px solid #E2E8F0;"
+        f"padding-bottom:0.3rem;margin-bottom:0.6rem;'>Full Detail</div>",
+        unsafe_allow_html=True)
+    _tbl = []
+    for _lbl, _kw, _lo_v, _hi_v, _lo_lbl, _hi_lbl, _desc, _lo_e, _hi_e, _swing in _results:
+        _tbl.append({
+            "Input": _lbl, "Description": _desc,
+            "Low scenario": _lo_lbl,
+            "Low EBITDA":   f"${_lo_e/1e6:.3f}M",
+            "Low Δ":        f"${(_lo_e-base_ebitda)/1e3:+.0f}K",
+            "High scenario": _hi_lbl,
+            "High EBITDA":  f"${_hi_e/1e6:.3f}M",
+            "High Δ":       f"${(_hi_e-base_ebitda)/1e3:+.0f}K",
+            "Total Swing":  f"${_swing/1e3:.0f}K",
+        })
+    st.dataframe(pd.DataFrame(_tbl), use_container_width=True, hide_index=True)
+
+    st.markdown(
+        f"<div style='font-size:0.72rem;color:{MUTED};margin-top:0.6rem;'>"
+        f"Each row varies one input independently. All other inputs held at current sidebar values.</div>",
+        unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
