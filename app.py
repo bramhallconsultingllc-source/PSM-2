@@ -382,17 +382,24 @@ with st.sidebar:
         st.caption(f"Y1 baseline: **{base_visits:.0f}**/day  →  Y3 projected: **{_y3_visits:.0f}**/day")
 
     with st.expander("MONTHLY VOLUME DISTRIBUTION", expanded=True):
-        st.caption("Volume adjustment vs annual average for each month. Normalized so base visits/day = annual avg.")
+        st.caption(
+            "Volume adjustment vs annual average for each month (seasonality demand changes). "
+            "Normalized so base visits/day = annual avg."
+        )
         # Classic urgent care defaults: Jan/Feb flu peak, spring flat, Jul dip, fall ramp
         _mo_defaults = [30, 25, 10, 0, -5, -5, -15, -10, 0, 5, 10, 20]
         _mo_names    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
         _mo_vals = []
+        # 2×6 grid — left col Jan–Jun, right col Jul–Dec
+        _col_a, _col_b = st.columns(2)
         for _mi, (_mn, _md) in enumerate(zip(_mo_names, _mo_defaults)):
-            _mv = st.number_input(
-                f"{_mn} %", -50, 100, _md, 5,
-                key=f"mo_{_mi}",
-                help=f"Volume adjustment for {_mn} vs annual average. 0 = exactly average volume."
-            )
+            _col = _col_a if _mi < 6 else _col_b
+            with _col:
+                _mv = st.number_input(
+                    f"{_mn} %", -50, 100, _md, 5,
+                    key=f"mo_{_mi}",
+                    help=f"Volume adjustment for {_mn} vs annual average. 0 = exactly average volume."
+                )
             _mo_vals.append(_mv / 100.0)
         # Normalize so monthly average = 0 → base_visits is true annual average
         _mo_avg = sum(_mo_vals) / 12
