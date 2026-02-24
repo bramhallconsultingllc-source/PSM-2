@@ -902,7 +902,6 @@ def _yrs_to_goal(growth_override=None, cost_mult=1.0, load_mult=1.0):
 
 _accel_30   = _yrs_to_goal(growth_override=0.30)
 _accel_load = _yrs_to_goal(load_mult=1.20)   # tighter staffing = ~same cost fewer FTE
-_accel_cost = _yrs_to_goal(cost_mult=0.90)   # −10% APC cost
 _accel_combo= _yrs_to_goal(growth_override=0.30, cost_mult=0.92)
 
 # PSR cross-train scenario: reduce PSR ratio from current to 0.5
@@ -970,7 +969,6 @@ _goal_already_met = _swb_delta_pv <= 0
 if not _goal_already_met:
     _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
     _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
-    _accel_html += _accel_row("↓ Reduce APC compensation 10%", _accel_cost, "#FFFBEB", "#92600A")
     if _accel_psr:
         _accel_html += _accel_row(_psr_label, _accel_psr, "#FFFBEB", "#92600A")
     _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
