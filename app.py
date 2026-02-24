@@ -2415,14 +2415,14 @@ with tabs[1]:
                            sty(f"yz{n}", fontSize=7.5, textColor=RS, leading=10, spaceAfter=4)),
                 Paragraph(f"SWB Goal    ${yd['goal']/1e3:.0f}K",
                            sty(f"y1{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
-                Paragraph(f"SWB Actual  -${yd['act']/1e3:.0f}K",
-                           sty(f"y2{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
-                Paragraph(f"Flex        -${yd.get('flex',0)/1e3:.0f}K",
-                           sty(f"y3{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
-                Paragraph(f"Turnover    -${yd.get('turn',0)/1e3:.0f}K",
-                           sty(f"y4{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
-                Paragraph(f"Burnout     -${yd.get('burn',0)/1e3:.0f}K",
-                           sty(f"y5{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=3)),
+                Paragraph(f"SWB Actual  −${yd['act']/1e3:.0f}K",
+                           sty(f"y2{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
+                Paragraph(f"Flex        −${yd.get('flex',0)/1e3:.0f}K",
+                           sty(f"y3{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
+                Paragraph(f"Turnover    −${yd.get('turn',0)/1e3:.0f}K",
+                           sty(f"y4{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
+                Paragraph(f"Burnout     −${yd.get('burn',0)/1e3:.0f}K",
+                           sty(f"y5{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=3)),
                 Paragraph(f"SWB Variance  {_sign}${abs(yd['net_var'])/1e3:.0f}K",
                            sty(f"yv{n}", fontName="Helvetica-Bold", fontSize=9,
                                textColor=_vc, leading=11, spaceAfter=2)),
@@ -2459,9 +2459,9 @@ with tabs[1]:
                                 sty("svl", fontName="Helvetica-Bold", fontSize=7,
                                     textColor=RM, spaceAfter=4)))
         story.append(Paragraph(
-            f"SWB Goal ${_ann_goal/1e3:.0f}K  –  Actual ${_ann_act/1e3:.0f}K  –  "
-            f"Flex ${_ann_flex/1e3:.0f}K  –  Turnover ${_ann_turn/1e3:.0f}K  –  "
-            f"Burnout ${_ann_burn/1e3:.0f}K  =  "
+            f"SWB Goal ${_ann_goal/1e3:.0f}K  −  Actual ${_ann_act/1e3:.0f}K  "
+            f"−  Flex ${_ann_flex/1e3:.0f}K  −  Turnover ${_ann_turn/1e3:.0f}K  "
+            f"−  Burnout ${_ann_burn/1e3:.0f}K  =  "
             f"{_av_sign}${abs(_ann_var)/1e3:.0f}K/yr SWB variance  ({_av_word})",
             sty("svb", fontSize=8.5, textColor=RS, leading=13, spaceAfter=4)))
         story.append(rule())
@@ -2498,20 +2498,7 @@ with tabs[1]:
             f"APCs are 0% productive until credentialing completes.",
             sty("hn", fontSize=7.5, textColor=RM, leading=10, spaceAfter=3)))
 
-        # ── NARRATIVE SECTIONS ─────────────────────────────────────────────────
-        for sec_lbl, sec_key in [
-            ("SWB / VISIT ANALYSIS", "swb_prose"),
-            ("HIRING & PIPELINE",    "hire_prose"),
-            ("BURNOUT & ATTRITION",  "burnout_prose"),
-        ]:
-            if memo.get(sec_key):
-                story.append(rule())
-                story.append(Paragraph(sec_lbl, sty(f"nl{sec_key}",
-                    fontName="Helvetica-Bold", fontSize=7,
-                    textColor=RM, spaceBefore=4, spaceAfter=4)))
-                story.append(Paragraph(_strip(memo[sec_key]),
-                    sty(f"nb{sec_key}", fontSize=8.5, textColor=RS,
-                        leading=13, spaceAfter=4)))
+        # Narrative prose sections removed — data is represented in structured tables above
 
         # ── RECOMMENDED ACTIONS ─────────────────────────────────────────────────
         story.append(rule())
@@ -2586,7 +2573,7 @@ with tabs[1]:
                        fontName="Helvetica-Bold", leading=9)),
             Paragraph(f"Saves {_rs}R + {_ys}Y zone-months",
                       sty("ms", fontSize=7.5, textColor=RS, leading=10)),
-            Paragraph(f"Net annual: ${_mn_sign}{_net_ann/1e3:.0f}K",
+            Paragraph(f"Net annual: {_mn_sign}${abs(_net_ann)/1e3:.0f}K",
                       sty("mn", fontSize=7.5, textColor=_mn_clr,
                           fontName="Helvetica-Bold", leading=10)),
             Paragraph(f"Payback: {_pay_str}",
