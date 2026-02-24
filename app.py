@@ -251,27 +251,37 @@ h2 {{
 
 /* ── TABS ─────────────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {{
-    border-bottom: 1px solid {RULE};
-    gap: 0;
-    background: transparent;
+    border-bottom: 2px solid {NAVY};
+    gap: 2px;
+    background: {RULE_LT};
+    padding: 0.35rem 0.4rem 0;
+    border-radius: 6px 6px 0 0;
 }}
 .stTabs [data-baseweb="tab"] {{
     font-size: 0.62rem !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.09em !important;
-    color: {MUTED} !important;
-    padding: 0.65rem 0.6rem !important;
-    border: none !important;
-    border-bottom: 2px solid transparent !important;
-    margin-bottom: -1px;
+    letter-spacing: 0.10em !important;
+    color: {SLATE} !important;
+    padding: 0.5rem 0.75rem !important;
+    border: 1px solid transparent !important;
+    border-bottom: none !important;
+    border-radius: 4px 4px 0 0 !important;
+    margin-bottom: -2px !important;
     background: transparent !important;
     white-space: nowrap !important;
+    transition: background 0.15s, color 0.15s !important;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+    background: #E8EEF5 !important;
+    color: {NAVY} !important;
 }}
 .stTabs [aria-selected="true"] {{
-    color: {INK} !important;
-    border-bottom: 2px solid {C_GOLD} !important;
-    font-weight: 600 !important;
+    color: {NAVY} !important;
+    background: #FFFFFF !important;
+    border-color: {NAVY} {NAVY} #FFFFFF !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid #FFFFFF !important;
 }}
 
 /* ── ALERTS ───────────────────────────────────────────────────── */
@@ -3096,7 +3106,7 @@ with tabs[12]:
     st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
     _check("EBITDA cross-check vs simulation",   es["ebitda"],   _ebitda_check)
     _check("Revenue cross-check",                es["revenue"],  sum(mo.revenue_captured for mo in mos))
-    _check("SWB cross-check",                    es["swb"],      sum(mo.permanent_cost   for mo in mos))
+    _check("SWB cross-check",                    es["swb"],      sum(mo.permanent_cost + mo.support_cost for mo in mos))
     _check("Turnover cross-check",               es["turnover"], sum(mo.turnover_cost     for mo in mos))
     _check("Burnout cross-check",                es["burnout"],  sum(mo.burnout_penalty   for mo in mos))
 
