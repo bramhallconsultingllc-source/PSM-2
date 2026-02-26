@@ -999,9 +999,24 @@ if not _goal_already_met:
     _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
 
 def _yr_card_html(d, yr_label, target):
-    vc   = "#0A6B4A" if d["net_var"] >= 0 else "#B91C1C"
-    sign = "+" if d["net_var"] >= 0 else "−"
-    word = "favorable" if d["net_var"] >= 0 else "unfavorable"
+    # SWB savings = how much below/above the SWB budget the wage spend was
+    _swb_savings  = d["goal"] - d["act"]           # positive = under budget
+    _other_costs  = d["flex"] + d["turn"] + d["burn"]
+    _net_var      = _swb_savings - _other_costs     # = d["net_var"]
+    _swb_fav      = d["swb_actual"] <= target       # true when SWB/visit is on-target
+
+    # SWB Savings row: green if under budget, red if over
+    _sav_clr  = "#0A6B4A" if _swb_savings >= 0 else "#B91C1C"
+    _sav_sign = "+" if _swb_savings >= 0 else "−"
+
+    # Net Variance row: green only when the full picture is positive
+    _net_clr  = "#0A6B4A" if _net_var >= 0 else "#B91C1C"
+    _net_sign = "+" if _net_var >= 0 else "−"
+
+    # Subtitle: keyed only on SWB/visit vs target — never influenced by turnover
+    _sub_clr  = "#0A6B4A" if _swb_fav else "#B91C1C"
+    _sub_word = "SWB on target" if _swb_fav else "SWB over budget"
+
     zones = f"{d['G']}G / {d['Y']}Y / {d['R']}R &nbsp;&middot;&nbsp; Peak {d['peak']:.1f} pts/APC"
     return (
         f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px;"
@@ -1010,28 +1025,41 @@ def _yr_card_html(d, yr_label, target):
         f"letter-spacing:0.16em;color:#7A8799;margin-bottom:0.4rem;'>{yr_label}</div>"
         f"<div style='font-size:0.75rem;color:#4A5568;margin-bottom:0.55rem;line-height:1.5;'>{zones}</div>"
         f"<div style='font-size:0.74rem;line-height:1.85;'>"
+        # SWB Goal
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>SWB Goal</span>"
         f"<span style='color:#003366;font-variant-numeric:tabular-nums;font-weight:500;'>${d['goal']/1e3:.0f}K</span></div>"
+        # SWB Actual
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>SWB Actual</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['act']/1e3:.0f}K</span></div>"
+        # SWB Savings (new subtotal row)
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #E2E8F0;"
+        f"background:#F8FAFC;padding:0 0.1rem;'>"
+        f"<span style='color:#4A5568;font-style:italic;font-size:0.70rem;'>SWB Savings</span>"
+        f"<span style='color:{_sav_clr};font-variant-numeric:tabular-nums;font-style:italic;font-size:0.70rem;'>"
+        f"{_sav_sign}${abs(_swb_savings)/1e3:.0f}K</span></div>"
+        # Flex
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>Flex</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['flex']/1e3:.0f}K</span></div>"
+        # Turnover
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>Turnover</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['turn']/1e3:.0f}K</span></div>"
+        # Burnout
         f"<div style='display:flex;justify-content:space-between;border-bottom:2px solid #0F1923;'>"
         f"<span style='color:#4A5568;'>Burnout</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['burn']/1e3:.0f}K</span></div>"
+        # Net Variance (total)
         f"<div style='display:flex;justify-content:space-between;padding-top:0.15rem;'>"
-        f"<span style='color:#0F1923;font-weight:700;'>SWB Variance</span>"
-        f"<span style='color:{vc};font-weight:700;font-size:0.88rem;font-variant-numeric:tabular-nums;'>"
-        f"{sign}${abs(d['net_var'])/1e3:.0f}K</span></div>"
+        f"<span style='color:#0F1923;font-weight:700;'>Net Variance</span>"
+        f"<span style='color:{_net_clr};font-weight:700;font-size:0.88rem;font-variant-numeric:tabular-nums;'>"
+        f"{_net_sign}${abs(_net_var)/1e3:.0f}K</span></div>"
         f"</div>"
-        f"<div style='margin-top:0.45rem;font-size:0.68rem;color:{vc};font-weight:600;'>"
-        f"${d['swb_actual']:.2f} actual vs ${target:.2f} target &nbsp;·&nbsp; {word}</div>"
+        # Subtitle: SWB/visit vs target only
+        f"<div style='margin-top:0.45rem;font-size:0.68rem;color:{_sub_clr};font-weight:600;'>"
+        f"${d['swb_actual']:.2f} actual vs ${target:.2f} target &nbsp;·&nbsp; {_sub_word}</div>"
         f"</div>"
     )
 
@@ -2405,15 +2433,20 @@ with tabs[1]:
                                     textColor=RM, spaceAfter=4)))
 
         def _yr_card(n, yd):
-            # net_var: (goal - actual_swb) - flex - turnover - burnout
-            # Color/sign the SWB Variance row on net_var (full picture)
-            _vc   = RGR if yd["net_var"] >= 0 else RRD
-            _sign = "+" if yd["net_var"] >= 0 else ""
-            # The subtitle "actual vs target" label is based solely on SWB/visit
-            # vs target — independent of flex/turnover/burnout
+            _swb_savings = yd["goal"] - yd["act"]
+            _other_costs = yd.get("flex",0) + yd.get("turn",0) + yd.get("burn",0)
+            _net_var     = _swb_savings - _other_costs
+
+            _sav_clr  = RGR if _swb_savings >= 0 else RRD
+            _sav_sign = "+" if _swb_savings >= 0 else "−"
+            _net_clr  = RGR if _net_var >= 0 else RRD
+            _net_sign = "+" if _net_var >= 0 else ""
+
             _swb_fav  = yd["swb_actual"] <= cfg.swb_target_per_visit
-            _swb_word = "favorable" if _swb_fav else "unfavorable"
             _swb_clr  = RGR if _swb_fav else RRD
+            _swb_word = "SWB on target" if _swb_fav else "SWB over budget"
+
+            RL2 = rc.HexColor("#F8FAFC")  # subtle background for subtotal row
             return [
                 Paragraph(f"YEAR {n}", sty(f"yh{n}", fontSize=6.5, textColor=RM,
                            fontName="Helvetica-Bold", leading=9, spaceAfter=2)),
@@ -2423,15 +2456,18 @@ with tabs[1]:
                            sty(f"y1{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
                 Paragraph(f"SWB Actual  −${yd['act']/1e3:.0f}K",
                            sty(f"y2{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
+                Paragraph(f"SWB Savings  {_sav_sign}${abs(_swb_savings)/1e3:.0f}K",
+                           sty(f"y2s{n}", fontSize=7.5, textColor=_sav_clr,
+                               fontName="Helvetica-Oblique", leading=10, spaceAfter=3)),
                 Paragraph(f"Flex        −${yd.get('flex',0)/1e3:.0f}K",
                            sty(f"y3{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
                 Paragraph(f"Turnover    −${yd.get('turn',0)/1e3:.0f}K",
                            sty(f"y4{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
                 Paragraph(f"Burnout     −${yd.get('burn',0)/1e3:.0f}K",
                            sty(f"y5{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=3)),
-                Paragraph(f"SWB Variance  {_sign}${abs(yd['net_var'])/1e3:.0f}K",
+                Paragraph(f"Net Variance  {_net_sign}${abs(_net_var)/1e3:.0f}K",
                            sty(f"yv{n}", fontName="Helvetica-Bold", fontSize=9,
-                               textColor=_vc, leading=11, spaceAfter=2)),
+                               textColor=_net_clr, leading=11, spaceAfter=2)),
                 Paragraph(f"${yd['swb_actual']:.2f} actual vs ${cfg.swb_target_per_visit:.2f} target  ·  {_swb_word}",
                            sty(f"ys{n}", fontSize=7, textColor=_swb_clr, leading=9)),
             ]
@@ -2461,15 +2497,66 @@ with tabs[1]:
         _av_clr   = RGR if _ann_var >= 0 else RRD
         _av_sign  = "+" if _ann_var >= 0 else ""
         _av_word  = "favorable" if _ann_var >= 0 else "unfavorable"
+        _ann_savings     = _ann_goal - _ann_act
+        _ann_sav_sign    = "+" if _ann_savings >= 0 else "−"
+        _ann_sav_clr     = RGR if _ann_savings >= 0 else RRD
+        _ann_other       = _ann_flex + _ann_turn + _ann_burn
+
         story.append(Paragraph("SWB VARIANCE BREAKDOWN — ANNUALISED (3-YR AVG)",
                                 sty("svl", fontName="Helvetica-Bold", fontSize=7,
                                     textColor=RM, spaceAfter=4)))
-        story.append(Paragraph(
-            f"SWB Goal ${_ann_goal/1e3:.0f}K  −  Actual ${_ann_act/1e3:.0f}K  "
-            f"−  Flex ${_ann_flex/1e3:.0f}K  −  Turnover ${_ann_turn/1e3:.0f}K  "
-            f"−  Burnout ${_ann_burn/1e3:.0f}K  =  "
-            f"{_av_sign}${abs(_ann_var)/1e3:.0f}K/yr SWB variance  ({_av_word})",
-            sty("svb", fontSize=8.5, textColor=RS, leading=13, spaceAfter=4)))
+
+        # Two-row breakdown table: SWB savings line + other costs line = net
+        svb_data = [
+            [
+                Paragraph("SWB Goal", sty("sg", fontSize=8, textColor=RM)),
+                Paragraph(f"${_ann_goal/1e3:.0f}K", sty("sgv", fontSize=8, textColor=RI)),
+                Paragraph("−  SWB Actual", sty("sa", fontSize=8, textColor=RM)),
+                Paragraph(f"${_ann_act/1e3:.0f}K", sty("sav", fontSize=8, textColor=RRD)),
+                Paragraph("=  SWB Savings", sty("ss", fontSize=8, textColor=RM,
+                           fontName="Helvetica-Oblique")),
+                Paragraph(f"{_ann_sav_sign}${abs(_ann_savings)/1e3:.0f}K",
+                          sty("ssv", fontSize=8, textColor=_ann_sav_clr,
+                              fontName="Helvetica-BoldOblique")),
+            ],
+            [
+                Paragraph("Flex", sty("fl", fontSize=8, textColor=RM)),
+                Paragraph(f"−${_ann_flex/1e3:.0f}K", sty("flv", fontSize=8, textColor=RRD)),
+                Paragraph("Turnover", sty("tu", fontSize=8, textColor=RM)),
+                Paragraph(f"−${_ann_turn/1e3:.0f}K", sty("tuv", fontSize=8, textColor=RRD)),
+                Paragraph("Burnout", sty("bu2", fontSize=8, textColor=RM)),
+                Paragraph(f"−${_ann_burn/1e3:.0f}K", sty("buv", fontSize=8, textColor=RRD)),
+            ],
+        ]
+        svb_total = Table([
+            [
+                Paragraph("Net Variance / yr",
+                          sty("nt", fontSize=9, fontName="Helvetica-Bold", textColor=RI)),
+                Paragraph(f"{_av_sign}${abs(_ann_var)/1e3:.0f}K  ({_av_word})",
+                          sty("ntv", fontSize=9, fontName="Helvetica-Bold", textColor=_av_clr)),
+            ]
+        ], colWidths=[1.6*inch, 5.1*inch])
+        svb_total.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("TOPPADDING",(0,0),(-1,-1),4), ("BOTTOMPADDING",(0,0),(-1,-1),4),
+            ("LEFTPADDING",(0,0),(-1,-1),6),
+            ("BACKGROUND",(0,0),(-1,-1),rc.HexColor("#F8FAFC")),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
+        ]))
+
+        svb_rows = Table(svb_data,
+                         colWidths=[0.75*inch,0.65*inch,1.05*inch,0.65*inch,1.05*inch,0.65*inch])
+        svb_rows.setStyle(TableStyle([
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("TOPPADDING",(0,0),(-1,-1),4), ("BOTTOMPADDING",(0,0),(-1,-1),4),
+            ("LEFTPADDING",(0,0),(-1,-1),5),
+            ("ROWBACKGROUNDS",(0,0),(-1,-1),[rc.white, rc.HexColor("#F8FAFC")]),
+            ("GRID",(0,0),(-1,-1),0.3,rc.HexColor("#E2E8F0")),
+            ("LINEBELOW",(0,0),(-1,0),0.5,rc.HexColor("#E2E8F0")),
+        ]))
+        story.append(svb_rows)
+        story.append(Spacer(1,3))
+        story.append(svb_total)
         story.append(rule())
 
         # ── HIRE CALENDAR ────────────────────────────────────────────────────────
