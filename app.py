@@ -2405,9 +2405,15 @@ with tabs[1]:
                                     textColor=RM, spaceAfter=4)))
 
         def _yr_card(n, yd):
+            # net_var: (goal - actual_swb) - flex - turnover - burnout
+            # Color/sign the SWB Variance row on net_var (full picture)
             _vc   = RGR if yd["net_var"] >= 0 else RRD
             _sign = "+" if yd["net_var"] >= 0 else ""
-            _word = "favorable" if yd["net_var"] >= 0 else "unfavorable"
+            # The subtitle "actual vs target" label is based solely on SWB/visit
+            # vs target — independent of flex/turnover/burnout
+            _swb_fav  = yd["swb_actual"] <= cfg.swb_target_per_visit
+            _swb_word = "favorable" if _swb_fav else "unfavorable"
+            _swb_clr  = RGR if _swb_fav else RRD
             return [
                 Paragraph(f"YEAR {n}", sty(f"yh{n}", fontSize=6.5, textColor=RM,
                            fontName="Helvetica-Bold", leading=9, spaceAfter=2)),
@@ -2426,8 +2432,8 @@ with tabs[1]:
                 Paragraph(f"SWB Variance  {_sign}${abs(yd['net_var'])/1e3:.0f}K",
                            sty(f"yv{n}", fontName="Helvetica-Bold", fontSize=9,
                                textColor=_vc, leading=11, spaceAfter=2)),
-                Paragraph(f"${yd['swb_actual']:.2f} actual vs ${cfg.swb_target_per_visit:.2f} target  ·  {_word}",
-                           sty(f"ys{n}", fontSize=7, textColor=_vc, leading=9)),
+                Paragraph(f"${yd['swb_actual']:.2f} actual vs ${cfg.swb_target_per_visit:.2f} target  ·  {_swb_word}",
+                           sty(f"ys{n}", fontSize=7, textColor=_swb_clr, leading=9)),
             ]
 
         yr1d = yr_data_ext[1]; yr2d = yr_data_ext[2]; yr3d = yr_data_ext[3]
