@@ -861,7 +861,9 @@ if best.marginal_analysis:
         f"<b style='color:#92600A'>{ma['yellow_months_saved']}Y</b> zone-months</span>"
         f"<span style='color:#4A5568;font-size:0.76rem'>Net annual: "
         f"<b style='color:{_mc}'>${_net:+,.0f}</b></span>"
-        f"<span style='color:#4A5568;font-size:0.76rem'>Payback: <b>{_mpay}</b></span>"
+        f"<span style='color:#4A5568;font-size:0.76rem'>Payback: <b>{_mpay}</b>"
+        f"<span title='Months until the cost of adding 0.5 FTE is offset by savings from avoided Yellow/Red zone months. \'Never\' means the hire would be a net cost — current staffing is at or above the EBITDA-optimal point.' "
+        f"style='cursor:help;margin-left:3px;color:#7A8799;font-size:0.70rem;border-bottom:1px dotted #7A8799;'>?</span></span>"
     )
 
 # ─── Years-to-goal calculation ───────────────────────────────────────────────
@@ -1284,6 +1286,44 @@ def _build_simulation_context(pol, cfg, MA):
             f"  post_by=Y{h.post_by_year}-{MA[h.post_by_month-1]}"
             f"  productive=Y{h.independent_year}-{MA[h.independent_month-1]}"
         )
+    # ── Support staff context ─────────────────────────────────────────────────
+    sup  = cfg.support
+    mult = sup.total_multiplier
+    avg_apc_on_floor = sum(mo.paid_fte * cfg.fte_fraction for mo in mos) / len(mos)
+    hrs_mo = cfg.shift_hours * cfg.operating_days_per_week * (52 / 12)
+
+    ma_ann      = avg_apc_on_floor * sup.ma_ratio  * sup.ma_rate_hr  * hrs_mo * mult * 12
+    psr_ann     = avg_apc_on_floor * sup.psr_ratio * sup.psr_rate_hr * hrs_mo * mult * 12
+    rt_ann      = sup.rt_flat_fte  * sup.rt_rate_hr * hrs_mo * mult * 12
+    phys_ann    = sup.supervisor_hrs_mo   * sup.physician_rate_hr  * mult * 12 if sup.supervisor_hrs_mo   > 0 else 0
+    supadm_ann  = sup.supervisor_admin_mo * sup.supervisor_rate_hr * mult * 12 if sup.supervisor_admin_mo > 0 else 0
+    total_sup   = ma_ann + psr_ann + rt_ann + phys_ann + supadm_ann
+    ma_per_025  = 0.25 * avg_apc_on_floor * sup.ma_rate_hr  * hrs_mo * mult * 12
+    psr_per_025 = 0.25 * avg_apc_on_floor * sup.psr_rate_hr * hrs_mo * mult * 12
+
+    lines += [
+        "",
+        "=== SUPPORT STAFF CONFIGURATION ===",
+        f"Comp multiplier: {mult:.2f}x  (benefits {sup.benefits_load_pct*100:.0f}% + bonus {sup.bonus_pct*100:.0f}% + OT/sick {sup.ot_sick_pct*100:.0f}%)",
+        f"Hourly rates (base): MA ${sup.ma_rate_hr:.2f}/hr  PSR ${sup.psr_rate_hr:.2f}/hr  RT ${sup.rt_rate_hr:.2f}/hr  Supervisor ${sup.supervisor_rate_hr:.2f}/hr",
+        f"Staffing ratios: MA {sup.ma_ratio:.2f}/APC  PSR {sup.psr_ratio:.2f}/APC  RT {sup.rt_flat_fte:.2f} flat/shift",
+        f"Physician supervision: {sup.supervisor_hrs_mo:.0f} hrs/mo  Supervisor admin: {sup.supervisor_admin_mo:.0f} hrs/mo",
+        f"Avg concurrent APCs on floor: {avg_apc_on_floor:.2f}",
+        "",
+        "Annualised support staff costs (at current ratios):",
+        f"  MA:            ${ma_ann:,.0f}/yr",
+        f"  PSR:           ${psr_ann:,.0f}/yr",
+        f"  Rad Tech:      ${rt_ann:,.0f}/yr",
+        f"  Physician sup: ${phys_ann:,.0f}/yr",
+        f"  Supervisor:    ${supadm_ann:,.0f}/yr",
+        f"  TOTAL:         ${total_sup:,.0f}/yr",
+        "",
+        "Ratio sensitivity (annual cost impact per +-0.25 ratio change):",
+        f"  +-0.25 MA ratio  = +-${ma_per_025:,.0f}/yr",
+        f"  +-0.25 PSR ratio = +-${psr_per_025:,.0f}/yr",
+        "(Approximate — based on avg APC floor count; varies month-to-month with FTE ramp)",
+    ]
+
     lines.append("")
     lines.append("=== MONTHLY DETAIL (demand_fte | paid_fte | zone | pts/APC) ===")
     for mo in mos:
