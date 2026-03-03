@@ -469,8 +469,30 @@ with st.sidebar:
         summer_shed_floor = 85  # removed from UI — load-band optimizer handles shed floor implicitly
 
     with st.expander("PROVIDER COMPENSATION"):
-        perm_cost_i = st.number_input("APC Annual Salary — Fully Loaded ($)", 100_000, 500_000, 175_000, 10_000, format="%d",
-            help="Fully loaded annual cost per permanent APC — base salary, benefits, malpractice. Drives turnover replacement cost, burnout penalty, and optimizer score. Support staff rates are entered separately below.")
+        st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
+                    "letter-spacing:0.12em;color:#7A8799;padding:0 0 0.35rem;'>"
+                    "PROVIDER MIX</div>", unsafe_allow_html=True)
+        _pm1, _pm2 = st.columns(2)
+        with _pm1:
+            _apc_count  = st.number_input("APC headcount", 0, 20, 3, 1,
+                help="Number of permanent APCs (NPs/PAs) in your staffing model.")
+            _apc_salary = st.number_input("APC salary — fully loaded ($)", 100_000, 500_000, 175_000, 5_000, format="%d",
+                help="Fully loaded annual cost per APC — base salary, benefits, malpractice.")
+        with _pm2:
+            _phys_count  = st.number_input("Physician headcount", 0, 20, 0, 1,
+                help="Number of permanent physicians. Leave 0 if APC-only model.")
+            _phys_salary = st.number_input("Physician salary — fully loaded ($)", 100_000, 800_000, 280_000, 10_000, format="%d",
+                help="Fully loaded annual cost per physician — base salary, benefits, malpractice.")
+        _total_providers = _apc_count + _phys_count
+        perm_cost_i = int(
+            (_apc_count * _apc_salary + _phys_count * _phys_salary) / _total_providers
+        ) if _total_providers > 0 else _apc_salary
+        _blend_note = f"Blended avg: **${perm_cost_i:,.0f}/yr** per FTE"
+        if _total_providers > 0:
+            _blend_note += (f"  ({_apc_count} APC × ${_apc_salary/1e3:.0f}K"
+                           + (f" + {_phys_count} MD × ${_phys_salary/1e3:.0f}K" if _phys_count > 0 else "")
+                           + f" ÷ {_total_providers})")
+        st.caption(_blend_note)
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 140.0, 5.0,
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 150.0, 85.0, 1.0,
@@ -502,9 +524,9 @@ with st.sidebar:
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
                     "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
                     "HOURLY RATES  (base, before multiplier)</div>", unsafe_allow_html=True)
-        r1,r2 = st.columns(2)
-        with r1: phys_rate = st.number_input("Physician ($/hr)",  50.0, 300.0, 135.79, 1.0)
-        with r2: app_rate  = st.number_input("APC ($/hr)",        30.0, 200.0,  62.00, 1.0)
+        phys_rate = st.number_input("Physician ($/hr)", 50.0, 300.0, 135.79, 1.0,
+            help="Physician hourly rate — used only when physician supervision hours > 0 below.")
+        app_rate = 62.00  # not user-configurable; APC cost set via Provider Compensation above
         r3,r4 = st.columns(2)
         with r3: ma_rate   = st.number_input("MA ($/hr)",          8.0,  60.0,  24.14, 0.25)
         with r4: psr_rate  = st.number_input("PSR ($/hr)",         8.0,  60.0,  21.23, 0.25)
