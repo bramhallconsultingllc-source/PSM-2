@@ -785,9 +785,7 @@ st.markdown("## PERMANENT STAFFING MODEL")
 st.title("Staffing Model")
 st.markdown(f"<p style='font-size:0.87rem;color:{SLATE};margin-top:-0.5rem;margin-bottom:1.5rem;'>"
             f"36-month horizon | load-band optimizer | attrition-as-burnout model</p>",unsafe_allow_html=True)
-st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1.5rem;'>",unsafe_allow_html=True)
-
-st.markdown("## RECOMMENDED POLICY")
+st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1rem;'>",unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHARED CALCULATIONS
@@ -1086,26 +1084,21 @@ def _tile(col, val, label, sub=None, border="#003366", val_color="#0F1923", val_
         unsafe_allow_html=True
     )
 
-# Row 1 — Policy levers (4 columns)
-_tc1, _tc2, _tc3, _tc4 = st.columns(4)
-_tile(_tc1, f"{best.base_fte:.1f}",  "Base FTE")
-_tile(_tc2, f"{best.winter_fte:.1f}", "Winter FTE")
-_tile(_tc3, f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}", "Summer Floor")
-_tile(_tc4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
-
-# Row 2 — KPI tiles (3 columns, full width)
-_tk1, _tk2, _tk3 = st.columns(3)
-_swb_sub = f"{'▲' if _swb_delta_pv > 0 else '▼'} ${abs(_swb_delta_pv):.2f} vs ${_swb_target:.0f} target"
-_tile(_tk1, f"${_swb_actual:.2f}", "SWB / Visit",
-      sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr)
-
-_vpd_sub = f"↓ {_vpd_min:.1f} min &nbsp;·&nbsp; ↑ {_vpd_max:.1f} max"
-_tile(_tk2, f"{_vpd_avg:.1f}", "Visits / Provider — Avg",
-      sub=_vpd_sub, border="#7A6200", val_color="#0F1923")
-
-_turn_sub = f"{_turn_risk_lbl} &nbsp;·&nbsp; ${_turn_cost_3yr/1e3:.0f}K cost"
-_tile(_tk3, f"{_tot_turn_events:.1f}", "Turnover Events (3yr)",
-      sub=_turn_sub, border=_turn_risk_clr, val_color=_turn_risk_clr)
+# ── 7-tile header row ────────────────────────────────────────────────────────
+_swb_sub  = f"{'▲' if _swb_delta_pv > 0 else '▼'} ${abs(_swb_delta_pv):.2f} vs ${_swb_target:.0f} target"
+_vpd_sub  = f"↓ {_vpd_min:.1f} min · ↑ {_vpd_max:.1f} max"
+_turn_sub = f"{_turn_risk_lbl} · ${_turn_cost_3yr/1e3:.0f}K cost"
+_h1,_h2,_h3,_h4,_h5,_h6,_h7 = st.columns(7)
+_tile(_h1, f"{best.base_fte:.1f}",   "Base FTE")
+_tile(_h2, f"{best.winter_fte:.1f}", "Winter FTE")
+_tile(_h3, f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}", "Summer Floor")
+_tile(_h4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
+_tile(_h5, f"${_swb_actual:.2f}", "SWB / Visit",
+      sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr, val_size="1.3rem")
+_tile(_h6, f"{_vpd_avg:.1f}", "Visits / Provider",
+      sub=_vpd_sub, border="#7A6200", val_color="#0F1923", val_size="1.3rem")
+_tile(_h7, f"{_tot_turn_events:.1f}", "Turnover Events",
+      sub=_turn_sub, border=_turn_risk_clr, val_color=_turn_risk_clr, val_size="1.3rem")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY CARD
@@ -1187,24 +1180,6 @@ st.markdown(
 
     + f"</div>"
 
-    # ── Row 3: Zones + marginal ───────────────────────────────────────────────
-    f"<div style='border-top:1px solid #E2E8F0;padding:0.42rem 1.2rem;"
-    f"background:#F8FAFC;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;'>"
-    f"<span style='color:{MUTED};font-size:0.58rem;font-weight:700;text-transform:uppercase;"
-    f"letter-spacing:0.13em;'>36-Month Zones</span>"
-    f"<b style='color:#0A6B4A;'>{s['green_months']}G</b>"
-    f" <span style='color:{MUTED};'>/</span> "
-    f"<b style='color:#92600A;'>{s['yellow_months']}Y</b>"
-    f" <span style='color:{MUTED};'>/</span> "
-    f"<b style='color:#B91C1C;'>{s['red_months']}R</b>"
-    f"<span style='color:{MUTED};font-size:0.72rem;'>"
-    f"&nbsp;·&nbsp; {s['pct_months_in_band']:.0f}% in-band"
-    f"&nbsp;·&nbsp; {_es['capture_rate']*100:.1f}% visit capture"
-    f"&nbsp;·&nbsp; {_oa:.1f} FTE overload attrition</span>"
-    + (f"<div style='margin-left:auto;display:flex;align-items:center;gap:1.2rem;"
-       f"background:#FDFAED;padding:0.28rem 0.75rem;border-radius:3px;"
-       f"border:1px solid #E8D88A;'>{_ma_row}</div>" if _ma_row else "")
-    + f"</div>"
     f"</div>",
     unsafe_allow_html=True
 )
@@ -4305,7 +4280,8 @@ with tabs[14]:
         unsafe_allow_html=True)
 
 
-with tabs[15]:
+@st.fragment
+def _advisor_tab():
     pol_adv = active_policy()
     MA_ADV  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -4427,6 +4403,9 @@ with tabs[15]:
             f"Powered by GPT-4o · Grounded in your simulation data · "
             f"Operational planning guidance only — not HR or legal advice</div>",
             unsafe_allow_html=True)
+
+with tabs[15]:
+    _advisor_tab()
 
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
