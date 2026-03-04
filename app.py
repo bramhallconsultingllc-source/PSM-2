@@ -3507,57 +3507,114 @@ with tabs[6]:
 # ── TAB 7: Marginal APC Analysis ─────────────────────────────────────────────
 with tabs[7]:
     st.markdown("## MARGINAL APC ANALYSIS")
-    st.caption("What does one more APC actually cost — and what does it buy you?")
-    pol=active_policy()
-    ma_delta=st.slider("FTE increment to analyze",0.5,3.0,0.5,0.5,key="ma_delta_slider")
+    st.caption("Slide left to model reducing FTE, right to model adding FTE — see the cost, savings, and load impact.")
+    pol = active_policy()
+
+    # Bidirectional slider: −1.0 to +1.0 in 0.25 increments, default 0.50
+    ma_delta = st.select_slider(
+        "FTE change to analyze",
+        options=[-1.0, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1.0],
+        value=0.5,
+        key="ma_delta_slider",
+        format_func=lambda x: f"{x:+.2f} FTE"
+    )
+
     with st.spinner("Computing marginal impact..."):
-        ma=compare_marginal_fte(pol,cfg,delta_fte=ma_delta)
+        ma = compare_marginal_fte(pol, cfg, delta_fte=ma_delta)
 
-    mc1,mc2,mc3,mc4,mc5=st.columns(5)
-    mc1.metric(f"+{ma_delta} FTE Annual Cost",   f"${ma['annual_cost_delta']:+,.0f}")
-    mc2.metric("Annual Savings",                  f"${ma['annual_savings']:,.0f}")
-    _nc=ma["net_annual"]
-    mc3.metric("Net Annual",                      f"${_nc:+,.0f}",delta_color="normal" if _nc>0 else "inverse")
-    mc4.metric("Payback",                         "Never" if ma["payback_months"]==float("inf") else f"{ma['payback_months']:.0f} mo")
-    mc5.metric("Red+Yellow Months Saved",         f"{ma['red_months_saved']}R + {ma['yellow_months_saved']}Y")
+    # Direction-aware labels
+    _adding     = ma_delta > 0
+    _delta_lbl  = f"{ma_delta:+.2f} FTE"
+    _new_fte    = pol.base_fte + ma_delta
+    _nc         = ma["net_annual"]
+    _cost_lbl   = "Added Cost" if _adding else "Cost Saved"
+    _sav_lbl    = "Savings Unlocked" if _adding else "Savings Lost"
+    _net_lbl    = "Net Annual Benefit" if _nc > 0 else "Net Annual Cost"
+    _pay_lbl    = "Never" if ma["payback_months"] == float("inf") else f"{ma['payback_months']:.0f} mo"
+    _zones_lbl  = (f"{ma['red_months_saved']}R + {ma['yellow_months_saved']}Y saved"
+                   if _adding else
+                   f"{-ma['red_months_saved']}R + {-ma['yellow_months_saved']}Y added")
 
-    if ma["net_annual"]>0:
-        st.success(f"**Add {ma_delta} FTE** — net ${ma['net_annual']:,.0f}/yr positive. Saves {ma['red_months_saved']}R + {ma['yellow_months_saved']}Y months. Payback {ma['payback_months']:.0f} mo.")
-    elif ma["red_months_saved"]>0:
-        st.warning(f"Costs ${-ma['net_annual']:,.0f}/yr net but eliminates {ma['red_months_saved']} Red months of burnout risk.")
+    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+    mc1.metric(f"{_delta_lbl} {_cost_lbl}", f"${abs(ma['annual_cost_delta']):,.0f}")
+    mc2.metric(_sav_lbl,                    f"${abs(ma['annual_savings']):,.0f}")
+    mc3.metric(_net_lbl,                    f"${abs(_nc):,.0f}",
+               delta=("positive" if _nc > 0 else "negative"),
+               delta_color="normal" if _nc > 0 else "inverse")
+    mc4.metric("Payback" if _adding else "—", _pay_lbl if _adding else "—")
+    mc5.metric("Zone Months",               _zones_lbl)
+
+    # Verdict banner
+    if _adding:
+        if _nc > 0:
+            st.success(f"✓ Adding {ma_delta:+.2f} FTE is **net positive** — ${_nc:,.0f}/yr benefit. "
+                       f"Saves {ma['red_months_saved']}R + {ma['yellow_months_saved']}Y zone-months. "
+                       f"Payback {_pay_lbl}.")
+        elif ma["red_months_saved"] > 0:
+            st.warning(f"Costs ${-_nc:,.0f}/yr net but eliminates {ma['red_months_saved']} Red months of burnout risk.")
+        else:
+            st.info(f"Adding {ma_delta:+.2f} FTE costs ${ma['annual_cost_delta']:,.0f}/yr with no material zone improvement.")
     else:
-        st.info(f"Adding {ma_delta} FTE costs ${ma['annual_cost_delta']:,.0f}/yr with no material zone improvement.")
+        if _nc < 0:
+            st.error(f"⚠ Removing {abs(ma_delta):.2f} FTE saves ${ma['annual_cost_delta']:,.0f}/yr in wages "
+                     f"but adds {-ma['red_months_saved']}R + {-ma['yellow_months_saved']}Y risk months "
+                     f"— net **${abs(_nc):,.0f}/yr worse**.")
+        else:
+            st.success(f"✓ Reducing {abs(ma_delta):.2f} FTE saves ${abs(ma['annual_cost_delta']):,.0f}/yr "
+                       f"with minimal zone impact — net **${_nc:,.0f}/yr benefit**.")
 
-    m_labels_12=[MONTH_NAMES[i] for i in range(12)]
-    fma=go.Figure()
+    m_labels_12 = [MONTH_NAMES[i] for i in range(12)]
+    _line_clr   = C_GREEN if _adding else C_RED
+    _line_lbl   = f"{_delta_lbl} → {_new_fte:.2f} FTE"
+    fma = go.Figure()
     if cfg.use_load_band:
-        fma.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,fillcolor="rgba(10,117,84,0.06)",line_width=0)
-    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_base"],name=f"Current ({pol.base_fte:.1f} FTE)",
-                    mode="lines+markers",line=dict(color=NAVY,width=2.5),marker=dict(size=8,line=dict(color="white",width=1.5)))
-    fma.add_scatter(x=m_labels_12,y=ma["yr1_load_plus"],name=f"+{ma_delta} FTE ({pol.base_fte+ma_delta:.1f} FTE)",
-                    mode="lines+markers",line=dict(color=C_GREEN,width=2.5,dash="dash"),marker=dict(size=8,line=dict(color="white",width=1.5)))
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fma.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
-                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
-    fma.update_layout(**mk_layout(height=340,title=f"Year 1 Load: Current vs +{ma_delta} FTE"))
+        fma.add_hrect(y0=cfg.load_band_lo, y1=cfg.load_band_hi,
+                      fillcolor="rgba(10,117,84,0.06)", line_width=0)
+    fma.add_scatter(x=m_labels_12, y=ma["yr1_load_base"],
+                    name=f"Current ({pol.base_fte:.2f} FTE)",
+                    mode="lines+markers", line=dict(color=NAVY, width=2.5),
+                    marker=dict(size=8, line=dict(color="white", width=1.5)))
+    fma.add_scatter(x=m_labels_12, y=ma["yr1_load_plus"],
+                    name=_line_lbl,
+                    mode="lines+markers",
+                    line=dict(color=_line_clr, width=2.5, dash="dash"),
+                    marker=dict(size=8, line=dict(color="white", width=1.5)))
+    for yv, lbl, col in [
+        (budget, "Green ceiling", C_GREEN),
+        (budget + (cfg.yellow_threshold_above if cfg.yellow_threshold_above > 0 else 0.01), "Yellow", C_YELLOW),
+        (budget + cfg.red_threshold_above, "Red", C_RED)
+    ]:
+        fma.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.5,
+                      annotation_text=lbl, annotation_position="right",
+                      annotation_font=dict(size=9, color=col))
+    fma.update_layout(**mk_layout(height=340,
+                                   title=f"Year 1 Load: Current vs {_delta_lbl}"))
     fma.update_yaxes(title_text="Pts/APC/Shift")
-    st.plotly_chart(fma,use_container_width=True)
+    st.plotly_chart(fma, use_container_width=True)
 
-    st.markdown("## BREAKEVEN TABLE")
-    rows=[]
-    for d in [0.5,1.0,1.5,2.0,2.5,3.0]:
-        m2=compare_marginal_fte(pol,cfg,delta_fte=d)
-        rows.append({"Delta FTE":f"+{d:.1f}","Annual Cost":f"${m2['annual_cost_delta']:+,.0f}",
-                     "Annual Savings":f"${m2['annual_savings']:,.0f}","Net Annual":f"${m2['net_annual']:+,.0f}",
-                     "Payback (mo)":"Never" if m2["payback_months"]==float("inf") else f"{m2['payback_months']:.0f}",
-                     "Red Mo Saved":m2["red_months_saved"],"Yel Mo Saved":m2["yellow_months_saved"],
-                     "SWB Delta":f"${m2['swb_delta']:+.2f}"})
+    st.markdown("## FULL RANGE TABLE")
+    rows = []
+    for d in [-1.0, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1.0]:
+        m2 = compare_marginal_fte(pol, cfg, delta_fte=d)
+        rows.append({
+            "FTE Change":    f"{d:+.2f}",
+            "Cost Impact":   f"${m2['annual_cost_delta']:+,.0f}",
+            "Savings":       f"${m2['annual_savings']:,.0f}",
+            "Net Annual":    f"${m2['net_annual']:+,.0f}",
+            "Payback":       "Never" if m2["payback_months"] == float("inf") else f"{m2['payback_months']:.0f} mo",
+            "Red Δ":         f"{-m2['red_months_saved']:+d}",
+            "Yellow Δ":      f"{-m2['yellow_months_saved']:+d}",
+            "SWB/Visit Δ":   f"${m2['swb_delta']:+.2f}",
+        })
     def _cn(v):
         try:
-            val=float(str(v).replace("$","").replace(",","").replace("+",""))
-            return f"color:{C_GREEN};font-weight:600" if val>0 else (f"color:{C_RED}" if val<0 else "")
+            val = float(str(v).replace("$","").replace(",","").replace("+","").replace(" mo",""))
+            return f"color:{C_GREEN};font-weight:600" if val > 0 else (f"color:{C_RED}" if val < 0 else "")
         except: return ""
-    st.dataframe(pd.DataFrame(rows).style.applymap(_cn,subset=["Net Annual"]),use_container_width=True,hide_index=True)
+    st.dataframe(
+        pd.DataFrame(rows).style.applymap(_cn, subset=["Net Annual"]),
+        use_container_width=True, hide_index=True
+    )
 
 
 # ── TAB 8: Stress Test ────────────────────────────────────────────────────────
