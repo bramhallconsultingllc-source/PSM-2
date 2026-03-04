@@ -658,6 +658,10 @@ cfg = ClinicConfig(
     overstaff_penalty_per_fte_month=overstaff_pen, swb_violation_penalty=swb_pen,
     monthly_fixed_overhead=fixed_overhead,
 )
+# Store provider mix for acceleration lever
+cfg._apc_pct     = _apc_pct
+cfg._apc_salary  = _apc_salary
+cfg._phys_salary = _phys_salary
 
 if run_opt:
     with st.spinner("Running grid search..."):
@@ -1016,33 +1020,79 @@ def _accel_row(label, yrs, bg, border_clr):
         f"</div>"
     )
 
+# ── Provider mix shift lever ─────────────────────────────────────────────────
+_mix_lever_html = ""
+_phys_pct_cur = 100 - getattr(cfg, "_apc_pct", 100)
+if _phys_pct_cur > 0:
+    _apc_sal    = getattr(cfg, "_apc_salary",  perm_cost_i)
+    _phys_sal   = getattr(cfg, "_phys_salary", perm_cost_i)
+    _blend_apc  = _apc_sal
+    _mix_mult   = _blend_apc / max(perm_cost_i, 1)
+    _mix_save_pct = round((1 - _mix_mult) * 100)
+    _accel_mix  = _yrs_to_goal(cost_mult=_mix_mult) if _mix_mult < 1.0 else None
+    if _accel_mix:
+        _mix_lever_html = _accel_row(
+            f"↑ Shift provider mix to 100% APC coverage"
+            f"  <span style='font-size:0.63rem;color:#4A5568;font-weight:400;'>"
+            f"(−{_mix_save_pct}% blended provider cost)</span>",
+            _accel_mix, "#FFFBEB", "#92600A"
+        )
+
+# ── Attrition reduction lever ─────────────────────────────────────────────────
+_att_cur      = cfg.annual_attrition_pct
+_att_target   = max(5.0, _att_cur * 0.5)
+_att_reduction= (_att_cur - _att_target) / max(_att_cur, 0.001)
+_turn_ann     = _turn_cost_3yr / 3
+_att_save_ann = _turn_ann * _att_reduction
+_att_cost_mult= max(0.5, 1.0 - (_att_save_ann / max(_staff_cost_ann, 1)))
+_accel_att    = _yrs_to_goal(cost_mult=_att_cost_mult) if _att_cur > 5 and _att_save_ann > 0 else None
+_att_label    = (f"↓ Reduce attrition {_att_cur:.0f}%→{_att_target:.0f}%"
+                 f"  <span style='font-size:0.63rem;color:#4A5568;font-weight:400;'>"
+                 f"(saves ~${_att_save_ann/1e3:.0f}K/yr in replacement cost)</span>")
+
+# ── Replacement cost reduction lever ─────────────────────────────────────────
+_repl_pct_cur    = cfg.turnover_replacement_pct
+_repl_pct_target = max(30.0, _repl_pct_cur * 0.6)
+_repl_reduction  = (_repl_pct_cur - _repl_pct_target) / max(_repl_pct_cur, 0.001)
+_repl_save_ann   = _turn_ann * _repl_reduction
+_repl_cost_mult  = max(0.5, 1.0 - (_repl_save_ann / max(_staff_cost_ann, 1)))
+_accel_repl      = (_yrs_to_goal(cost_mult=_repl_cost_mult)
+                    if _repl_pct_cur > 30 and _repl_save_ann > 0 else None)
+_repl_label      = (f"↓ Improve retention / lower replacement cost {_repl_pct_cur:.0f}%→{_repl_pct_target:.0f}% of salary"
+                    f"  <span style='font-size:0.63rem;color:#4A5568;font-weight:400;'>"
+                    f"(saves ~${_repl_save_ann/1e3:.0f}K/yr)</span>")
+
 _accel_html = ""
 _goal_already_met = _swb_delta_pv <= 0
 if not _goal_already_met:
     _accel_html += _accel_row("↑ Accelerate volume growth to 30%/yr", _accel_30, "#ECFDF5", "#0A6B4A")
     _accel_html += _accel_row("↑ Run tighter load band (defer next FTE hire)", _accel_load, "#FFFBEB", "#92600A")
+    _accel_html += _mix_lever_html
     if _accel_psr:
         _accel_html += _accel_row(_psr_label, _accel_psr, "#FFFBEB", "#92600A")
+    if _accel_att:
+        _accel_html += _accel_row(_att_label, _accel_att, "#FFFBEB", "#92600A")
+    if _accel_repl:
+        _accel_html += _accel_row(_repl_label, _accel_repl, "#FFFBEB", "#92600A")
     _accel_html += _accel_row("⚡ Combine: 30% growth + tighter staffing", _accel_combo, "#ECFDF5", "#0A6B4A")
 
 def _yr_card_html(d, yr_label, target):
-    # SWB savings = how much below/above the SWB budget the wage spend was
-    _swb_savings  = d["goal"] - d["act"]           # positive = under budget
-    _other_costs  = d["flex"] + d["turn"] + d["burn"]
-    _net_var      = _swb_savings - _other_costs     # = d["net_var"]
-    _swb_fav      = d["swb_actual"] <= target       # true when SWB/visit is on-target
+    # Labor section: SWB Goal − SWB Actual − Flex = SWB Savings
+    _swb_savings  = d["goal"] - d["act"] - d["flex"]   # true labor budget vs spend incl. flex
+    # Non-labor section: turnover + burnout
+    _nonlabor     = d["turn"] + d["burn"]
+    _net_var      = _swb_savings - _nonlabor
+    _swb_fav      = d["swb_actual"] <= target
 
-    # SWB Savings row: green if under budget, red if over
     _sav_clr  = "#0A6B4A" if _swb_savings >= 0 else "#B91C1C"
     _sav_sign = "+" if _swb_savings >= 0 else "−"
-
-    # Net Variance row: green only when the full picture is positive
     _net_clr  = "#0A6B4A" if _net_var >= 0 else "#B91C1C"
     _net_sign = "+" if _net_var >= 0 else "−"
-
-    # Subtitle: keyed only on SWB/visit vs target — never influenced by turnover
     _sub_clr  = "#0A6B4A" if _swb_fav else "#B91C1C"
     _sub_word = "SWB on target" if _swb_fav else "SWB over budget"
+
+    # Section label style
+    _sec = "font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#7A8799;"
 
     zones = f"{d['G']}G / {d['Y']}Y / {d['R']}R &nbsp;&middot;&nbsp; Peak {d['peak']:.1f} pts/APC"
     return (
@@ -1052,6 +1102,9 @@ def _yr_card_html(d, yr_label, target):
         f"letter-spacing:0.16em;color:#7A8799;margin-bottom:0.4rem;'>{yr_label}</div>"
         f"<div style='font-size:0.75rem;color:#4A5568;margin-bottom:0.55rem;line-height:1.5;'>{zones}</div>"
         f"<div style='font-size:0.74rem;line-height:1.85;'>"
+
+        # ── Labor section label ───────────────────────────────────────────────
+        f"<div style='{_sec}padding:0.1rem 0;'>LABOR</div>"
         # SWB Goal
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>SWB Goal</span>"
@@ -1060,16 +1113,19 @@ def _yr_card_html(d, yr_label, target):
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>SWB Actual</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['act']/1e3:.0f}K</span></div>"
-        # SWB Savings (new subtotal row)
-        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #E2E8F0;"
-        f"background:#F8FAFC;padding:0 0.1rem;'>"
+        # Flex
+        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #E2E8F0;'>"
+        f"<span style='color:#4A5568;'>Flex / Locum</span>"
+        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['flex']/1e3:.0f}K</span></div>"
+        # SWB Savings subtotal
+        f"<div style='display:flex;justify-content:space-between;border-bottom:2px solid #CBD5E1;"
+        f"background:#F8FAFC;padding:0.05rem 0.1rem;margin-bottom:0.4rem;'>"
         f"<span style='color:#4A5568;font-style:italic;font-size:0.70rem;'>SWB Savings</span>"
         f"<span style='color:{_sav_clr};font-variant-numeric:tabular-nums;font-style:italic;font-size:0.70rem;'>"
         f"{_sav_sign}${abs(_swb_savings)/1e3:.0f}K</span></div>"
-        # Flex
-        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
-        f"<span style='color:#4A5568;'>Flex</span>"
-        f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['flex']/1e3:.0f}K</span></div>"
+
+        # ── Non-labor section label ───────────────────────────────────────────
+        f"<div style='{_sec}padding:0.1rem 0;'>HR / OPERATIONAL</div>"
         # Turnover
         f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #F1F5F9;'>"
         f"<span style='color:#4A5568;'>Turnover</span>"
@@ -1078,13 +1134,13 @@ def _yr_card_html(d, yr_label, target):
         f"<div style='display:flex;justify-content:space-between;border-bottom:2px solid #0F1923;'>"
         f"<span style='color:#4A5568;'>Burnout</span>"
         f"<span style='color:#B91C1C;font-variant-numeric:tabular-nums;'>−${d['burn']/1e3:.0f}K</span></div>"
-        # Net Variance (total)
+
+        # Net Variance
         f"<div style='display:flex;justify-content:space-between;padding-top:0.15rem;'>"
         f"<span style='color:#0F1923;font-weight:700;'>Net Variance</span>"
         f"<span style='color:{_net_clr};font-weight:700;font-size:0.88rem;font-variant-numeric:tabular-nums;'>"
         f"{_net_sign}${abs(_net_var)/1e3:.0f}K</span></div>"
         f"</div>"
-        # Subtitle: SWB/visit vs target only
         f"<div style='margin-top:0.45rem;font-size:0.68rem;color:{_sub_clr};font-weight:600;'>"
         f"${d['swb_actual']:.2f} actual vs ${target:.2f} target &nbsp;·&nbsp; {_sub_word}</div>"
         f"</div>"
@@ -2475,9 +2531,9 @@ with tabs[1]:
                                     textColor=RM, spaceAfter=4)))
 
         def _yr_card(n, yd):
-            _swb_savings = yd["goal"] - yd["act"]
-            _other_costs = yd.get("flex",0) + yd.get("turn",0) + yd.get("burn",0)
-            _net_var     = _swb_savings - _other_costs
+            _swb_savings = yd["goal"] - yd["act"] - yd.get("flex", 0)  # labor budget vs spend incl. flex
+            _nonlabor    = yd.get("turn", 0) + yd.get("burn", 0)
+            _net_var     = _swb_savings - _nonlabor
 
             _sav_clr  = RGR if _swb_savings >= 0 else RRD
             _sav_sign = "+" if _swb_savings >= 0 else "−"
@@ -2488,24 +2544,29 @@ with tabs[1]:
             _swb_clr  = RGR if _swb_fav else RRD
             _swb_word = "SWB on target" if _swb_fav else "SWB over budget"
 
-            RL2 = rc.HexColor("#F8FAFC")  # subtle background for subtotal row
             return [
                 Paragraph(f"YEAR {n}", sty(f"yh{n}", fontSize=6.5, textColor=RM,
                            fontName="Helvetica-Bold", leading=9, spaceAfter=2)),
                 Paragraph(f"{yd['G']}G / {yd['Y']}Y / {yd['R']}R  ·  Peak {yd['peak']:.1f} pts/APC",
                            sty(f"yz{n}", fontSize=7.5, textColor=RS, leading=10, spaceAfter=4)),
-                Paragraph(f"SWB Goal    ${yd['goal']/1e3:.0f}K",
+                # Labor section
+                Paragraph("LABOR", sty(f"yls{n}", fontSize=6, textColor=RM,
+                           fontName="Helvetica-Bold", leading=9, spaceAfter=1)),
+                Paragraph(f"SWB Goal      ${yd['goal']/1e3:.0f}K",
                            sty(f"y1{n}", fontSize=8, textColor=RI, leading=11, spaceAfter=1)),
-                Paragraph(f"SWB Actual  −${yd['act']/1e3:.0f}K",
+                Paragraph(f"SWB Actual    −${yd['act']/1e3:.0f}K",
                            sty(f"y2{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
-                Paragraph(f"SWB Savings  {_sav_sign}${abs(_swb_savings)/1e3:.0f}K",
-                           sty(f"y2s{n}", fontSize=7.5, textColor=_sav_clr,
-                               fontName="Helvetica-Oblique", leading=10, spaceAfter=3)),
-                Paragraph(f"Flex        −${yd.get('flex',0)/1e3:.0f}K",
+                Paragraph(f"Flex / Locum  −${yd.get('flex',0)/1e3:.0f}K",
                            sty(f"y3{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
-                Paragraph(f"Turnover    −${yd.get('turn',0)/1e3:.0f}K",
+                Paragraph(f"SWB Savings   {_sav_sign}${abs(_swb_savings)/1e3:.0f}K",
+                           sty(f"y2s{n}", fontSize=7.5, textColor=_sav_clr,
+                               fontName="Helvetica-BoldOblique", leading=10, spaceAfter=4)),
+                # HR / Operational section
+                Paragraph("HR / OPERATIONAL", sty(f"yhs{n}", fontSize=6, textColor=RM,
+                           fontName="Helvetica-Bold", leading=9, spaceAfter=1)),
+                Paragraph(f"Turnover      −${yd.get('turn',0)/1e3:.0f}K",
                            sty(f"y4{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=1)),
-                Paragraph(f"Burnout     −${yd.get('burn',0)/1e3:.0f}K",
+                Paragraph(f"Burnout       −${yd.get('burn',0)/1e3:.0f}K",
                            sty(f"y5{n}", fontSize=8, textColor=RRD, leading=11, spaceAfter=3)),
                 Paragraph(f"Net Variance  {_net_sign}${abs(_net_var)/1e3:.0f}K",
                            sty(f"yv{n}", fontName="Helvetica-Bold", fontSize=9,
