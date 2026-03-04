@@ -472,27 +472,32 @@ with st.sidebar:
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
                     "letter-spacing:0.12em;color:#7A8799;padding:0 0 0.35rem;'>"
                     "PROVIDER MIX</div>", unsafe_allow_html=True)
+
+        # APC % slider — physician % auto-derives
+        _apc_pct = st.slider("APC coverage %", 0, 100, 100, 5,
+            help="Percent of provider hours covered by APCs (NPs/PAs). Physician % = 100 − APC %.")
+        _phys_pct = 100 - _apc_pct
+        st.caption(f"APC **{_apc_pct}%**  ·  Physician **{_phys_pct}%**")
+
         _pm1, _pm2 = st.columns(2)
         with _pm1:
-            _apc_count  = st.number_input("APC headcount", 0, 20, 3, 1,
-                help="Number of permanent APCs (NPs/PAs) in your staffing model.")
-            _apc_salary = st.number_input("APC salary — fully loaded ($)", 100_000, 500_000, 175_000, 5_000, format="%d",
+            _apc_salary = st.number_input("APC salary — fully loaded ($)",
+                100_000, 500_000, 175_000, 5_000, format="%d",
                 help="Fully loaded annual cost per APC — base salary, benefits, malpractice.")
         with _pm2:
-            _phys_count  = st.number_input("Physician headcount", 0, 20, 0, 1,
-                help="Number of permanent physicians. Leave 0 if APC-only model.")
-            _phys_salary = st.number_input("Physician salary — fully loaded ($)", 100_000, 800_000, 280_000, 10_000, format="%d",
-                help="Fully loaded annual cost per physician — base salary, benefits, malpractice.")
-        _total_providers = _apc_count + _phys_count
-        perm_cost_i = int(
-            (_apc_count * _apc_salary + _phys_count * _phys_salary) / _total_providers
-        ) if _total_providers > 0 else _apc_salary
-        _blend_note = f"Blended avg: **${perm_cost_i:,.0f}/yr** per FTE"
-        if _total_providers > 0:
-            _blend_note += (f"  ({_apc_count} APC × ${_apc_salary/1e3:.0f}K"
-                           + (f" + {_phys_count} MD × ${_phys_salary/1e3:.0f}K" if _phys_count > 0 else "")
-                           + f" ÷ {_total_providers})")
-        st.caption(_blend_note)
+            _phys_salary = st.number_input("Physician salary — fully loaded ($)",
+                100_000, 800_000, 280_000, 10_000, format="%d",
+                help="Fully loaded annual cost per physician — base salary, benefits, malpractice.",
+                disabled=(_phys_pct == 0))
+
+        # Blended avg = weighted by coverage %
+        perm_cost_i = int(_apc_pct/100 * _apc_salary + _phys_pct/100 * _phys_salary)
+        if _phys_pct > 0:
+            st.caption(f"Blended avg: **${perm_cost_i:,.0f}/yr** per FTE  "
+                       f"({_apc_pct}% × ${_apc_salary/1e3:.0f}K + "
+                       f"{_phys_pct}% × ${_phys_salary/1e3:.0f}K)")
+        else:
+            st.caption(f"Blended avg: **${perm_cost_i:,.0f}/yr** per FTE  (APC-only)")
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 140.0, 5.0,
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 150.0, 85.0, 1.0,
