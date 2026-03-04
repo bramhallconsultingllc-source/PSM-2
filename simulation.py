@@ -580,16 +580,45 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                 hiring_mode = "deferred"
             else:
                 raw_hires = max(target_fte - paid_fte, deferred_fte)
-                deferred_fte = 0.0  # consume deferred amount
-                new_hires = _round_up_fte(raw_hires)
-                paid_fte += new_hires
-                ramp_cohorts.append([cfg.ramp_months, new_hires])
-                mode = ("winter_ramp" if in_active_pre_flu
-                        else "growth" if raw_hires > attrition_events * 1.05
-                        else "attrition_replace")
-                _log_hire(hire_events, m, cal_month, year, new_hires,
-                          mode, lead_months, cfg)
-                hiring_mode = mode
+
+                # ── Independence-date demand check ────────────────────────────
+                # Before posting, verify demand at the month this hire will be
+                # FULLY INDEPENDENT (m + lead_months + ramp_months).
+                # If demand then is already met by current paid_fte (after natural
+                # attrition to that point), the hire isn't needed yet — defer it.
+                # This prevents posting a req in Sep that lands independent in Apr
+                # when Apr demand is in a seasonal trough.
+                _indep_offset   = lead_months + cfg.ramp_months
+                _indep_vpd, _, _, _indep_fte_req = compute_demand(m + _indep_offset, cfg)
+                # project paid_fte forward accounting for attrition to independence
+                _fte_at_indep   = paid_fte * ((1 - cfg.monthly_attrition_rate) ** _indep_offset)
+                # target at independence using same load-band logic
+                _mid_load       = (cfg.load_band_lo + cfg.load_band_hi) / 2.0
+                _target_at_indep = max(
+                    fte_for_load_target(_indep_vpd, _mid_load, cfg),
+                    base_fte,
+                    cfg.min_coverage_fte,
+                )
+                # Only suppress pure growth hires — always allow attrition backfills
+                # (raw_hires ≈ attrition_events means we're replacing, not growing)
+                _is_growth_hire  = raw_hires > attrition_events * 1.05 + 0.05
+                _indep_demand_met = _fte_at_indep >= _target_at_indep * 0.95
+
+                if _is_growth_hire and _indep_demand_met and not in_flu:
+                    # Independence-date demand already covered — defer this hire
+                    deferred_fte = max(deferred_fte, raw_hires)
+                    hiring_mode  = "deferred"
+                else:
+                    deferred_fte = 0.0  # consume deferred amount
+                    new_hires = _round_up_fte(raw_hires)
+                    paid_fte += new_hires
+                    ramp_cohorts.append([cfg.ramp_months, new_hires])
+                    mode = ("winter_ramp" if in_active_pre_flu
+                            else "growth" if raw_hires > attrition_events * 1.05
+                            else "attrition_replace")
+                    _log_hire(hire_events, m, cal_month, year, new_hires,
+                              mode, lead_months, cfg)
+                    hiring_mode = mode
 
         elif paid_fte > target_fte * 1.05 and not in_flu:
             # Consume any deferred flu-month hires even when overstaffed relative
