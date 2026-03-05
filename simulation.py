@@ -395,7 +395,11 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     # Seed from actual month-0 demand at midband load — always decoupled from
     # base_fte/winter_fte so the hire calendar shows the full journey from day 1.
     _start_visits, _, _, _ = compute_demand(0, cfg)
-    paid_fte = fte_for_load_target(_start_visits, cfg.hiring_trigger_pts, cfg)
+    # Always seed from baseline (budget), not hiring trigger.
+    # The trigger controls WHEN the next req fires — not the starting headcount.
+    # Seeding from trigger would give a false advantage to higher trigger values
+    # by starting with fewer providers and therefore fewer absolute attrition events.
+    paid_fte = fte_for_load_target(_start_visits, cfg.budgeted_patients_per_provider_per_day, cfg)
 
     summer_floor_fte = max(cfg.min_coverage_fte, paid_fte * cfg.summer_shed_floor_pct)
 
@@ -647,16 +651,20 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         support_cost = cfg.support.monthly_support_cost(
             providers_on_floor, cfg.shift_hours, cfg.operating_days_per_week)
 
-        # Progressive burnout curve — continuous quadratic from the moment
-        # load exceeds budget. No zone-based step: the same formula that
-        # previously applied only in Red now starts at the Green/Yellow
-        # boundary and scales smoothly.
-        #   burnout = base × (overload_pts / red_threshold)²
-        # At load=budget: 0.  At load=budget+red_threshold: base×1 = $43,750.
-        # At load=budget+red_threshold×2: base×4, etc.
-        # Replaces: Yellow flat 0.2× ($8,750) + Red (1+severity²) step.
-        if overload_pts > 0:
-            severity    = overload_pts / max(budget * cfg.red_threshold_pct / 100, 1)
+        # Progressive burnout curve — quadratic, anchored at baseline.
+        # Any load above budget is overwork; penalty starts immediately,
+        # not at the Yellow threshold. The Yellow/Red zones are operational
+        # classifications — the first 10% of overwork is not consequence-free.
+        #   overload_pts_base = load above baseline (not above Yellow)
+        #   severity          = overload_pts_base / red_threshold
+        #   burnout           = base × severity²
+        # At load=budget:          severity=0,   burnout=0
+        # At load=budget+10% (Y):  severity=0.5, burnout=base×0.25
+        # At load=budget+20% (R):  severity=1.0, burnout=base×1.0
+        # At load=budget+30%:      severity=1.5, burnout=base×2.25  (accelerating)
+        _overload_pts_base = max(0.0, pts_per_prov - budget)
+        if _overload_pts_base > 0:
+            severity    = _overload_pts_base / max(budget * cfg.red_threshold_pct / 100, 1)
             burnout_pen = burnout_per_red * (severity ** 2)
         else:
             burnout_pen = 0.0
