@@ -670,7 +670,7 @@ with st.sidebar:
         # ── Burnout & optimizer penalties ─────────────────────────────────────
         tp2,tp3 = st.columns(2)
         with tp2: burnout_pct   = st.number_input("Burnout Penalty (% sal/red mo)", 5.0, 100.0, 25.0, 5.0,
-            help="Economic penalty per Red zone month as % of annual provider salary. 25% = $43,750 per Red month on a $175k provider salary.")
+            help="Burnout base penalty as % of annual provider salary. Applied as a quadratic curve starting at baseline load — at Yellow it's ~25% of this value, at Red it's the full amount, above Red it accelerates. 25% base = $43,750 at Red on a $175k salary.")
         with tp3: overstaff_pen = st.number_input("Overstaff ($/FTE-mo)", 500, 20_000, 3_000, 500, format="%d",
             help="Penalty per FTE-month of overstaffing. Keeps optimizer from over-hiring.")
         swb_pen = st.number_input("SWB Violation ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d",
@@ -4074,19 +4074,29 @@ with tabs[12]:
 
     st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
 
-    if _red_months:
-        _burnout_per_red = cfg.burnout_penalty_per_red_month
-        _eq("Burnout penalty per Red month", f"${cfg.annual_provider_cost_perm:,.0f} × {cfg.burnout_pct_per_red_month:.0f}%",
-            f"${_burnout_per_red:,.0f}/Red month")
-        _eq("Total burnout penalty", f"{len(_red_months)} Red months × ${_burnout_per_red:,.0f}",
-            f"${_total_burnout_c:,.0f}")
+    # Burnout — quadratic curve anchored at baseline
+    _overload_burnout_months = [mo for mo in mos if mo.burnout_penalty > 0]
+    _red_thresh_pts  = cfg.budgeted_patients_per_provider_per_day * (1 + cfg.red_threshold_pct / 100)
+    _yell_thresh_pts = cfg.budgeted_patients_per_provider_per_day * (1 + cfg.yellow_threshold_pct / 100)
+    _eq("Burnout curve",
+        f"base × (overload / red_threshold)²  anchored at baseline {cfg.budgeted_patients_per_provider_per_day:.0f} pts/Provider",
+        f"base = ${cfg.burnout_penalty_per_red_month:,.0f}  ·  red_threshold = {cfg.red_threshold_pct:.0f}%")
+    if _overload_burnout_months:
+        _eq("Months with burnout penalty",
+            f"{len(_overload_burnout_months)} months above baseline (incl. {len(_red_months)} Red)",
+            f"${_total_burnout_c:,.0f} total")
+        st.markdown(
+            f"<div style='font-size:0.78rem;color:#888;padding:0.2rem 0.85rem;'>"
+            f"At Yellow ({_yell_thresh_pts:.1f} pts): ~25% of base penalty &nbsp;·&nbsp; "
+            f"At Red ({_red_thresh_pts:.1f} pts): 100% &nbsp;·&nbsp; "
+            f"Above Red: accelerates as severity²</div>",
+            unsafe_allow_html=True)
     else:
         st.markdown(
             f"<div style='font-size:0.80rem;color:#0A6B4A;background:#ECFDF5;"
             f"border-left:3px solid #0A6B4A;padding:0.45rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
-            f"✅ <b>Zero Red months</b> — no burnout penalty applied. "
-            f"Burnout fires at ${cfg.burnout_penalty_per_red_month:.0f}% of annual provider cost "
-            f"per Red month (pts/Provider > {cfg.budgeted_patients_per_provider_per_day*(1+cfg.red_threshold_pct/100):.1f}).</div>",
+            f"✅ <b>Zero overload months</b> — no burnout penalty. "
+            f"Penalty starts the moment load exceeds baseline ({cfg.budgeted_patients_per_provider_per_day:.0f} pts/Provider) "            f"and scales quadratically to the full base at Red ({_red_thresh_pts:.1f} pts/Provider).</div>",
             unsafe_allow_html=True)
     _check("Burnout cost vs simulation", es["burnout"], _total_burnout_c)
 
