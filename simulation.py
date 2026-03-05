@@ -567,7 +567,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                           "floor_protect", lead_months, cfg)
                 hiring_mode = "floor_protect"
             else:
-                hiring_mode = "shed_pause"
+                hiring_mode = "monthly_shed"
 
         elif paid_fte < target_fte:
             # In flu months: defer non-emergency growth/attrition hires.
@@ -631,7 +631,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                           "growth", lead_months, cfg)
                 hiring_mode = "growth"
             else:
-                hiring_mode = "shed_passive"
+                hiring_mode = "monthly_shed"
 
         else:
             if deferred_fte > 0 and not in_flu:
