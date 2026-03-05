@@ -780,9 +780,12 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
                   annotation_font=dict(size=9,color=SLATE),row=1,col=1)
     _m_impacts = monthly_impacts if monthly_impacts is not None else quarterly_impacts
     for mi, im in enumerate(_m_impacts):
-        fig.add_annotation(row=1,col=1,xref="x",yref="paper",x=mi,y=1.0,
+        # Stagger alternate labels up/down to prevent overlap on narrow charts
+        _y_pos  = 1.0 if mi % 2 == 0 else 1.055
+        _anchor = "bottom"
+        fig.add_annotation(row=1,col=1,xref="x",yref="paper",x=mi,y=_y_pos,
                            text=f"{chr(43) if im>=0 else chr(45)}{abs(im*100):.0f}%",
-                           showarrow=False,yanchor="bottom",
+                           showarrow=False,yanchor=_anchor,
                            font=dict(size=9,color=Q_COLORS[MONTH_TO_QUARTER[mi]]),
                            bgcolor="rgba(255,255,255,0.88)",borderpad=2)
 
@@ -3137,13 +3140,18 @@ with tabs[1]:
     ))
 
     # p5 / p95 boundary markers
+    # Jitter p5/p95 labels: if they're close together, push them apart
+    _p5_val, _p95_val = _ep[5], _ep[95]
+    _ebitda_range = max(abs(_p95_val - _p5_val), 0.01)
+    _p5_pos  = "bottom center" if (_p95_val - _p5_val) / _ebitda_range > 0.15 else "bottom center"
+    _p95_pos = "top center"
     _fig_mc.add_trace(go.Scatter(
         x=["Pessimistic", "Optimistic"],
-        y=[_ep[5], _ep[95]],
+        y=[_p5_val, _p95_val],
         mode="markers+text",
         marker=dict(size=9, color="#FCD34D", symbol="diamond"),
-        text=[f"p5  ${_ep[5]:.2f}M", f"p95  ${_ep[95]:.2f}M"],
-        textposition=["bottom center", "top center"],
+        text=[f"p5  ${_p5_val:.2f}M", f"p95  ${_p95_val:.2f}M"],
+        textposition=[_p5_pos, _p95_pos],
         textfont=dict(size=10, color="#FCD34D"),
         name="p5 / p95 bounds",
         showlegend=True,
@@ -3468,9 +3476,13 @@ with tabs[6]:
     wf_labels.append(_elabel2); wf_raw.append(_es2["ebitda"])
     wf_vals   = [v if i==0 or i==len(wf_raw)-1 else -v for i,v in enumerate(wf_raw)]
     wf_colors = ["#22C55E" if i==0 else ("#1A6FD4" if i==len(wf_vals)-1 else "#EF4444") for i in range(len(wf_vals))]
+    _wf_max = max(abs(v) for v in wf_vals) if wf_vals else 1
+    _wf_txtpos = ["inside" if abs(v)/_wf_max > 0.25 else "outside" for v in wf_vals]
     fw = go.Figure(go.Bar(x=[v/1e6 for v in wf_vals], y=wf_labels, orientation="h",
                          marker_color=wf_colors,
-                         text=[f"${abs(v)/1e6:.2f}M" for v in wf_vals], textposition="outside"))
+                         text=[f"${abs(v)/1e6:.2f}M" for v in wf_vals],
+                         textposition=_wf_txtpos,
+                         textfont=dict(size=10)))
     fw.update_layout(**mk_layout(height=320, title=f"3-Year {_elabel2} Waterfall"))
     fw.update_xaxes(title_text="$ Millions")
     st.plotly_chart(fw, use_container_width=True)
@@ -4377,12 +4389,14 @@ with tabs[14]:
         _left_abs  = _lo_abs[_i]  if _left_is_lo else _hi_abs[_i]
         _right_abs = _hi_abs[_i]  if _left_is_lo else _lo_abs[_i]
 
+        _left_tp  = "inside" if abs(_left_d)  / max(abs(_max_delta), 1) > 0.30 else "outside"
+        _right_tp = "inside" if abs(_right_d) / max(abs(_max_delta), 1) > 0.30 else "outside"
         _fig_t.add_trace(go.Bar(
             name="Unfavorable" if _i == 0 else "", y=[_labels[_i]], x=[_left_d],
             orientation="h", base=0, marker_color=_C_NEG, marker_opacity=0.85,
             showlegend=(_i == 0), legendgroup="low",
-            text=_left_lbl, textposition="inside",
-            textfont=dict(size=10, color="white"),
+            text=_left_lbl, textposition=_left_tp,
+            textfont=dict(size=10, color="white" if _left_tp == "inside" else _C_NEG),
             insidetextanchor="end",
             hovertemplate=f"<b>{_labels[_i]}</b><br>Scenario: {_left_lbl}<br>EBITDA: ${_left_abs/1e6:.3f}M<br>Delta: {_left_d/1e3:+.0f}K<extra></extra>",
         ))
@@ -4390,8 +4404,8 @@ with tabs[14]:
             name="Favorable" if _i == 0 else "", y=[_labels[_i]], x=[_right_d],
             orientation="h", base=0, marker_color=_C_POS, marker_opacity=0.85,
             showlegend=(_i == 0), legendgroup="high",
-            text=_right_lbl, textposition="inside",
-            textfont=dict(size=10, color="white"),
+            text=_right_lbl, textposition=_right_tp,
+            textfont=dict(size=10, color="white" if _right_tp == "inside" else _C_POS),
             insidetextanchor="start",
             hovertemplate=f"<b>{_labels[_i]}</b><br>Scenario: {_right_lbl}<br>EBITDA: ${_right_abs/1e6:.3f}M<br>Delta: {_right_d/1e3:+.0f}K<extra></extra>",
         ))
