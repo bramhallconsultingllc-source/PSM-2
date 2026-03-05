@@ -388,6 +388,11 @@ with st.sidebar:
         f"</div></a>",
         unsafe_allow_html=True)
 
+    st.markdown(f"""
+    <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
+      <span style='font-size:0.56rem;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:{C_GOLD};'>&#9632; DEMAND</span>
+    </div>""", unsafe_allow_html=True)
+
     with st.expander("BASE DEMAND", expanded=True):
         base_visits = st.number_input("Visits / Day", 1.0, 300.0, 32.0, 1.0,
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
@@ -398,6 +403,9 @@ with st.sidebar:
         peak_factor = 1.0  # removed from UI — use quarterly seasonality for volume adjustments
         _y3_visits = base_visits * (1 + annual_growth/100) ** 2
         st.caption(f"Y1 baseline: **{base_visits:.0f}**/day  →  Y3 projected: **{_y3_visits:.0f}**/day")
+
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
 
     with st.expander("MONTHLY VOLUME DISTRIBUTION", expanded=True):
         st.caption(
@@ -425,6 +433,9 @@ with st.sidebar:
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
 
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
+
     with st.expander("LOAD BAND TARGET", expanded=True):
         st.caption("Optimizer targets a pts/Provider range. FTE derived monthly from demand.")
         lb1, lb2c = st.columns(2)
@@ -440,6 +451,11 @@ with st.sidebar:
         if use_band:
             st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/Provider  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
 
+    st.markdown(f"""
+    <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
+      <span style='font-size:0.56rem;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:{C_GOLD};'>&#9632; OPERATIONS</span>
+    </div>""", unsafe_allow_html=True)
+
     with st.expander("SHIFT STRUCTURE"):
         op_days   = st.number_input("Operating Days/Week", 1, 7, 7,
             help="Days per week the clinic is open. Drives total shift slots and FTE-per-slot conversion.")
@@ -454,11 +470,19 @@ with st.sidebar:
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05,
             help="The FTE value assigned to one provider contract. 0.9 = each provider counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
 
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
+
     with st.expander("STAFFING MODEL"):
         flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=11,
                                          format_func=lambda x: MONTH_NAMES[x-1],
                                          help="The month by which you need fully independent providers on floor. Drives requisition posting deadline calculation.")
         summer_shed_floor = 85  # removed from UI — load-band optimizer handles shed floor implicitly
+
+    st.markdown(f"""
+    <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
+      <span style='font-size:0.56rem;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:{C_GOLD};'>&#9632; COST</span>
+    </div>""", unsafe_allow_html=True)
 
     with st.expander("PROVIDER COMPENSATION"):
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
@@ -496,6 +520,9 @@ with st.sidebar:
             help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes provider + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
         fixed_overhead = st.number_input("Monthly Fixed Overhead ($)", 0, 500_000, 0, 5_000, format="%d",
             help="Optional: rent, non-clinical staff, equipment, etc. When $0, output is EBITDA Contribution from Staffing. When > $0, reflects full EBITDA. Does not affect FTE optimizer.")
+
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
 
     with st.expander("SUPPORT STAFF"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
@@ -560,6 +587,11 @@ with st.sidebar:
                        + (" · " if phys_sup_hrs > 0 and sup_admin_hrs > 0 else "")
                        + (f"Supervisor **${_sm:,.0f}/mo**" if sup_admin_hrs > 0 else ""))
 
+    st.markdown(f"""
+    <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
+      <span style='font-size:0.56rem;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:{C_GOLD};'>&#9632; HIRING &amp; RETENTION</span>
+    </div>""", unsafe_allow_html=True)
+
     with st.expander("HIRING PHYSICS"):
         days_sign = st.number_input("Days to Sign", 7, 180, 90, 7,
             help="Days from posting a requisition to signed offer letter. Includes sourcing, interviewing, and offer negotiation.")
@@ -571,6 +603,9 @@ with st.sidebar:
             help="Expected annual turnover as % of total staff. 18% = roughly 1 in 6 providers leaves per year. Divided by 12 for monthly simulation. Increases with overwork if Overload Attrition Factor > 0.")
         st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
 
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
+
     with st.expander("ATTRITION SENSITIVITY"):
         st.caption("Overwork amplifies attrition. 20% overload x factor=1.5 adds 30% to base rate.")
         overload_att_factor = st.slider("Overload Attrition Factor", 0.0, 5.0, 1.5, 0.1,
@@ -578,6 +613,9 @@ with st.sidebar:
         _ex_mult = 1 + overload_att_factor * 0.20
         st.caption(f"At 20% overload: base rate x **{_ex_mult:.2f}**  |  "
                    f"{annual_att:.1f}%/yr -> **{annual_att * _ex_mult:.1f}%/yr**")
+
+
+    st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
 
     with st.expander("TURNOVER & PENALTY RATES"):
         # ── Replacement cost — model-derived default with override ────────────
