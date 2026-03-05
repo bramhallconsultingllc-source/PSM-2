@@ -156,12 +156,13 @@ class ClinicConfig:
     swb_violation_penalty:           float = 500_000
 
     # ── Zone Thresholds ───────────────────────────────────────────────────────
-    # Zone thresholds — pts/APC above budget that triggers each zone.
-    # Budget (36) is the GREEN ceiling: any load above budget enters Yellow.
-    # yellow_threshold_above = 0 means Yellow starts immediately above budget.
-    # red_threshold_above = 4 means Red starts at budget + 4 (e.g. 40 pts/APC).
-    yellow_threshold_above: float = 0.0   # Green: <= budget; Yellow: budget < x <= budget+4
-    red_threshold_above:    float = 4.0   # Red:   > budget + 4
+    # Percentage-based zone thresholds above the budgeted pts/provider/shift.
+    # Green  : <= budget
+    # Yellow : budget < x <= budget * (1 + yellow_threshold_pct/100)
+    # Red    : > budget * (1 + red_threshold_pct/100)
+    # Defaults: +10% Yellow, +20% Red  (at budget=36: Yellow≤39.6, Red>43.2)
+    yellow_threshold_pct: float = 10.0   # % above budget where Yellow begins
+    red_threshold_pct:    float = 20.0   # % above budget where Red begins
 
     # ── Derived ───────────────────────────────────────────────────────────────
     @property
@@ -666,9 +667,11 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         # ── Load & Zone ───────────────────────────────────────────────────────
         pts_per_prov = (visits_per_day / providers_on_floor) if providers_on_floor > 0 else 9999.0
 
-        if pts_per_prov <= budget + cfg.yellow_threshold_above:
+        _yellow_ceil = budget * (1 + cfg.yellow_threshold_pct / 100)
+        _red_ceil    = budget * (1 + cfg.red_threshold_pct    / 100)
+        if pts_per_prov <= budget:
             zone = "Green"
-        elif pts_per_prov <= budget + cfg.red_threshold_above:
+        elif pts_per_prov <= _yellow_ceil:
             zone = "Yellow"
         else:
             zone = "Red"
@@ -676,7 +679,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         within_band = cfg.load_band_lo <= pts_per_prov <= cfg.load_band_hi
 
         # ── Flex FTE ──────────────────────────────────────────────────────────
-        overload_pts = max(0.0, pts_per_prov - (budget + cfg.yellow_threshold_above))
+        overload_pts = max(0.0, pts_per_prov - budget * (1 + cfg.yellow_threshold_pct / 100))
         if overload_pts > 0 and providers_on_floor > 0:
             extra_providers = (overload_pts * providers_on_floor) / budget
             flex_fte = extra_providers * fte_per_slot
@@ -700,7 +703,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         # At load=budget+red_threshold×2: base×4, etc.
         # Replaces: Yellow flat 0.2× ($8,750) + Red (1+severity²) step.
         if overload_pts > 0:
-            severity    = overload_pts / max(cfg.red_threshold_above, 1)
+            severity    = overload_pts / max(budget * cfg.red_threshold_pct / 100, 1)
             burnout_pen = burnout_per_red * (severity ** 2)
         else:
             burnout_pen = 0.0
