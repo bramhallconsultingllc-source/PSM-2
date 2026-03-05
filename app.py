@@ -680,7 +680,7 @@ if not st.session_state.optimized:
     bft = (base_visits / budget_ppp) * cfg.fte_per_shift_slot
     fp  = make_subplots(specs=[[{"secondary_y": True}]])
     for mi in range(12):
-        im = _mo_norm[mi]
+        im = _mo_vals[mi]
         fp.add_annotation(x=mi, y=max(mv)*1.09,
                           text=f"{chr(43) if im>=0 else chr(45)}{im*100:.0f}%",
                           showarrow=False, font=dict(size=9, color=Q_COLORS[MONTH_TO_QUARTER[mi]]),
@@ -1259,7 +1259,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor,monthly_impacts=_mo_norm),
+st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_visits,budget_ppp,peak_factor,monthly_impacts=_mo_vals),
                 use_container_width=True)
 
 # Hiring mode legend
@@ -3356,7 +3356,7 @@ with tabs[5]:
     pol=active_policy(); mos=pol.months
     st.markdown("## MONTHLY VOLUME DISTRIBUTION")
     mcols = st.columns(6)
-    for mi, (mn, im) in enumerate(zip(MONTH_NAMES, _mo_norm)):
+    for mi, (mn, im) in enumerate(zip(MONTH_NAMES, _mo_vals)):
         with mcols[mi % 6]:
             vm = base_visits * (1 + im) * peak_factor
             fm = (vm / budget) * cfg.fte_per_shift_slot
@@ -3364,7 +3364,7 @@ with tabs[5]:
                       delta=f"{vm:.0f} vpd · {fm:.1f} FTE")
 
     st.plotly_chart(render_hero_chart(pol,cfg,quarterly_impacts,base_visits,budget,peak_factor,
-                                      title="Annual Demand Curve - Year 1",monthly_impacts=_mo_norm),
+                                      title="Annual Demand Curve - Year 1",monthly_impacts=_mo_vals),
                     use_container_width=True)
 
     st.markdown("## MONTHLY SUMMARY  (36-Month Avg)")
@@ -3373,7 +3373,7 @@ with tabs[5]:
         mm=[mo for mo in mos if mo.calendar_month == mi+1]
         if mm:
             mr.append({"Month": mn,
-                       "Adjustment": f"{chr(43) if _mo_norm[mi]>=0 else chr(45)}{_mo_norm[mi]*100:.0f}%",
+                       "Adjustment": f"{chr(43) if _mo_vals[mi]>=0 else chr(45)}{_mo_vals[mi]*100:.0f}%",
                        "Avg Visits/Day": f"{np.mean([mo.demand_visits_per_day for mo in mm]):.1f}",
                        "Avg Paid FTE":   f"{np.mean([mo.paid_fte for mo in mm]):.2f}",
                        "Avg Pts/APC":    f"{np.mean([mo.patients_per_provider_per_shift for mo in mm]):.1f}",
