@@ -54,8 +54,8 @@ HIRE_COLORS = {
     "attrition_replace": NAVY_MID,
     "winter_ramp":       C_GREEN,
     "floor_protect":     C_YELLOW,
-    "shed_pause":        C_YELLOW,
-    "shed_passive":      "#D97706",
+    "monthly_shed":      C_YELLOW,
+    "monthly_shed":      C_YELLOW,
     "freeze_flu":        SLATE,
     "none":              RULE,
 }
@@ -1303,8 +1303,8 @@ st.plotly_chart(render_hero_chart(active_policy(),cfg,quarterly_impacts,base_vis
 # Hiring mode legend
 hm_map = {
     "growth":("Growth hire",NAVY), "attrition_replace":("Attrition backfill",NAVY_MID),
-    "winter_ramp":("Winter ramp",C_GREEN), "shed_pause":("Q3 shed pause",C_YELLOW),
-    "shed_passive":("Passive shed",C_YELLOW), "freeze_flu":("Flu freeze",SLATE),
+    "winter_ramp":("Winter ramp",C_GREEN), "monthly_shed":("Monthly shed",C_YELLOW),
+    "freeze_flu":("Flu freeze",SLATE),
 }
 yr1_mos = [mo for mo in active_policy().months if mo.year==1]
 counts  = {m:sum(1 for mo in yr1_mos if mo.hiring_mode==m) for m in hm_map}
@@ -2849,54 +2849,60 @@ with tabs[1]:
 
 
     # ── AI BRIEFING ───────────────────────────────────────────────────────────
-    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1rem;'>", unsafe_allow_html=True)
-    st.markdown("## AI ADVISOR BRIEFING")
-    st.markdown(
-        f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
-        f"One-click CFO-quality memo interpreting this staffing model — "
-        f"risks, tradeoffs, and what to watch. Powered by GPT-4o.</p>",
-        unsafe_allow_html=True)
+    @st.fragment
+    def _render_ai_briefing():
+        pol_f  = active_policy()
+        cfg_f  = cfg
+        st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+        st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1rem;'>", unsafe_allow_html=True)
+        st.markdown("## AI ADVISOR BRIEFING")
+        st.markdown(
+            f"<p style='font-size:0.84rem;color:{SLATE};margin:-0.4rem 0 1rem;'>"
+            f"One-click CFO-quality memo interpreting this staffing model — "
+            f"risks, tradeoffs, and what to watch. Powered by GPT-4o.</p>",
+            unsafe_allow_html=True)
 
-    _oai_key_brief = _openai_key()
-    if not _oai_key_brief:
-        st.warning("Add `OPENAI_API_KEY` to your Streamlit secrets to enable AI features.", icon="🔑")
-    else:
-        if st.button("✦ Generate Briefing", type="primary", key="gen_briefing"):
-            _sim_ctx = _build_simulation_context(pol, cfg, MA)
-            _brief_messages = [
-                {"role": "system", "content": _advisor_system_prompt(_sim_ctx)},
-                {"role": "user", "content": (
-                    "Write a concise CFO-quality briefing memo for this staffing model. "
-                    "Structure it as: (1) Policy overview and what it achieves, "
-                    "(2) Key risks or watch items, "
-                    "(3) The single most important operational decision in the next 90 days. "
-                    "Be specific — reference actual months, FTE counts, and dollar amounts from the simulation. "
-                    "Plain prose, no bullet points, no headers. 3-4 paragraphs."
-                )},
-            ]
-            with st.spinner("Drafting briefing..."):
-                _brief_text, _brief_err = _call_openai(_brief_messages, _oai_key_brief, max_tokens=600)
-            if _brief_err:
-                st.error(f"Error: {_brief_err}")
-            else:
-                st.session_state["psm_briefing"] = _brief_text
+        _oai_key_brief = _openai_key()
+        if not _oai_key_brief:
+            st.warning("Add `OPENAI_API_KEY` to your Streamlit secrets to enable AI features.", icon="🔑")
+        else:
+            if st.button("✦ Generate Briefing", type="primary", key="gen_briefing"):
+                _sim_ctx = _build_simulation_context(pol_f, cfg_f, MA)
+                _brief_messages = [
+                    {"role": "system", "content": _advisor_system_prompt(_sim_ctx)},
+                    {"role": "user", "content": (
+                        "Write a concise CFO-quality briefing memo for this staffing model. "
+                        "Structure it as: (1) Policy overview and what it achieves, "
+                        "(2) Key risks or watch items, "
+                        "(3) The single most important operational decision in the next 90 days. "
+                        "Be specific — reference actual months, FTE counts, and dollar amounts from the simulation. "
+                        "Plain prose, no bullet points, no headers. 3-4 paragraphs."
+                    )},
+                ]
+                with st.spinner("Drafting briefing..."):
+                    _brief_text, _brief_err = _call_openai(_brief_messages, _oai_key_brief, max_tokens=600)
+                if _brief_err:
+                    st.error(f"Error: {_brief_err}")
+                else:
+                    st.session_state["psm_briefing"] = _brief_text
 
-        if "psm_briefing" in st.session_state:
-            st.markdown(
-                f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;"
-                f"border-left:4px solid {NAVY};border-radius:4px;"
-                f"padding:1.1rem 1.3rem;font-size:0.87rem;line-height:1.7;"
-                f"color:{INK};margin-top:0.6rem;'>"
-                f"{st.session_state['psm_briefing'].replace(chr(10), '<br>')}"
-                f"</div>",
-                unsafe_allow_html=True)
-            st.markdown(
-                f"<div style='font-size:0.68rem;color:{MUTED};margin-top:0.35rem;'>"
-                f"Generated by GPT-4o · grounded in your simulation data · "
-                f"not HR or legal advice</div>",
-                unsafe_allow_html=True)
-    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+            if "psm_briefing" in st.session_state:
+                st.markdown(
+                    f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;"
+                    f"border-left:4px solid {NAVY};border-radius:4px;"
+                    f"padding:1.1rem 1.3rem;font-size:0.87rem;line-height:1.7;"
+                    f"color:{INK};margin-top:0.6rem;'>"
+                    f"{st.session_state['psm_briefing'].replace(chr(10), '<br>')}"
+                    f"</div>",
+                    unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='font-size:0.68rem;color:{MUTED};margin-top:0.35rem;'>"
+                    f"Generated by GPT-4o · grounded in your simulation data · "
+                    f"not HR or legal advice</div>",
+                    unsafe_allow_html=True)
+        st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    _render_ai_briefing()
 
     # ── SENSITIVITY SNAPSHOT ─────────────────────────────────────────────────
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
@@ -3236,7 +3242,7 @@ with tabs[2]:
     fig.add_bar(x=lbls,y=[mo.flex_fte for mo in mos],name="Flex FTE",
                 marker_color="rgba(185,28,28,0.30)",row=2,col=1)
 
-    for mode,col,lbl in [("shed_pause",C_YELLOW,"Q3 shed pause"),("shed_passive","#D97706","Passive shed")]:
+    for mode,col,lbl in [("monthly_shed",C_YELLOW,"Monthly shed")]:
         sx=[lbls[i] for i,mo in enumerate(mos) if mo.hiring_mode==mode]
         sy=[mos[i].paid_fte for i,mo in enumerate(mos) if mo.hiring_mode==mode]
         if sx:
@@ -3260,8 +3266,8 @@ with tabs[2]:
                      yaxis=dict(visible=False),xaxis=dict(visible=False))
     st.plotly_chart(fz,use_container_width=True)
 
-    hmc={m:sum(1 for mo in mos if mo.hiring_mode==m) for m in ["growth","attrition_replace","winter_ramp","floor_protect","shed_pause","shed_passive","freeze_flu","none"]}
-    hml={"growth":"Growth","attrition_replace":"Att.backfill","winter_ramp":"Winter ramp","floor_protect":"Floor protect","shed_pause":"Q3 shed","shed_passive":"Passive shed","freeze_flu":"Flu freeze","none":"No action"}
+    hmc={m:sum(1 for mo in mos if mo.hiring_mode==m) for m in ["growth","attrition_replace","winter_ramp","floor_protect","monthly_shed","freeze_flu","none"]}
+    hml={"growth":"Growth","attrition_replace":"Att.backfill","winter_ramp":"Winter ramp","floor_protect":"Floor protect","monthly_shed":"Monthly shed","freeze_flu":"Flu freeze","none":"No action"}
     st.caption("  |  ".join(f"{hml[k]}: {v} mo" for k,v in hmc.items() if v>0))
 
 
