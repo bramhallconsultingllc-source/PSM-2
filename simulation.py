@@ -82,8 +82,8 @@ class ClinicConfig:
     base_visits_per_day: float = 80.0
     budgeted_patients_per_provider_per_day: float = 36.0
     peak_factor: float = 1.10
-    quarterly_volume_impact: List[float] = field(
-        default_factory=lambda: [0.20, 0.0, -0.10, 0.05])
+    monthly_volume_impact: List[float] = field(
+        default_factory=lambda: [0.20, 0.15, 0.05, 0.0, -0.03, -0.03, -0.10, -0.07, 0.0, 0.03, 0.05, 0.15])
     annual_growth_pct:  float = 10.0   # % YoY volume growth (compounded monthly)
 
     # ── Shift Coverage ────────────────────────────────────────────────────────
@@ -208,8 +208,7 @@ class ClinicConfig:
 
     @property
     def seasonality_index(self) -> List[float]:
-        return [1.0 + self.quarterly_volume_impact[MONTH_TO_QUARTER[m]]
-                for m in range(12)]
+        return [1.0 + self.monthly_volume_impact[m] for m in range(12)]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
