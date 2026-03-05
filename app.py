@@ -437,28 +437,38 @@ with st.sidebar:
     st.markdown("<div style='border-top:1px solid rgba(180,145,60,0.25);margin:0.35rem 0;'></div>", unsafe_allow_html=True)
 
     with st.expander("LOAD BAND TARGET", expanded=True):
-        st.caption("Optimizer targets a pts/Provider range. FTE derived monthly from demand.")
-        lb1, lb2c = st.columns(2)
-        with lb1:  load_lo     = st.number_input("Band Floor (pts/Provider)", 15.0, 50.0, 30.0, 1.0,
-            help="Minimum acceptable load. If load drops BELOW this, the optimizer sheds or pauses hiring — you have more staff than demand requires. Set this to your comfortable lower utilization bound (e.g. 28 pts/Provider).")
-        with lb2c: load_hi     = st.number_input("Band Ceiling (pts/Provider)", 20.0, 60.0, 38.0, 1.0,
-            help="Maximum acceptable load. If load rises ABOVE this, the optimizer adds flex coverage — demand is exceeding your permanent staff capacity. Set this to just below your Green ceiling (e.g. 36 pts/Provider).")
-        load_winter = st.number_input("Winter Load Target (pts/Provider)", 15.0, 60.0, 36.0, 1.0,
-        help="Target load during Nov–Feb flu season. Can be set tighter (lower) to ensure flu surge capacity, or at Green ceiling (36) for efficient use of winter hires.")
-        use_band    = st.checkbox("Use Load Band Mode", value=True)
+        st.caption("Controls when the optimizer posts a requisition and how zones are classified.")
+        hiring_trigger = st.number_input(
+            "Hiring Trigger (pts/Provider/Shift)", 20.0, 80.0, 36.0, 1.0,
+            help=(
+                "The point at which the optimizer posts a requisition. At baseline (36), hiring triggers "
+                "the moment load reaches your budget target. Raising this to 40 means the model lets "
+                "providers run harder before posting — increasing production per shift but accumulating "
+                "burnout risk, attrition pressure, and flex cost in the gap. "
+                "Yellow and Red thresholds are always measured from baseline, not this value. "
+                "If your hiring trigger exceeds your Yellow threshold, the optimizer will not post a "
+                "requisition until load is already in the warning zone — the simulation will show you "
+                "the cost of that decision."
+            )
+        )
         min_coverage = st.number_input("Minimum Coverage FTE", 0.5, 10.0, 2.33, 0.1,
             help="FTE floor enforced at all times — clinic never drops below this. Default 2.33 = 1 provider × 7 days ÷ 3 shifts/week for 7-day coverage. Use 1.67 for 5-day, 2.0 for 6-day.")
         zt1, zt2 = st.columns(2)
         with zt1: yellow_thresh_pct = st.number_input(
-            "Yellow Zone Threshold (%)", 1.0, 50.0, 10.0, 1.0,
-            help="% above budget pts/Provider where load enters Yellow zone. Default 10% — at budget=36, Yellow starts at 39.6.")
+            "Yellow Zone (%)", 1.0, 50.0, 10.0, 1.0,
+            help="% above baseline pts/Provider/Shift where load enters Yellow zone. Default 10% — at baseline 36, Yellow starts at 39.6. Always measured from baseline, not Hiring Trigger.")
         with zt2: red_thresh_pct = st.number_input(
-            "Red Zone Threshold (%)", 1.0, 100.0, 20.0, 1.0,
-            help="% above budget pts/Provider where load enters Red zone. Default 20% — at budget=36, Red starts at 43.2. Must be greater than Yellow threshold.")
+            "Red Zone (%)", 1.0, 100.0, 20.0, 1.0,
+            help="% above baseline pts/Provider/Shift where load enters Red zone. Default 20% — at baseline 36, Red starts at 43.2. Must be greater than Yellow threshold.")
         red_thresh_pct = max(red_thresh_pct, yellow_thresh_pct + 1.0)
-        if use_band:
-            st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/Provider  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
-            st.caption(f"Zones: Green ≤{budget_ppp:.0f}  ·  Yellow ≤{budget_ppp*(1+yellow_thresh_pct/100):.1f}  ·  Red >{budget_ppp*(1+red_thresh_pct/100):.1f} pts/Provider")
+        _y_line = budget_ppp * (1 + yellow_thresh_pct / 100)
+        _r_line = budget_ppp * (1 + red_thresh_pct   / 100)
+        st.caption(f"Zones: Green ≤{budget_ppp:.0f}  ·  Yellow ≤{_y_line:.1f}  ·  Red >{_r_line:.1f} pts/Provider")
+        if hiring_trigger > _y_line:
+            st.warning(
+                f"⚠️ Hiring trigger ({hiring_trigger:.0f}) exceeds Yellow threshold ({_y_line:.1f}) — "
+                f"the optimizer will not post a requisition until load is already in the warning zone.",
+                icon="⚠️")
 
     st.markdown(f"""
     <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
@@ -686,7 +696,7 @@ cfg = ClinicConfig(
     annual_growth_pct=annual_growth,
     operating_days_per_week=int(op_days), shifts_per_day=int(shifts_day),
     shift_hours=shift_hrs, fte_shifts_per_week=fte_shifts, fte_fraction=fte_frac,
-    load_band_lo=load_lo, load_band_hi=load_hi, load_winter_target=load_winter, use_load_band=use_band,
+    hiring_trigger_pts=hiring_trigger,
     min_coverage_fte=min_coverage,
     flu_anchor_month=flu_anchor, summer_shed_floor_pct=summer_shed_floor/100,
     annual_provider_cost_perm=perm_cost_i, annual_provider_cost_flex=flex_cost_i,
@@ -802,13 +812,11 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
     for qi,(mq,bg) in enumerate(zip(Q_MONTH_GROUPS,Q_BG)):
         fig.add_vrect(x0=mq[0]-0.5,x1=mq[-1]+0.5,fillcolor=bg,layer="below",line_width=0,row=2,col=1)
 
-    # Load band shading on FTE panel
-    if cfg.use_load_band:
-        band_hi_fte = [fte_for_band(v, cfg.load_band_hi, cfg) for v in visits_nf]
-        band_lo_fte = [fte_for_band(v, cfg.load_band_lo, cfg) for v in visits_nf]
-        fig.add_scatter(x=labels+labels[::-1], y=band_hi_fte+band_lo_fte[::-1],
-                        fill="toself", fillcolor="rgba(10,117,84,0.08)",
-                        line=dict(width=0), showlegend=True, name="Target load band", row=2, col=1)
+    # Hiring trigger band shading on FTE panel
+    trigger_fte = [fte_for_band(v, cfg.hiring_trigger_pts, cfg) for v in visits_nf]
+    fig.add_scatter(x=labels+labels[::-1], y=trigger_fte+trigger_fte[::-1],
+                    fill="toself", fillcolor="rgba(10,117,84,0.08)",
+                    line=dict(width=0), showlegend=True, name="Hiring trigger band", row=2, col=1)
 
     for i in range(len(labels)):
         gc = "rgba(10,117,84,0.08)" if paid_fte[i]>=fte_req[i] else "rgba(185,28,28,0.08)"
@@ -1217,7 +1225,7 @@ _turn_sub = f"{_turn_risk_lbl} · ${_turn_cost_3yr/1e3:.0f}K cost"
 _h1,_h2,_h3,_h4,_h5,_h6,_h7 = st.columns(7)
 _tile(_h1, f"{best.base_fte:.1f}",   "Base FTE")
 _tile(_h2, f"{best.winter_fte:.1f}", "Winter FTE")
-_tile(_h3, f"{best.base_fte*cfg.summer_shed_floor_pct:.1f}", "Summer Floor")
+_tile(_h3, f"{best.base_fte*0.85:.1f}", "Summer Floor")
 _tile(_h4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
 _tile(_h5, f"${_swb_actual:.2f}", "SWB / Visit",
       sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr, val_size="1.3rem")
@@ -1773,7 +1781,7 @@ with tabs[0]:
   <div class="cfg-item"><span class="cfg-label">MA Ratio (per Provider)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">PSR Ratio (per Provider)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">RT (flat/shift)</span><span class="cfg-value">{sup.rt_flat_fte:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/Provider</span></div>
+  <div class="cfg-item"><span class="cfg-label">Hiring Trigger</span><span class="cfg-value">{cfg.hiring_trigger_pts:.0f} pts/Provider</span></div>
   <div class="cfg-item"><span class="cfg-label">Base FTE</span><span class="cfg-value">{best.base_fte:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">Winter FTE</span><span class="cfg-value">{best.winter_fte:.1f}</span></div>
 </div>
@@ -3212,7 +3220,7 @@ with tabs[1]:
     )
     st.caption(
         f"Policy held fixed at Base {best.base_fte:.1f} FTE · Winter {best.winter_fte:.1f} FTE · "
-        f"WLT {cfg.load_winter_target:.0f} pts/Provider.  "
+        f"Hiring Trigger {cfg.hiring_trigger_pts:.0f} pts/Provider.  "
         f"Deterministic base case: EBITDA ${_base_e:.2f}M · "
         f"SWB ${s['annual_swb_per_visit']:.2f}/visit · "
         f"Capture {es['capture_rate']*100:.1f}%."
@@ -3232,23 +3240,11 @@ with tabs[2]:
         zc={"Green":"rgba(10,117,84,0.07)","Yellow":"rgba(154,100,0,0.10)","Red":"rgba(185,28,28,0.12)"}[mo.zone]
         fig.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor=zc,layer="below",line_width=0,row=1,col=1)
 
-    if cfg.use_load_band:
-        fig.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,
-                      fillcolor="rgba(10,117,84,0.05)",line_width=0,row=1,col=1)
-        # Stagger band floor/ceiling labels if they're close to each other
-        _band_gap    = cfg.load_band_hi - cfg.load_band_lo
-        _band_yshift = 10 if _band_gap < 3 else 0
-        fig.add_hline(y=cfg.load_band_lo, line_dash="dot", line_color=C_GREEN, line_width=1,
-                      annotation_text=f"Band floor {cfg.load_band_lo:.0f}", annotation_position="right",
-                      annotation_font=dict(size=8, color=C_GREEN),
-                      annotation_yshift=-_band_yshift,
-                      row=1, col=1)
-        fig.add_hline(y=cfg.load_band_hi, line_dash="dot", line_color=C_GREEN, line_width=1,
-                      annotation_text=f"Band ceiling {cfg.load_band_hi:.0f}", annotation_position="right",
-                      annotation_font=dict(size=8, color=C_GREEN),
-                      annotation_yshift=_band_yshift,
-                      row=1, col=1)
-
+    fig.add_hline(y=cfg.hiring_trigger_pts, line_dash="dash", line_color=C_GREEN, line_width=1.5,
+                  annotation_text=f"Hiring Trigger {cfg.hiring_trigger_pts:.0f}",
+                  annotation_position="right",
+                  annotation_font=dict(size=9, color=C_GREEN),
+                  row=1, col=1)
     fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
                     mode="lines+markers",name="Pts/Provider/Shift",
                     line=dict(color=NAVY,width=2.5),
@@ -3466,7 +3462,7 @@ with tabs[5]:
                        "Avg Paid FTE":   f"{np.mean([mo.paid_fte for mo in mm]):.2f}",
                        "Avg Pts/Provider":    f"{np.mean([mo.patients_per_provider_per_shift for mo in mm]):.1f}",
                        "Red Months":     sum(1 for mo in mm if mo.zone=="Red"),
-                       "In-Band %":      f"{sum(1 for mo in mm if mo.within_band)/len(mm)*100:.0f}%"})
+                       "On-Target %":    f"{sum(1 for mo in mm if mo.at_or_below_trigger)/len(mm)*100:.0f}%"})
     st.dataframe(pd.DataFrame(mr), use_container_width=True, hide_index=True)
 
     st.markdown("## ATTRITION TRAJECTORY  (overload-amplified)")
@@ -3651,9 +3647,9 @@ with tabs[7]:
     _line_clr   = C_GREEN if _adding else C_RED
     _line_lbl   = f"{_delta_lbl} → {_new_fte:.2f} FTE"
     fma = go.Figure()
-    if cfg.use_load_band:
-        fma.add_hrect(y0=cfg.load_band_lo, y1=cfg.load_band_hi,
-                      fillcolor="rgba(10,117,84,0.06)", line_width=0)
+    fma.add_hline(y=cfg.hiring_trigger_pts, line_dash="dash", line_color=C_GREEN, line_width=1.5,
+                  annotation_text=f"Trigger {cfg.hiring_trigger_pts:.0f}",
+                  annotation_position="right", annotation_font=dict(size=8, color=C_GREEN))
     fma.add_scatter(x=m_labels_12, y=ma["yr1_load_base"],
                     name=f"Current ({pol.base_fte:.2f} FTE)",
                     mode="lines+markers", line=dict(color=NAVY, width=2.5),
@@ -3835,7 +3831,7 @@ with tabs[11]:
     st.markdown("## FULL 36-MONTH DATA")
     dff=pd.DataFrame([{
         "Month":mlabel(mo),"Q":f"Q{mo.quarter}","Zone":mo.zone,
-        "Hiring Mode":mo.hiring_mode,"In Band":"Y" if mo.within_band else "N",
+        "Hiring Mode":mo.hiring_mode,"At/Below Trigger":"Y" if mo.at_or_below_trigger else "N",
         "Visits/Day":round(mo.demand_visits_per_day,1),
         "FTE Required":round(mo.demand_fte_required,2),"Paid FTE":round(mo.paid_fte,2),
         "Providers on Floor":round(mo.providers_on_floor,2),
@@ -4067,7 +4063,7 @@ with tabs[12]:
     st.markdown(
         f"<div style='font-size:0.80rem;color:#4A5568;background:#F8FAFC;"
         f"border-left:3px solid #7A8799;padding:0.5rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
-        f"<b>Overload attrition:</b> when pts/Provider exceeds the load-band ceiling ({cfg.load_band_hi:.0f}), "
+        f"<b>Overload attrition:</b> when pts/Provider exceeds the baseline ({cfg.budgeted_patients_per_provider_per_day:.0f}), "
         f"the effective rate scales up: <code>rate × (1 + {cfg.overload_attrition_factor:.1f} × excess%)</code>. "
         f"This model has <b>{len(_overload_months)} months</b> with above-baseline attrition.</div>",
         unsafe_allow_html=True)
@@ -4090,7 +4086,7 @@ with tabs[12]:
             f"border-left:3px solid #0A6B4A;padding:0.45rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
             f"✅ <b>Zero Red months</b> — no burnout penalty applied. "
             f"Burnout fires at ${cfg.burnout_penalty_per_red_month:.0f}% of annual provider cost "
-            f"per Red month (pts/Provider > {cfg.load_band_hi:.0f}).</div>",
+            f"per Red month (pts/Provider > {cfg.budgeted_patients_per_provider_per_day*(1+cfg.red_threshold_pct/100):.1f}).</div>",
             unsafe_allow_html=True)
     _check("Burnout cost vs simulation", es["burnout"], _total_burnout_c)
 
