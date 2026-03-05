@@ -419,12 +419,9 @@ with st.sidebar:
                     help=f"Volume adjustment for {_mn} vs annual average. 0 = exactly average volume."
                 )
             _mo_vals.append(_mv / 100.0)
-        # Normalize so monthly average = 0 → base_visits is true annual average
-        _mo_avg = sum(_mo_vals) / 12
-        _mo_norm = [x - _mo_avg for x in _mo_vals]
-        # Pass monthly impacts directly to simulation (no quarterly averaging)
-        quarterly_impacts = _mo_norm  # kept as variable name for chart compatibility
-        s_idx = [1.0 + _mo_norm[m] for m in range(12)]
+        # Use raw percentages directly — 0% = base visits/day, no normalization
+        quarterly_impacts = _mo_vals  # kept as variable name for chart compatibility
+        s_idx = [1.0 + _mo_vals[m] for m in range(12)]
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
 
