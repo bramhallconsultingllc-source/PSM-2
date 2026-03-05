@@ -1065,4 +1065,3 @@ def optimize(cfg: ClinicConfig,
         best_policy.marginal_analysis = compare_marginal_fte(best_policy, cfg)
 
     return best_policy, all_policies
-              
