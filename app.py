@@ -1,5 +1,5 @@
 """
-PSM — Predictive Staffing Model  v6
+SIP — Staffing Intelligence Platform  v2
 McKinsey-grade editorial design.
 
 New in v6:
@@ -92,7 +92,7 @@ def fte_for_band(visits, load_target, cfg):
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG & CSS
 # ══════════════════════════════════════════════════════════════════════════════
-st.set_page_config(page_title="PSM — Staffing Optimizer", page_icon="📊",
+st.set_page_config(page_title="Staffing Intelligence Platform", page_icon="📊",
                    layout="wide", initial_sidebar_state="expanded")
 
 st.markdown(f"""
@@ -364,8 +364,8 @@ for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_poli
 with st.sidebar:
     st.markdown(f"""
     <div style='padding:1.4rem 1.1rem 1.1rem;border-bottom:2px solid {C_GOLD};margin-bottom:0.5rem;background:{CANVAS};'>
-      <div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.20em;color:{MUTED};margin-bottom:0.4rem;'>Predictive Staffing Model</div>
-      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.25rem;font-weight:500;color:{INK};line-height:1.2;letter-spacing:-0.01em;'>Staffing Optimizer</div>
+      <div style='font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.20em;color:{MUTED};margin-bottom:0.4rem;'>Staffing Intelligence Platform</div>
+      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.25rem;font-weight:500;color:{INK};line-height:1.2;letter-spacing:-0.01em;'>Plan with confidence.<br>Operate with precision.</div>
       <div style='margin-top:6px;width:28px;height:2px;background:{C_GOLD};border-radius:1px;'></div>
     </div>
     """, unsafe_allow_html=True)
@@ -667,7 +667,7 @@ if run_opt:
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.optimized:
     st.markdown("## PERMANENT STAFFING MODEL")
-    st.title("Urgent Care\nStaffing Optimizer")
+    st.title("Staffing Intelligence Platform")
     st.markdown(f"<p style='font-size:0.9rem;color:{SLATE};margin-top:-0.4rem;margin-bottom:2rem;'>"
                 f"36-month horizon | load-band optimization | attrition-as-burnout model</p>",
                 unsafe_allow_html=True)
@@ -1302,7 +1302,7 @@ def _build_simulation_context(pol, cfg, MA):
     mos = pol.months
 
     lines = [
-        "=== PSM SIMULATION STATE ===",
+        "=== SIP SIMULATION STATE ===",
         f"Base visits/day: {cfg.base_visits_per_day}",
         f"Annual growth: {cfg.annual_growth_pct}%",
         f"Budgeted pts/Provider/day: {cfg.budgeted_patients_per_provider_per_day}",
@@ -1402,7 +1402,7 @@ def _call_openai(messages, key, model="gpt-4o", temperature=0.4, max_tokens=900)
         return None, str(e)
 
 def _advisor_system_prompt(sim_context):
-    return f"""You are a staffing strategy advisor embedded in a Predictive Staffing Model (PSM) tool for an urgent care clinic operator. You have full access to the clinic's 36-month simulation results.
+    return f"""You are a staffing strategy advisor embedded in the Staffing Intelligence Platform (SIP) for an urgent care clinic operator. You have full access to the clinic's 36-month simulation results.
 
 Your role:
 - Interpret simulation data and give specific, actionable guidance
@@ -2297,7 +2297,7 @@ with tabs[1]:
 <div class="memo-wrap">
   <div class="memo-masthead">
     <div>
-      <div class="memo-eyebrow">Predictive Staffing Model &nbsp;·&nbsp; Executive Summary</div>
+      <div class="memo-eyebrow">Staffing Intelligence Platform &nbsp;·&nbsp; Executive Summary</div>
       <div class="memo-title-main">Staffing & EBITDA Outlook</div>
       <div class="memo-subtitle">
         Generated {gen_date} &nbsp;·&nbsp;
@@ -2782,7 +2782,7 @@ with tabs[1]:
         # ── FOOTER ──────────────────────────────────────────────────────────────
         story.append(rule("#C9A227", thick=1.5, before=8, after=4))
         story.append(Paragraph(
-            f"Predictive Staffing Model  ·  Urgent Care  ·  36-Month Horizon  ·  "
+            f"Staffing Intelligence Platform  ·  Urgent Care  ·  36-Month Horizon  ·  "
             f"Generated {memo['date']}",
             sty("ftr", fontSize=7, textColor=RM, alignment=TA_CENTER)))
 
@@ -4547,7 +4547,7 @@ with tabs[15]:
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<hr style='border-color:{RULE};margin:2rem 0 1rem;'>",unsafe_allow_html=True)
 st.markdown(f"<p style='font-size:0.68rem;color:#8FA8BF;text-align:center;letter-spacing:0.12em;'>"
-            f"PSM | PERMANENT STAFFING MODEL | URGENT CARE | 36-MONTH HORIZON | LOAD-BAND OPTIMIZER | ATTRITION-AS-BURNOUT MODEL"
+            f"STAFFING INTELLIGENCE PLATFORM | URGENT CARE | 36-MONTH HORIZON | LOAD-BAND OPTIMIZER"
             f"</p>",unsafe_allow_html=True)
 
 
