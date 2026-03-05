@@ -3225,21 +3225,45 @@ with tabs[2]:
     if cfg.use_load_band:
         fig.add_hrect(y0=cfg.load_band_lo,y1=cfg.load_band_hi,
                       fillcolor="rgba(10,117,84,0.05)",line_width=0,row=1,col=1)
-        fig.add_hline(y=cfg.load_band_lo,line_dash="dot",line_color=C_GREEN,line_width=1,
-                      annotation_text=f"Band floor {cfg.load_band_lo:.0f}",annotation_position="right",
-                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
-        fig.add_hline(y=cfg.load_band_hi,line_dash="dot",line_color=C_GREEN,line_width=1,
-                      annotation_text=f"Band ceiling {cfg.load_band_hi:.0f}",annotation_position="right",
-                      annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
+        # Stagger band floor/ceiling labels if they're close to each other
+        _band_gap    = cfg.load_band_hi - cfg.load_band_lo
+        _band_yshift = 10 if _band_gap < 3 else 0
+        fig.add_hline(y=cfg.load_band_lo, line_dash="dot", line_color=C_GREEN, line_width=1,
+                      annotation_text=f"Band floor {cfg.load_band_lo:.0f}", annotation_position="right",
+                      annotation_font=dict(size=8, color=C_GREEN),
+                      annotation_yshift=-_band_yshift,
+                      row=1, col=1)
+        fig.add_hline(y=cfg.load_band_hi, line_dash="dot", line_color=C_GREEN, line_width=1,
+                      annotation_text=f"Band ceiling {cfg.load_band_hi:.0f}", annotation_position="right",
+                      annotation_font=dict(size=8, color=C_GREEN),
+                      annotation_yshift=_band_yshift,
+                      row=1, col=1)
 
     fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
                     mode="lines+markers",name="Pts/Provider/Shift",
                     line=dict(color=NAVY,width=2.5),
                     marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
                     row=1,col=1)
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fig.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,
-                      annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col),row=1,col=1)
+    # Build threshold lines; stagger labels vertically when values are close
+    _thresholds = [
+        (budget,                                                                          "Green ceiling", C_GREEN),
+        (budget + cfg.yellow_threshold_above if cfg.yellow_threshold_above > 0 else budget + 0.01, "Yellow",        C_YELLOW),
+        (budget + cfg.red_threshold_above,                                                "Red",           C_RED),
+    ]
+    _sorted_thresh = sorted(_thresholds, key=lambda t: t[0])
+    for _ti, (yv, lbl, col) in enumerate(_sorted_thresh):
+        # Check if previous label is too close — if so, nudge this one up
+        _yshift = 0
+        if _ti > 0:
+            _prev_yv = _sorted_thresh[_ti - 1][0]
+            _yrange  = max(budget * 0.5, 1.0)   # rough estimate of visible y range
+            if abs(yv - _prev_yv) / _yrange < 0.06:
+                _yshift = 12   # push label up by 12px
+        fig.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.5,
+                      annotation_text=lbl, annotation_position="right",
+                      annotation_font=dict(size=9, color=col),
+                      annotation_yshift=_yshift,
+                      row=1, col=1)
 
     fig.add_scatter(x=lbls,y=[mo.paid_fte for mo in mos],name="Paid FTE",
                     mode="lines",line=dict(color=C_ACTUAL,width=2.5),row=2,col=1)
