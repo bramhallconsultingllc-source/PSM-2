@@ -448,8 +448,17 @@ with st.sidebar:
         use_band    = st.checkbox("Use Load Band Mode", value=True)
         min_coverage = st.number_input("Minimum Coverage FTE", 0.5, 10.0, 2.33, 0.1,
             help="FTE floor enforced at all times — clinic never drops below this. Default 2.33 = 1 provider × 7 days ÷ 3 shifts/week for 7-day coverage. Use 1.67 for 5-day, 2.0 for 6-day.")
+        zt1, zt2 = st.columns(2)
+        with zt1: yellow_thresh_pct = st.number_input(
+            "Yellow Zone Threshold (%)", 1.0, 50.0, 10.0, 1.0,
+            help="% above budget pts/Provider where load enters Yellow zone. Default 10% — at budget=36, Yellow starts at 39.6.")
+        with zt2: red_thresh_pct = st.number_input(
+            "Red Zone Threshold (%)", 1.0, 100.0, 20.0, 1.0,
+            help="% above budget pts/Provider where load enters Red zone. Default 20% — at budget=36, Red starts at 43.2. Must be greater than Yellow threshold.")
+        red_thresh_pct = max(red_thresh_pct, yellow_thresh_pct + 1.0)
         if use_band:
             st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/Provider  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
+            st.caption(f"Zones: Green ≤{budget_ppp:.0f}  ·  Yellow ≤{budget_ppp*(1+yellow_thresh_pct/100):.1f}  ·  Red >{budget_ppp*(1+red_thresh_pct/100):.1f} pts/Provider")
 
     st.markdown(f"""
     <div style='margin:1.1rem 0 0.2rem;border-top:1.5px solid {C_GOLD};padding-top:0.55rem;'>
@@ -683,6 +692,7 @@ cfg = ClinicConfig(
     annual_provider_cost_perm=perm_cost_i, annual_provider_cost_flex=flex_cost_i,
     net_revenue_per_visit=rev_visit, swb_target_per_visit=swb_target, support=support_cfg,
     days_to_sign=days_sign, days_to_credential=days_cred, days_to_independent=days_ind,
+    yellow_threshold_pct=yellow_thresh_pct, red_threshold_pct=red_thresh_pct,
     annual_attrition_pct=annual_att, overload_attrition_factor=overload_att_factor,
     turnover_replacement_pct=turnover_pct, burnout_pct_per_red_month=burnout_pct,
     overstaff_penalty_per_fte_month=overstaff_pen, swb_violation_penalty=swb_pen,
@@ -1800,7 +1810,7 @@ with tabs[0]:
   <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents · rounded to nearest 0.25 · {cfg.fte_shifts_per_week:.0f} shifts/wk per Provider · {cfg.operating_days_per_week}-day schedule ({fts:.2f}× slot)</span></div>
   <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
   <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
-  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/Provider</span></div>
+  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load*(1+cfg.yellow_threshold_pct/100):.1f} · Red >{budget_load*(1+cfg.red_threshold_pct/100):.1f} pts/Provider</span></div>
 </div>
 
 </body>
@@ -3245,10 +3255,12 @@ with tabs[2]:
                     marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
                     row=1,col=1)
     # Build threshold lines; stagger labels vertically when values are close
+    _y_ceil = budget * (1 + cfg.yellow_threshold_pct / 100)
+    _r_ceil = budget * (1 + cfg.red_threshold_pct    / 100)
     _thresholds = [
-        (budget,                                                                          "Green ceiling", C_GREEN),
-        (budget + cfg.yellow_threshold_above if cfg.yellow_threshold_above > 0 else budget + 0.01, "Yellow",        C_YELLOW),
-        (budget + cfg.red_threshold_above,                                                "Red",           C_RED),
+        (budget,   f"Green  {budget:.0f}",           C_GREEN),
+        (_y_ceil,  f"Yellow {_y_ceil:.1f} (+{cfg.yellow_threshold_pct:.0f}%)",  C_YELLOW),
+        (_r_ceil,  f"Red    {_r_ceil:.1f} (+{cfg.red_threshold_pct:.0f}%)",     C_RED),
     ]
     _sorted_thresh = sorted(_thresholds, key=lambda t: t[0])
     for _ti, (yv, lbl, col) in enumerate(_sorted_thresh):
@@ -3652,9 +3664,11 @@ with tabs[7]:
                     line=dict(color=_line_clr, width=2.5, dash="dash"),
                     marker=dict(size=8, line=dict(color="white", width=1.5)))
     for yv, lbl, col in [
-        (budget, "Green ceiling", C_GREEN),
-        (budget + (cfg.yellow_threshold_above if cfg.yellow_threshold_above > 0 else 0.01), "Yellow", C_YELLOW),
-        (budget + cfg.red_threshold_above, "Red", C_RED)
+        (budget, f"Green  {budget:.0f}", C_GREEN),
+        (budget * (1 + cfg.yellow_threshold_pct / 100),
+         f"Yellow {budget*(1+cfg.yellow_threshold_pct/100):.1f} (+{cfg.yellow_threshold_pct:.0f}%)", C_YELLOW),
+        (budget * (1 + cfg.red_threshold_pct / 100),
+         f"Red {budget*(1+cfg.red_threshold_pct/100):.1f} (+{cfg.red_threshold_pct:.0f}%)", C_RED)
     ]:
         fma.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.5,
                       annotation_text=lbl, annotation_position="right",
@@ -3731,8 +3745,16 @@ with tabs[8]:
                     name="Base scenario",line=dict(color=NAVY,width=2.5))
     fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
                     name=f"Stress (+{shock_mag*100:.0f}%)",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
-        fs2.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
+    _st_yceil = budget * (1 + cfg.yellow_threshold_pct / 100)
+    _st_rceil = budget * (1 + cfg.red_threshold_pct    / 100)
+    for yv,lbl,col in [
+        (budget,      f"Green  {budget:.0f}",                                         C_GREEN),
+        (_st_yceil,   f"Yellow {_st_yceil:.1f} (+{cfg.yellow_threshold_pct:.0f}%)",   C_YELLOW),
+        (_st_rceil,   f"Red    {_st_rceil:.1f} (+{cfg.red_threshold_pct:.0f}%)",      C_RED),
+    ]:
+        fs2.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.5,
+                      annotation_text=lbl, annotation_position="right",
+                      annotation_font=dict(size=9, color=col))
     fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
     fs2.update_yaxes(title_text="Pts/Provider/Shift")
     st.plotly_chart(fs2,use_container_width=True)
