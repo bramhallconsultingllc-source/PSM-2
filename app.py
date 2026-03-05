@@ -3,10 +3,10 @@ PSM — Predictive Staffing Model  v6
 McKinsey-grade editorial design.
 
 New in v6:
-  1. Load-band optimizer — target pts/APC range; FTE derived monthly from demand
+  1. Load-band optimizer — target pts/Provider range; FTE derived monthly from demand
   2. Attrition-as-burnout function — overwork amplifies attrition
   3. Stress test tab — volume shock with comparison overlay
-  4. Marginal APC analysis — cost of one more APC, payback, months saved
+  4. Marginal Provider analysis — cost of one more provider, payback, months saved
   5. Hire calendar tab — explicit post/start/independent dates per hire event
   6. Attrition sensitivity slider — overload factor control
 """
@@ -391,8 +391,8 @@ with st.sidebar:
     with st.expander("BASE DEMAND", expanded=True):
         base_visits = st.number_input("Visits / Day", 1.0, 300.0, 32.0, 1.0,
             help="Average patient visits per day across all shifts. Starting point for all demand calculations.")
-        budget_ppp  = st.number_input("Pts / APC / Shift", 10.0, 60.0, 36.0, 1.0,
-            help="Budgeted patient throughput per APC per shift. 36 = Green ceiling; above this enters Yellow zone.")
+        budget_ppp  = st.number_input("Pts / Provider / Shift", 10.0, 60.0, 36.0, 1.0,
+            help="Budgeted patient throughput per provider per shift. 36 = Green ceiling; above this enters Yellow zone.")
         annual_growth = st.slider("Annual Volume Growth %", 0.0, 30.0, 10.0, 0.5,
             help="Expected year-over-year visit growth, compounded monthly. Drives rising FTE demand in years 2-3, and increases the cost of understaffing since more visits are at risk in later years.")
         peak_factor = 1.0  # removed from UI — use quarterly seasonality for volume adjustments
@@ -426,19 +426,19 @@ with st.sidebar:
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
 
     with st.expander("LOAD BAND TARGET", expanded=True):
-        st.caption("Optimizer targets a pts/APC range. FTE derived monthly from demand.")
+        st.caption("Optimizer targets a pts/Provider range. FTE derived monthly from demand.")
         lb1, lb2c = st.columns(2)
-        with lb1:  load_lo     = st.number_input("Band Floor (pts/APC)", 15.0, 50.0, 30.0, 1.0,
-            help="Minimum acceptable load. If load drops BELOW this, the optimizer sheds or pauses hiring — you have more staff than demand requires. Set this to your comfortable lower utilization bound (e.g. 28 pts/APC).")
-        with lb2c: load_hi     = st.number_input("Band Ceiling (pts/APC)", 20.0, 60.0, 38.0, 1.0,
-            help="Maximum acceptable load. If load rises ABOVE this, the optimizer adds flex coverage — demand is exceeding your permanent staff capacity. Set this to just below your Green ceiling (e.g. 36 pts/APC).")
-        load_winter = st.number_input("Winter Load Target (pts/APC)", 15.0, 60.0, 36.0, 1.0,
+        with lb1:  load_lo     = st.number_input("Band Floor (pts/Provider)", 15.0, 50.0, 30.0, 1.0,
+            help="Minimum acceptable load. If load drops BELOW this, the optimizer sheds or pauses hiring — you have more staff than demand requires. Set this to your comfortable lower utilization bound (e.g. 28 pts/Provider).")
+        with lb2c: load_hi     = st.number_input("Band Ceiling (pts/Provider)", 20.0, 60.0, 38.0, 1.0,
+            help="Maximum acceptable load. If load rises ABOVE this, the optimizer adds flex coverage — demand is exceeding your permanent staff capacity. Set this to just below your Green ceiling (e.g. 36 pts/Provider).")
+        load_winter = st.number_input("Winter Load Target (pts/Provider)", 15.0, 60.0, 36.0, 1.0,
         help="Target load during Nov–Feb flu season. Can be set tighter (lower) to ensure flu surge capacity, or at Green ceiling (36) for efficient use of winter hires.")
         use_band    = st.checkbox("Use Load Band Mode", value=True)
         min_coverage = st.number_input("Minimum Coverage FTE", 0.5, 10.0, 2.33, 0.1,
             help="FTE floor enforced at all times — clinic never drops below this. Default 2.33 = 1 provider × 7 days ÷ 3 shifts/week for 7-day coverage. Use 1.67 for 5-day, 2.0 for 6-day.")
         if use_band:
-            st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/APC  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
+            st.caption(f"Band: **{load_lo:.0f}** - **{load_hi:.0f}** pts/Provider  |  Winter: **{load_winter:.0f}**  |  Min: **{min_coverage:.2f} FTE**")
 
     with st.expander("SHIFT STRUCTURE"):
         op_days   = st.number_input("Operating Days/Week", 1, 7, 7,
@@ -449,15 +449,15 @@ with st.sidebar:
         # from volume/budget math. The operator sees the fractional result as
         # shift scheduling guidance (e.g. 1.25 APCs = one 12h + one 4h shift).
         shifts_day = 1
-        fte_shifts = st.number_input("Shifts/Week per APC", 1.0, 7.0, 3.0, 0.5,
-            help="How many shifts per week each APC is contracted to work. Key driver of FTE-per-slot: 7 days / 3 shifts = 2.33 FTE needed per concurrent slot.")
+        fte_shifts = st.number_input("Shifts/Week per Provider", 1.0, 7.0, 3.0, 0.5,
+            help="How many shifts per week each provider is contracted to work. Key driver of FTE-per-slot: 7 days / 3 shifts = 2.33 FTE needed per concurrent slot.")
         fte_frac   = st.number_input("FTE Fraction of Contract", 0.1, 1.0, 0.9, 0.05,
-            help="The FTE value assigned to one APC contract. 0.9 = each APC counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
+            help="The FTE value assigned to one provider contract. 0.9 = each provider counts as 0.9 FTE for cost purposes. Does not affect scheduling coverage math.")
 
     with st.expander("STAFFING MODEL"):
         flu_anchor        = st.selectbox("Flu Anchor Month", list(range(1,13)), index=11,
                                          format_func=lambda x: MONTH_NAMES[x-1],
-                                         help="The month by which you need fully independent APCs on floor. Drives requisition posting deadline calculation.")
+                                         help="The month by which you need fully independent providers on floor. Drives requisition posting deadline calculation.")
         summer_shed_floor = 85  # removed from UI — load-band optimizer handles shed floor implicitly
 
     with st.expander("PROVIDER COMPENSATION"):
@@ -467,7 +467,7 @@ with st.sidebar:
 
         # APC % slider — physician % auto-derives
         _apc_pct = st.slider("APC coverage %", 0, 100, 100, 5,
-            help="Percent of provider hours covered by APCs (NPs/PAs). Physician % = 100 − APC %.")
+            help="Percent of provider hours covered by APCs/Physicians (NPs/PAs/MDs). Physician % = 100 − APC %.")
         _phys_pct = 100 - _apc_pct
         st.caption(f"APC **{_apc_pct}%**  ·  Physician **{_phys_pct}%**")
 
@@ -475,7 +475,7 @@ with st.sidebar:
         with _pm1:
             _apc_salary = st.number_input("APC salary — fully loaded ($)",
                 100_000, 500_000, 175_000, 5_000, format="%d",
-                help="Fully loaded annual cost per APC — base salary, benefits, malpractice.")
+                help="Fully loaded annual cost per provider — base salary, benefits, malpractice.")
         with _pm2:
             _phys_salary = st.number_input("Physician salary — fully loaded ($)",
                 100_000, 800_000, 280_000, 10_000, format="%d",
@@ -493,15 +493,15 @@ with st.sidebar:
         rev_visit   = st.number_input("Net Revenue/Visit ($)", 50.0, 300.0, 140.0, 5.0,
             help="Net revenue collected per patient visit after payer mix adjustments. Used to estimate lost revenue during Red months when patient throughput is capped.")
         swb_target  = st.number_input("SWB Target ($/Visit)", 5.0, 150.0, 85.0, 1.0,
-            help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes APC + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
+            help="Salary, wages & benefits cost per visit — your key efficiency metric. Includes provider + support staff costs divided by annual visits. Exceeding this triggers a penalty in the optimizer.")
         fixed_overhead = st.number_input("Monthly Fixed Overhead ($)", 0, 500_000, 0, 5_000, format="%d",
             help="Optional: rent, non-clinical staff, equipment, etc. When $0, output is EBITDA Contribution from Staffing. When > $0, reflects full EBITDA. Does not affect FTE optimizer.")
 
-    with st.expander("SUPPORT STAFF  (SWB only)"):
+    with st.expander("SUPPORT STAFF"):
         st.caption("Costs fold into SWB/visit only — not included in FTE optimizer.")
 
         flex_cost_i = st.number_input("Premium / Flex APC Cost/Year ($)", 100_000, 600_000, 225_000, 10_000, format="%d",
-            help="Annualized cost of a flex or locum APC. Typically 30–50% above perm due to agency fees. Applied when load exceeds Yellow threshold and flex coverage is needed.")
+            help="Annualized cost of a flex or locum provider. Typically 30–50% above perm due to agency fees. Applied when load exceeds Yellow threshold and flex coverage is needed.")
 
         # ── 1. Comp multipliers ───────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
@@ -534,14 +534,14 @@ with st.sidebar:
         # ── 3. Staffing ratios ────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
                     "letter-spacing:0.12em;color:#7A8799;padding:0.5rem 0 0.25rem;'>"
-                    "STAFFING RATIOS  (per APC on floor)</div>", unsafe_allow_html=True)
+                    "STAFFING RATIOS  (per provider on floor)</div>", unsafe_allow_html=True)
         ra1,ra2 = st.columns(2)
-        with ra1: ma_ratio  = st.number_input("MA per APC", 0.0, 4.0, 1.0, 0.25,
-            help="Medical assistants per APC on floor per shift. 1.0 = one MA for every APC. Scales with concurrent APC count each month.")
-        with ra2: psr_ratio = st.number_input("PSR per APC", 0.0, 4.0, 1.0, 0.25,
-            help="Patient service reps (front desk) per APC on floor. 1.0 = one PSR per APC. Scales with concurrent APC count.")
+        with ra1: ma_ratio  = st.number_input("MA per Provider", 0.0, 4.0, 1.0, 0.25,
+            help="Medical assistants per provider on floor per shift. 1.0 = one MA for every provider. Scales with concurrent provider count each month.")
+        with ra2: psr_ratio = st.number_input("PSR per Provider", 0.0, 4.0, 1.0, 0.25,
+            help="Patient service reps (front desk) per provider on floor. 1.0 = one PSR per provider. Scales with concurrent provider count.")
         rt_flat = st.number_input("Rad Tech FTE (flat per shift)", 0.0, 4.0, 1.0, 0.5,
-            help="Rad tech FTE per shift — flat cost regardless of how many APCs are on floor. 1.0 = one RT always present when clinic is open.")
+            help="Rad tech FTE per shift — flat cost regardless of how many providers are on floor. 1.0 = one RT always present when clinic is open.")
 
         # ── 4. Supervision ────────────────────────────────────────────────────
         st.markdown("<div style='font-size:0.62rem;font-weight:700;text-transform:uppercase;"
@@ -549,7 +549,7 @@ with st.sidebar:
                     "SUPERVISION  (cost added only when hrs > 0)</div>", unsafe_allow_html=True)
         sv1,sv2 = st.columns(2)
         with sv1: phys_sup_hrs  = st.number_input("Physician sup (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
-            help="Hours/month a supervising physician is on-site or available. Cost = physician rate × hours × multiplier. Leave at 0 if APCs practice independently.")
+            help="Hours/month a supervising physician is on-site or available. Cost = physician rate × hours × multiplier. Leave at 0 if providers practice independently.")
         with sv2: sup_admin_hrs = st.number_input("Supervisor admin (hrs/mo)", 0.0, 200.0, 0.0, 5.0,
             help="Hours/month for an operations supervisor or clinical lead. Cost = supervisor rate × hours × multiplier. Leave at 0 if not applicable.")
         if phys_sup_hrs > 0 or sup_admin_hrs > 0:
@@ -568,7 +568,7 @@ with st.sidebar:
         days_ind  = st.number_input("Days to Onboard/Train", 7, 180, 30, 7,
             help="Days from credentialed start date to working fully independently. Includes orientation, EMR training, and supervised shifts before solo practice.")
         annual_att = st.number_input("Annual Attrition Rate %", 1.0, 50.0, 18.0, 1.0,
-            help="Expected annual turnover as % of total staff. 18% = roughly 1 in 6 APCs leaves per year. Divided by 12 for monthly simulation. Increases with overwork if Overload Attrition Factor > 0.")
+            help="Expected annual turnover as % of total staff. 18% = roughly 1 in 6 providers leaves per year. Divided by 12 for monthly simulation. Increases with overwork if Overload Attrition Factor > 0.")
         st.caption(f"Monthly rate: **{annual_att/12:.2f}%**")
 
     with st.expander("ATTRITION SENSITIVITY"):
@@ -613,7 +613,7 @@ with st.sidebar:
         # ── Burnout & optimizer penalties ─────────────────────────────────────
         tp2,tp3 = st.columns(2)
         with tp2: burnout_pct   = st.number_input("Burnout Penalty (% sal/red mo)", 5.0, 100.0, 25.0, 5.0,
-            help="Economic penalty per Red zone month as % of annual APC salary. 25% = $43,750 per Red month on a $175k salary.")
+            help="Economic penalty per Red zone month as % of annual provider salary. 25% = $43,750 per Red month on a $175k provider salary.")
         with tp3: overstaff_pen = st.number_input("Overstaff ($/FTE-mo)", 500, 20_000, 3_000, 500, format="%d",
             help="Penalty per FTE-month of overstaffing. Keeps optimizer from over-hiring.")
         swb_pen = st.number_input("SWB Violation ($)", 50_000, 2_000_000, 500_000, 50_000, format="%d",
@@ -1086,7 +1086,7 @@ def _yr_card_html(d, yr_label, target):
     # Section label style
     _sec = "font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#7A8799;"
 
-    zones = f"{d['G']}G / {d['Y']}Y / {d['R']}R &nbsp;&middot;&nbsp; Peak {d['peak']:.1f} pts/APC"
+    zones = f"{d['G']}G / {d['Y']}Y / {d['R']}R &nbsp;&middot;&nbsp; Peak {d['peak']:.1f} pts/Provider"
     return (
         f"<div style='background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px;"
         f"padding:0.85rem 1rem 0.8rem;box-shadow:0 1px 3px rgba(0,0,0,0.04);'>"
@@ -1305,14 +1305,14 @@ def _build_simulation_context(pol, cfg, MA):
         "=== PSM SIMULATION STATE ===",
         f"Base visits/day: {cfg.base_visits_per_day}",
         f"Annual growth: {cfg.annual_growth_pct}%",
-        f"Budgeted pts/APC/day: {cfg.budgeted_patients_per_provider_per_day}",
+        f"Budgeted pts/Provider/day: {cfg.budgeted_patients_per_provider_per_day}",
         f"APC annual cost (perm): ${cfg.annual_provider_cost_perm:,}",
         f"APC annual cost (flex): ${cfg.annual_provider_cost_flex:,}",
         f"Revenue/visit: ${cfg.net_revenue_per_visit}",
         f"SWB target/visit: ${cfg.swb_target_per_visit}",
         f"Annual attrition: {cfg.annual_attrition_pct}%  monthly: {cfg.monthly_attrition_rate*100:.3f}%",
         f"Pipeline: {cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + {cfg.days_to_independent}d orient = {cfg.days_to_sign+cfg.days_to_credential+cfg.days_to_independent}d total",
-        f"Shifts: {cfg.fte_shifts_per_week} shifts/wk per APC, {cfg.shift_hours}h shift, {cfg.operating_days_per_week} days/wk",
+        f"Shifts: {cfg.fte_shifts_per_week} shifts/wk per Provider, {cfg.shift_hours}h shift, {cfg.operating_days_per_week} days/wk",
         f"Min coverage FTE: {cfg.min_coverage_fte}",
         "",
         "=== 3-YEAR OUTCOMES ===",
@@ -1356,9 +1356,9 @@ def _build_simulation_context(pol, cfg, MA):
         "=== SUPPORT STAFF CONFIGURATION ===",
         f"Comp multiplier: {mult:.2f}x  (benefits {sup.benefits_load_pct*100:.0f}% + bonus {sup.bonus_pct*100:.0f}% + OT/sick {sup.ot_sick_pct*100:.0f}%)",
         f"Hourly rates (base): MA ${sup.ma_rate_hr:.2f}/hr  PSR ${sup.psr_rate_hr:.2f}/hr  RT ${sup.rt_rate_hr:.2f}/hr  Supervisor ${sup.supervisor_rate_hr:.2f}/hr",
-        f"Staffing ratios: MA {sup.ma_ratio:.2f}/APC  PSR {sup.psr_ratio:.2f}/APC  RT {sup.rt_flat_fte:.2f} flat/shift",
+        f"Staffing ratios: MA {sup.ma_ratio:.2f}/Provider  PSR {sup.psr_ratio:.2f}/Provider  RT {sup.rt_flat_fte:.2f} flat/shift",
         f"Physician supervision: {sup.supervisor_hrs_mo:.0f} hrs/mo  Supervisor admin: {sup.supervisor_admin_mo:.0f} hrs/mo",
-        f"Avg concurrent APCs on floor: {avg_apc_on_floor:.2f}",
+        f"Avg concurrent Providers on floor: {avg_apc_on_floor:.2f}",
         "",
         "Annualised support staff costs (at current ratios):",
         f"  MA:            ${ma_ann:,.0f}/yr",
@@ -1371,11 +1371,11 @@ def _build_simulation_context(pol, cfg, MA):
         "Ratio sensitivity (annual cost impact per +-0.25 ratio change):",
         f"  +-0.25 MA ratio  = +-${ma_per_025:,.0f}/yr",
         f"  +-0.25 PSR ratio = +-${psr_per_025:,.0f}/yr",
-        "(Approximate — based on avg APC floor count; varies month-to-month with FTE ramp)",
+        "(Approximate — based on avg provider floor count; varies month-to-month with FTE ramp)",
     ]
 
     lines.append("")
-    lines.append("=== MONTHLY DETAIL (demand_fte | paid_fte | zone | pts/APC) ===")
+    lines.append("=== MONTHLY DETAIL (demand_fte | paid_fte | zone | pts/Provider) ===")
     for mo in mos:
         lines.append(
             f"  Y{mo.year}-{MA[mo.calendar_month-1]}: "
@@ -1420,7 +1420,7 @@ Your role:
 tabs = st.tabs([
     "Staffing Model", "Executive Summary",
     "36-Month Load", "Hire Calendar", "Shift Coverage", "Seasonality",
-    "Cost Breakdown", "Marginal APC", "Stress Test",
+    "Cost Breakdown", "Marginal Provider", "Stress Test",
     "Policy Heatmap", "Req Timing", "Data Table", "Math & Logic", "Turnover Cost",
     "Sensitivity", "Advisor",
 ])
@@ -1710,19 +1710,19 @@ with tabs[0]:
   </div>
   <div class="doc-meta">
     Generated {_print_date}<br>
-    Base {cfg.base_visits_per_day:.0f} vpd · {cfg.annual_growth_pct:.0f}% growth · Budget {budget_load:.0f} pts/APC
+    Base {cfg.base_visits_per_day:.0f} vpd · {cfg.annual_growth_pct:.0f}% growth · Budget {budget_load:.0f} pts/Provider
   </div>
 </div>
 
 <div class="config-strip">
   <div class="cfg-item"><span class="cfg-label">Operating Days/Wk</span><span class="cfg-value">{cfg.operating_days_per_week}</span></div>
   <div class="cfg-item"><span class="cfg-label">Shift Hours</span><span class="cfg-value">{cfg.shift_hours:.0f}h</span></div>
-  <div class="cfg-item"><span class="cfg-label">Shifts/Wk per APC</span><span class="cfg-value">{cfg.fte_shifts_per_week:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">Shifts/Wk per Provider</span><span class="cfg-value">{cfg.fte_shifts_per_week:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">FTE per Slot</span><span class="cfg-value">{fts:.2f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">MA Ratio (per APC)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">PSR Ratio (per APC)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">MA Ratio (per Provider)</span><span class="cfg-value">{sup.ma_ratio:.1f}</span></div>
+  <div class="cfg-item"><span class="cfg-label">PSR Ratio (per Provider)</span><span class="cfg-value">{sup.psr_ratio:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">RT (flat/shift)</span><span class="cfg-value">{sup.rt_flat_fte:.1f}</span></div>
-  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/APC</span></div>
+  <div class="cfg-item"><span class="cfg-label">WLT</span><span class="cfg-value">{cfg.load_winter_target:.0f} pts/Provider</span></div>
   <div class="cfg-item"><span class="cfg-label">Base FTE</span><span class="cfg-value">{best.base_fte:.1f}</span></div>
   <div class="cfg-item"><span class="cfg-label">Winter FTE</span><span class="cfg-value">{best.winter_fte:.1f}</span></div>
 </div>
@@ -1756,10 +1756,10 @@ with tabs[0]:
 
 <div class="footnotes">
   <div class="fn-item"><span class="fn-key">Staff/Day</span><span>Concurrent positions on the floor each operating day · rounded to nearest 0.25</span></div>
-  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents · rounded to nearest 0.25 · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC · {cfg.operating_days_per_week}-day schedule ({fts:.2f}× slot)</span></div>
+  <div class="fn-item"><span class="fn-key">FTE</span><span>Full-time equivalents · rounded to nearest 0.25 · {cfg.fte_shifts_per_week:.0f} shifts/wk per Provider · {cfg.operating_days_per_week}-day schedule ({fts:.2f}× slot)</span></div>
   <div class="fn-item"><span class="fn-key">MA / PSR</span><span>Scale with providers on floor at {sup.ma_ratio:.1f}× and {sup.psr_ratio:.1f}× ratios respectively</span></div>
   <div class="fn-item"><span class="fn-key">Rad Tech</span><span>Flat {sup.rt_flat_fte:.1f} concurrent slot regardless of provider count</span></div>
-  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/APC</span></div>
+  <div class="fn-item"><span class="fn-key">Zone</span><span>Dominant zone across the quarter — Green ≤{budget_load:.0f} · Yellow ≤{budget_load+cfg.red_threshold_above:.0f} · Red >{budget_load+cfg.red_threshold_above:.0f} pts/Provider</span></div>
 </div>
 
 </body>
@@ -1796,7 +1796,7 @@ with tabs[0]:
         f"<p style='font-size:0.72rem;color:{SLATE};'>"
         f"Ratios: MA {sup.ma_ratio:.1f}× · PSR {sup.psr_ratio:.1f}× · RT flat {sup.rt_flat_fte:.1f} · "
         f"FTE/slot {fts:.2f} · Shift {cfg.shift_hours:.0f}h · "
-        f"{cfg.operating_days_per_week} days/wk · {cfg.fte_shifts_per_week:.0f} shifts/wk per APC</p>",
+        f"{cfg.operating_days_per_week} days/wk · {cfg.fte_shifts_per_week:.0f} shifts/wk per Provider</p>",
         unsafe_allow_html=True
     )
 # ── TAB 1: Executive Summary ────────────────────────────────────────────────
@@ -1954,7 +1954,7 @@ with tabs[1]:
             r_saved   = ma.get("red_months_saved", 0)
             y_saved   = ma.get("yellow_months_saved", 0)
             if pb_months is not None and pb_months <= 0:
-                marginal_prose = (f"The marginal APC signal is urgent: adding 0.5 FTE generates "
+                marginal_prose = (f"The marginal provider signal is urgent: adding 0.5 FTE generates "
                                   f"${abs(net_ann)/1e3:.0f}K net annual benefit with immediate payback, "
                                   f"saving {r_saved}R + {y_saved}Y months. This clinic is currently understaffed "
                                   f"relative to demand — the next hire should be prioritized.")
@@ -1967,11 +1967,11 @@ with tabs[1]:
                                   f"with a {pb_months:.0f}-month payback. Worthwhile but not urgent — "
                                   f"plan for the Year 2 growth window.")
             else:
-                marginal_prose = (f"The marginal APC analysis shows a negative return of ${abs(net_ann)/1e3:.0f}K/year "
+                marginal_prose = (f"The marginal provider analysis shows a negative return of ${abs(net_ann)/1e3:.0f}K/year "
                                   f"for an additional 0.5 FTE — the current staffing level is at or above the EBITDA-optimal point. "
                                   f"Focus on retention over recruitment.")
         else:
-            marginal_prose = "Run the marginal APC analysis for specific hire recommendations."
+            marginal_prose = "Run the marginal provider analysis for specific hire recommendations."
 
         # Hire calendar interpretation
         hire_events = pol.hire_events
@@ -2032,7 +2032,7 @@ with tabs[1]:
             actions.append(
                 f"Tighten the Winter Load Target — current burnout cost of ${burnout/1e3:.0f}K suggests "
                 f"providers are being pushed too hard during flu season. Reducing the winter load target "
-                f"by 2 pts/APC typically reduces burnout cost by 60–80% with a net EBITDA improvement "
+                f"by 2 pts/Provider typically reduces burnout cost by 60–80% with a net EBITDA improvement "
                 f"once the turnover savings are counted."
             )
 
@@ -2067,7 +2067,7 @@ with tabs[1]:
         replace_cost = cfg.annual_provider_cost_perm * cfg.turnover_replacement_pct / 100
         if tot_turnover > 4:
             actions.append(
-                f"Prioritize APC retention — {tot_turnover:.1f} projected turnover events over 3 years "
+                f"Prioritize provider retention — {tot_turnover:.1f} projected turnover events over 3 years "
                 f"at ${replace_cost:,.0f} replacement cost each represents ${tot_turnover * replace_cost/1e3:.0f}K "
                 f"in avoidable spend. Retention bonuses or schedule flexibility investments below this threshold "
                 f"are immediately EBITDA-accretive."
@@ -2134,9 +2134,9 @@ with tabs[1]:
     headline_capture  = memo['capture_prose']
     headline_zone     = memo['zone_prose']
     headline_swb      = memo['swb_prose']
-    yr1_zones     = f"{yr1['G']}G / {yr1['Y']}Y / {yr1['R']}R &nbsp;&middot;&nbsp; Peak {yr1['peak']:.1f} pts/APC"
-    yr2_zones     = f"{yr2['G']}G / {yr2['Y']}Y / {yr2['R']}R &nbsp;&middot;&nbsp; Peak {yr2['peak']:.1f} pts/APC"
-    yr3_zones     = f"{yr3['G']}G / {yr3['Y']}Y / {yr3['R']}R &nbsp;&middot;&nbsp; Peak {yr3['peak']:.1f} pts/APC"
+    yr1_zones     = f"{yr1['G']}G / {yr1['Y']}Y / {yr1['R']}R &nbsp;&middot;&nbsp; Peak {yr1['peak']:.1f} pts/Provider"
+    yr2_zones     = f"{yr2['G']}G / {yr2['Y']}Y / {yr2['R']}R &nbsp;&middot;&nbsp; Peak {yr2['peak']:.1f} pts/Provider"
+    yr3_zones     = f"{yr3['G']}G / {yr3['Y']}Y / {yr3['R']}R &nbsp;&middot;&nbsp; Peak {yr3['peak']:.1f} pts/Provider"
     def _swb_impact_label(yr_d, target):
         imp  = yr_d["swb_impact"]
         var  = yr_d["swb_variance"]
@@ -2539,7 +2539,7 @@ with tabs[1]:
             return [
                 Paragraph(f"YEAR {n}", sty(f"yh{n}", fontSize=6.5, textColor=RM,
                            fontName="Helvetica-Bold", leading=9, spaceAfter=2)),
-                Paragraph(f"{yd['G']}G / {yd['Y']}Y / {yd['R']}R  ·  Peak {yd['peak']:.1f} pts/APC",
+                Paragraph(f"{yd['G']}G / {yd['Y']}Y / {yd['R']}R  ·  Peak {yd['peak']:.1f} pts/Provider",
                            sty(f"yz{n}", fontSize=7.5, textColor=RS, leading=10, spaceAfter=4)),
                 # Labor section
                 Paragraph("LABOR", sty(f"yls{n}", fontSize=6, textColor=RM,
@@ -2683,7 +2683,7 @@ with tabs[1]:
         story.append(Paragraph(
             f"Pipeline: {cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + "
             f"{cfg.days_to_independent}d onboard = {_lead}d.  "
-            f"APCs are 0% productive until credentialing completes.",
+            f"Providers are 0% productive until credentialing completes.",
             sty("hn", fontSize=7.5, textColor=RM, leading=10, spaceAfter=3)))
 
         # Narrative prose sections removed — data is represented in structured tables above
@@ -2882,7 +2882,7 @@ with tabs[1]:
              max(10.0, cfg.base_visits_per_day * 0.75),
              cfg.base_visits_per_day * 1.35,
              f"{cfg.base_visits_per_day*0.75:.0f} vpd", f"{cfg.base_visits_per_day*1.35:.0f} vpd"),
-            ("Pts / APC / Day Budget", "budgeted_patients_per_provider_per_day",
+            ("Pts / Provider / Day Budget", "budgeted_patients_per_provider_per_day",
              max(18.0, cfg.budgeted_patients_per_provider_per_day - 8),
              cfg.budgeted_patients_per_provider_per_day + 8,
              f"{cfg.budgeted_patients_per_provider_per_day-8:.0f} pts",
@@ -3150,7 +3150,7 @@ with tabs[1]:
     )
     st.caption(
         f"Policy held fixed at Base {best.base_fte:.1f} FTE · Winter {best.winter_fte:.1f} FTE · "
-        f"WLT {cfg.load_winter_target:.0f} pts/APC.  "
+        f"WLT {cfg.load_winter_target:.0f} pts/Provider.  "
         f"Deterministic base case: EBITDA ${_base_e:.2f}M · "
         f"SWB ${s['annual_swb_per_visit']:.2f}/visit · "
         f"Capture {es['capture_rate']*100:.1f}%."
@@ -3162,7 +3162,7 @@ with tabs[1]:
 # ── TAB 2: 36-Month Load ──────────────────────────────────────────────────────
 with tabs[2]:
     pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
-    st.markdown("## 36-MONTH APC LOAD & FTE TRAJECTORY")
+    st.markdown("## 36-MONTH PROVIDER LOAD & FTE TRAJECTORY")
 
     fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,row_heights=[0.55,0.45])
 
@@ -3181,7 +3181,7 @@ with tabs[2]:
                       annotation_font=dict(size=8,color=C_GREEN),row=1,col=1)
 
     fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
-                    mode="lines+markers",name="Pts/APC/Shift",
+                    mode="lines+markers",name="Pts/Provider/Shift",
                     line=dict(color=NAVY,width=2.5),
                     marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
                     row=1,col=1)
@@ -3211,8 +3211,8 @@ with tabs[2]:
                         name="Monthly attrition (overload-adj)",
                         mode="lines",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7,row=2,col=1)
 
-    fig.update_layout(**mk_layout(height=640,xaxis2=dict(tickangle=-45),title="36-Month APC Load & FTE Trajectory"))
-    fig.update_yaxes(title_text="Pts/APC/Shift",showgrid=True,gridcolor=RULE,row=1,col=1)
+    fig.update_layout(**mk_layout(height=640,xaxis2=dict(tickangle=-45),title="36-Month Provider Load & FTE Trajectory"))
+    fig.update_yaxes(title_text="Pts/Provider/Shift",showgrid=True,gridcolor=RULE,row=1,col=1)
     fig.update_yaxes(title_text="FTE",showgrid=True,gridcolor=RULE,row=2,col=1)
     st.plotly_chart(fig,use_container_width=True)
 
@@ -3291,12 +3291,12 @@ with tabs[4]:
     pol=active_policy(); mos=pol.months; lbls=[mlabel(mo) for mo in mos]
     st.markdown("## SHIFT COVERAGE MODEL")
     e1,e2,e3=st.columns(3)
-    e1.metric("Shifts/Week per APC", f"{cfg.fte_shifts_per_week:.1f}",
-              help="APC contract shifts — coverage denominator (FTE fraction affects cost only)")
+    e1.metric("Shifts/Week per Provider", f"{cfg.fte_shifts_per_week:.1f}",
+              help="provider contract shifts — coverage denominator (FTE fraction affects cost only)")
     e2.metric("FTE per Concurrent Slot", f"{cfg.fte_per_shift_slot:.2f}",
-              help=f"{cfg.operating_days_per_week} days ÷ {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.2f} FTE to keep one slot filled every day")
+              help=f"{cfg.operating_days_per_week} days ÷ {cfg.fte_shifts_per_week} shifts/Provider = {cfg.fte_per_shift_slot:.2f} FTE to keep one slot filled every day")
     e3.metric("Baseline FTE Needed",f"{(base_visits/budget)*cfg.fte_per_shift_slot:.2f}",
-              help="visits/day ÷ pts-per-APC × FTE-per-slot — minimum to staff the floor at base volume")
+              help="visits/day ÷ pts-per-Provider × FTE-per-slot — minimum to staff the floor at base volume")
 
     # Shift scheduling interpreter — translates fractional APC need into practical shift language
     _shift_h = cfg.shift_hours
@@ -3308,7 +3308,7 @@ with tabs[4]:
     else:
         _shift_desc = f"{_full_shifts} full {_shift_h:.0f}h shift{'s' if _full_shifts != 1 else ''}"
     st.info(
-        f"**Peak concurrent need: {_peak_apcs:.2f} APCs on floor** — "
+        f"**Peak concurrent need: {_peak_apcs:.2f} Providers on floor** — "
         f"operationally this is **{_shift_desc}** per day at peak volume "
         f"({_shift_h:.0f}h shift length).",
         icon="🕐"
@@ -3320,24 +3320,24 @@ with tabs[4]:
     gap=[mo.shift_coverage_gap for mo in mos]
 
     fc=go.Figure()
-    fc.add_scatter(x=lbls,y=prov_needed,name="APCs Needed",mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"))
-    fc.add_scatter(x=lbls,y=prov_on_floor,name="APCs on Floor",mode="lines+markers",
+    fc.add_scatter(x=lbls,y=prov_needed,name="Providers Needed",mode="lines",line=dict(color=NAVY,width=2.5,dash="dot"))
+    fc.add_scatter(x=lbls,y=prov_on_floor,name="Providers on Floor",mode="lines+markers",
                    line=dict(color=C_ACTUAL,width=2.5),marker=dict(size=7,color=C_ACTUAL,line=dict(color="white",width=1.5)))
-    fc.add_bar(x=lbls,y=flex_prov,name="Flex APCs",marker_color="rgba(185,28,28,0.28)")
-    fc.update_layout(**mk_layout(height=340,barmode="overlay",xaxis=dict(tickangle=-45),title="Concurrent APCs: Required vs On Floor"))
-    fc.update_yaxes(title_text="Concurrent APCs")
+    fc.add_bar(x=lbls,y=flex_prov,name="Flex Providers",marker_color="rgba(185,28,28,0.28)")
+    fc.update_layout(**mk_layout(height=340,barmode="overlay",xaxis=dict(tickangle=-45),title="Concurrent Providers: Required vs On Floor"))
+    fc.update_yaxes(title_text="Concurrent Providers")
     st.plotly_chart(fc,use_container_width=True)
 
     gap_colors=[C_RED if g>0.05 else(C_YELLOW if g>-0.05 else C_GREEN) for g in gap]
     fg=go.Figure(go.Bar(x=lbls,y=gap,marker_color=gap_colors,hovertext=[f"{mlabel(mo)}: {g:+.2f}" for mo,g in zip(mos,gap)]))
     fg.add_hline(y=0,line_color=SLATE,line_width=1)
     fg.update_layout(**mk_layout(height=220,xaxis=dict(tickangle=-45),title="Coverage Gap ( + = understaffed  |  - = overstaffed )"))
-    fg.update_yaxes(title_text="APCs")
+    fg.update_yaxes(title_text="Providers")
     st.plotly_chart(fg,use_container_width=True)
 
     df_sh=pd.DataFrame([{"Month":mlabel(mo),"Q":f"Q{mo.quarter}","Visits/Day":round(mo.demand_visits_per_day,1),
-        "APCs Needed":round(mo.demand_providers_per_shift,2),"FTE Required":round(mo.demand_fte_required,2),
-        "Paid FTE":round(mo.paid_fte,2),"APCs on Floor":round(mo.providers_on_floor,2),
+        "Providers Needed":round(mo.demand_providers_per_shift,2),"FTE Required":round(mo.demand_fte_required,2),
+        "Paid FTE":round(mo.paid_fte,2),"Providers on Floor":round(mo.providers_on_floor,2),
         "Coverage Gap":round(mo.shift_coverage_gap,2),"Hiring Mode":mo.hiring_mode,"Zone":mo.zone} for mo in mos])
     def _sz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
     def _sg(v):
@@ -3376,7 +3376,7 @@ with tabs[5]:
                        "Adjustment": f"{chr(43) if _mo_vals[mi]>=0 else chr(45)}{_mo_vals[mi]*100:.0f}%",
                        "Avg Visits/Day": f"{np.mean([mo.demand_visits_per_day for mo in mm]):.1f}",
                        "Avg Paid FTE":   f"{np.mean([mo.paid_fte for mo in mm]):.2f}",
-                       "Avg Pts/APC":    f"{np.mean([mo.patients_per_provider_per_shift for mo in mm]):.1f}",
+                       "Avg Pts/Provider":    f"{np.mean([mo.patients_per_provider_per_shift for mo in mm]):.1f}",
                        "Red Months":     sum(1 for mo in mm if mo.zone=="Red"),
                        "In-Band %":      f"{sum(1 for mo in mm if mo.within_band)/len(mm)*100:.0f}%"})
     st.dataframe(pd.DataFrame(mr), use_container_width=True, hide_index=True)
@@ -3467,7 +3467,7 @@ with tabs[6]:
     _spv=_sp/_av if _av else 0; _ssv=_ss/_av if _av else 0
     st.markdown(f"<div style='background:#FDFAED;border-left:3px solid #7A6200;padding:0.7rem 1rem;"
                 f"border-radius:0 3px 3px 0;margin-bottom:1rem;font-size:0.82rem;'>"
-                f"<b>SWB/Visit:</b> APC ${_spv:.2f} + Support ${_ssv:.2f} = <b>${s2['annual_swb_per_visit']:.2f}</b>  |  Target ${cfg.swb_target_per_visit:.2f}</div>",
+                f"<b>SWB/Visit:</b> Provider ${_spv:.2f} + Support ${_ssv:.2f} = <b>${s2['annual_swb_per_visit']:.2f}</b>  |  Target ${cfg.swb_target_per_visit:.2f}</div>",
                 unsafe_allow_html=True)
 
     cl,cr=st.columns([1.1,0.9])
@@ -3496,9 +3496,9 @@ with tabs[6]:
     st.plotly_chart(fst,use_container_width=True)
 
 
-# ── TAB 7: Marginal APC Analysis ─────────────────────────────────────────────
+# ── TAB 7: Marginal Provider Analysis ─────────────────────────────────────────────
 with tabs[7]:
-    st.markdown("## MARGINAL APC ANALYSIS")
+    st.markdown("## MARGINAL PROVIDER ANALYSIS")
     st.caption("Slide left to model reducing FTE, right to model adding FTE — see the cost, savings, and load impact.")
     pol = active_policy()
 
@@ -3581,7 +3581,7 @@ with tabs[7]:
                       annotation_font=dict(size=9, color=col))
     fma.update_layout(**mk_layout(height=340,
                                    title=f"Year 1 Load: Current vs {_delta_lbl}"))
-    fma.update_yaxes(title_text="Pts/APC/Shift")
+    fma.update_yaxes(title_text="Pts/Provider/Shift")
     st.plotly_chart(fma, use_container_width=True)
 
     st.markdown("## FULL RANGE TABLE")
@@ -3654,7 +3654,7 @@ with tabs[8]:
     for yv,lbl,col in [(budget,"Green ceiling",C_GREEN),(budget+cfg.yellow_threshold_above if cfg.yellow_threshold_above>0 else budget+0.01,"Yellow",C_YELLOW),(budget+cfg.red_threshold_above,"Red",C_RED)]:
         fs2.add_hline(y=yv,line_dash="dot",line_color=col,line_width=1.5,annotation_text=lbl,annotation_position="right",annotation_font=dict(size=9,color=col))
     fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
-    fs2.update_yaxes(title_text="Pts/APC/Shift")
+    fs2.update_yaxes(title_text="Pts/Provider/Shift")
     st.plotly_chart(fs2,use_container_width=True)
 
     fs3=go.Figure()
@@ -3736,8 +3736,8 @@ with tabs[11]:
         "Hiring Mode":mo.hiring_mode,"In Band":"Y" if mo.within_band else "N",
         "Visits/Day":round(mo.demand_visits_per_day,1),
         "FTE Required":round(mo.demand_fte_required,2),"Paid FTE":round(mo.paid_fte,2),
-        "APCs on Floor":round(mo.providers_on_floor,2),
-        "Pts/APC/Shift":round(mo.patients_per_provider_per_shift,1),
+        "Providers on Floor":round(mo.providers_on_floor,2),
+        "Pts/Provider/Shift":round(mo.patients_per_provider_per_shift,1),
         "Attrition %/mo":f"{mo.effective_attrition_rate*100:.2f}%",
         "Overload Att":round(mo.overload_attrition_delta,3),
         "Perm Cost":f"${mo.permanent_cost:,.0f}","Support":f"${mo.support_cost:,.0f}",
@@ -3806,7 +3806,7 @@ with tabs[12]:
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — DEMAND DERIVATION
     # ══════════════════════════════════════════════════════════════════════════
-    _h2("① Demand Derivation — Visits → APCs → FTE")
+    _h2("① Demand Derivation — Visits → Providers → FTE")
 
     _y1_jan  = next(mo for mo in mos if mo.year==1 and mo.calendar_month==1)
     _y1_apr  = next(mo for mo in mos if mo.year==1 and mo.calendar_month==4)
@@ -3823,11 +3823,11 @@ with tabs[12]:
         st.markdown(f"**{lbl}**")
         _eq("Base visits/day", f"{base_visits:.0f} base × {mo.seasonal_multiplier:.2f} seasonal × {peak_factor:.2f} peak",
             f"{mo.demand_visits_per_day:.1f} visits/day")
-        _eq("APCs needed (concurrent)", f"{mo.demand_visits_per_day:.1f} visits ÷ {budget_ppp:.0f} pts/APC",
-            f"{mo.demand_providers_per_shift:.3f} APCs on floor")
-        _eq("FTE to sustain that slot", f"{mo.demand_providers_per_shift:.3f} APCs × {cfg.fte_per_shift_slot:.3f} FTE/slot",
+        _eq("Providers needed (concurrent)", f"{mo.demand_visits_per_day:.1f} visits ÷ {budget_ppp:.0f} pts/Provider",
+            f"{mo.demand_providers_per_shift:.3f} Providers on floor")
+        _eq("FTE to sustain that slot", f"{mo.demand_providers_per_shift:.3f} Providers × {cfg.fte_per_shift_slot:.3f} FTE/slot",
             f"{mo.demand_fte_required:.3f} FTE required",
-            note=f"({cfg.operating_days_per_week}d ÷ {cfg.fte_shifts_per_week} shifts/APC = {cfg.fte_per_shift_slot:.3f})")
+            note=f"({cfg.operating_days_per_week}d ÷ {cfg.fte_shifts_per_week} shifts/Provider = {cfg.fte_per_shift_slot:.3f})")
         st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
 
     # Annual growth effect
@@ -3909,7 +3909,7 @@ with tabs[12]:
 
     _total_support_check = sum(mo.support_cost for mo in mos)
     _total_swb_full_check = _total_perm_check + _total_support_check
-    _eq("Monthly support staff cost (Y1-Jan)", f"MA, PSR, Rad Tech per APC on floor",
+    _eq("Monthly support staff cost (Y1-Jan)", f"MA, PSR, Rad Tech per provider on floor",
         f"${_y1_jan.support_cost:,.0f}/mo", note="scales with providers_on_floor")
     _eq("Total SWB (provider + support)", f"${_total_perm_check:,.0f} perm + ${_total_support_check:,.0f} support",
         f"${_total_swb_full_check:,.0f}")
@@ -3965,7 +3965,7 @@ with tabs[12]:
     st.markdown(
         f"<div style='font-size:0.80rem;color:#4A5568;background:#F8FAFC;"
         f"border-left:3px solid #7A8799;padding:0.5rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
-        f"<b>Overload attrition:</b> when pts/APC exceeds the load-band ceiling ({cfg.load_band_hi:.0f}), "
+        f"<b>Overload attrition:</b> when pts/Provider exceeds the load-band ceiling ({cfg.load_band_hi:.0f}), "
         f"the effective rate scales up: <code>rate × (1 + {cfg.overload_attrition_factor:.1f} × excess%)</code>. "
         f"This model has <b>{len(_overload_months)} months</b> with above-baseline attrition.</div>",
         unsafe_allow_html=True)
@@ -3987,8 +3987,8 @@ with tabs[12]:
             f"<div style='font-size:0.80rem;color:#0A6B4A;background:#ECFDF5;"
             f"border-left:3px solid #0A6B4A;padding:0.45rem 0.85rem;border-radius:3px;margin:0.4rem 0;'>"
             f"✅ <b>Zero Red months</b> — no burnout penalty applied. "
-            f"Burnout fires at ${cfg.burnout_penalty_per_red_month:.0f}% of annual APC cost "
-            f"per Red month (pts/APC > {cfg.load_band_hi:.0f}).</div>",
+            f"Burnout fires at ${cfg.burnout_penalty_per_red_month:.0f}% of annual provider cost "
+            f"per Red month (pts/Provider > {cfg.load_band_hi:.0f}).</div>",
             unsafe_allow_html=True)
     _check("Burnout cost vs simulation", es["burnout"], _total_burnout_c)
 
@@ -4006,7 +4006,7 @@ with tabs[12]:
         f"<b>{cfg.days_to_credential}d credentialing</b> + "
         f"<b>{cfg.days_to_independent}d orientation</b> = "
         f"<b>{_lead_days} days ({_lead_months} months)</b> before first productive shift. "
-        f"APCs are <b>binary</b>: 0% productive until credentialing is complete, "
+        f"Providers are <b>binary</b>: 0% productive until credentialing is complete, "
         f"then 100% from day one — no ramp curve.</div>",
         unsafe_allow_html=True)
 
@@ -4113,7 +4113,7 @@ with tabs[13]:
     rows_html += _cost_row("📋", "Paid pipeline — no revenue",
         f"${cfg.annual_provider_cost_perm/12:,.0f}/mo × {_pipeline_mo_tc:.1f} mo",
         _pipeline_tc,
-        f"{cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + {cfg.days_to_independent}d orient — APC on payroll, zero visits")
+        f"{cfg.days_to_sign}d sign + {cfg.days_to_credential}d credential + {cfg.days_to_independent}d orient — provider on payroll, zero visits")
     rows_html += _cost_row("🔄", "Flex/locum premium",
         f"${cfg.annual_provider_cost_flex - cfg.annual_provider_cost_perm:,}/yr premium × {_total_dark}d × 50%",
         _flex_prem_tc,
@@ -4209,7 +4209,7 @@ with tabs[13]:
             f"<div style='font-size:0.78rem;color:#92600A;background:#FFFBEB;"
             f"border-left:3px solid #F59E0B;padding:0.5rem 0.85rem;border-radius:3px;margin-top:0.4rem;'>"
             f"<b>Overload attrition active in {len(_overload_mos)} months</b> — "
-            f"pts/APC exceeded load ceiling, amplifying base attrition rate by "
+            f"pts/Provider exceeded load ceiling, amplifying base attrition rate by "
             f"up to {cfg.overload_attrition_factor:.1f}×. Months: "
             + ", ".join(f"Y{y}-{MA[m-1]}" for y,m,_ in _overload_mos[:8])
             + ("…" if len(_overload_mos) > 8 else "")
@@ -4247,18 +4247,18 @@ with tabs[14]:
          cfg.base_visits_per_day * 1.35,
          f"{cfg.base_visits_per_day*0.75:.0f} vpd", f"{cfg.base_visits_per_day*1.35:.0f} vpd",
          "Daily baseline visit volume (−25% / +35%)"),
-        ("Pts / APC / Day Budget", "budgeted_patients_per_provider_per_day",
+        ("Pts / Provider / Day Budget", "budgeted_patients_per_provider_per_day",
          max(18.0, cfg.budgeted_patients_per_provider_per_day - 8),
          cfg.budgeted_patients_per_provider_per_day + 8,
          f"{cfg.budgeted_patients_per_provider_per_day-8:.0f} pts",
          f"{cfg.budgeted_patients_per_provider_per_day+8:.0f} pts",
-         "Budgeted patient throughput per APC per shift (±8 pts)"),
+         "Budgeted patient throughput per provider per shift (±8 pts)"),
         ("APC Annual Cost",        "annual_provider_cost_perm",
          cfg.annual_provider_cost_perm * 0.80,
          cfg.annual_provider_cost_perm * 1.25,
          f"${cfg.annual_provider_cost_perm*0.80/1e3:.0f}K",
          f"${cfg.annual_provider_cost_perm*1.25/1e3:.0f}K",
-         "Total annual compensation per permanent APC (±20–25%)"),
+         "Total annual compensation per permanent provider (±20–25%)"),
         ("Annual Growth %",        "annual_growth_pct",
          max(0.0, cfg.annual_growth_pct - 5),
          cfg.annual_growth_pct + 10,
@@ -4269,7 +4269,7 @@ with tabs[14]:
          min(50.0, cfg.annual_attrition_pct + 15),
          f"{max(0,cfg.annual_attrition_pct-10):.0f}%",
          f"{min(50,cfg.annual_attrition_pct+15):.0f}%",
-         "Annual APC turnover rate"),
+         "Annual provider turnover rate"),
         ("Credentialing Days",     "days_to_credential",
          max(30, cfg.days_to_credential - 45),
          min(270, cfg.days_to_credential + 60),
