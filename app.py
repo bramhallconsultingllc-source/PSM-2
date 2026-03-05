@@ -422,13 +422,8 @@ with st.sidebar:
         # Normalize so monthly average = 0 → base_visits is true annual average
         _mo_avg = sum(_mo_vals) / 12
         _mo_norm = [x - _mo_avg for x in _mo_vals]
-        # Aggregate to quarterly for simulation (avg of 3 months per quarter)
-        quarterly_impacts = [
-            sum(_mo_norm[0:3])  / 3,   # Q1: Jan–Mar
-            sum(_mo_norm[3:6])  / 3,   # Q2: Apr–Jun
-            sum(_mo_norm[6:9])  / 3,   # Q3: Jul–Sep
-            sum(_mo_norm[9:12]) / 3,   # Q4: Oct–Dec
-        ]
+        # Pass monthly impacts directly to simulation (no quarterly averaging)
+        quarterly_impacts = _mo_norm  # kept as variable name for chart compatibility
         s_idx = [1.0 + _mo_norm[m] for m in range(12)]
         pv = [base_visits * s_idx[m] * peak_factor for m in range(12)]
         st.caption(f"Range: **{min(pv):.0f}** – **{max(pv):.0f}** visits/day  ·  avg **{sum(pv)/12:.1f}**/day")
@@ -643,7 +638,7 @@ support_cfg = SupportStaffConfig(
 )
 cfg = ClinicConfig(
     base_visits_per_day=base_visits, budgeted_patients_per_provider_per_day=budget_ppp,
-    peak_factor=peak_factor, quarterly_volume_impact=quarterly_impacts,
+    peak_factor=peak_factor, monthly_volume_impact=quarterly_impacts,
     annual_growth_pct=annual_growth,
     operating_days_per_week=int(op_days), shifts_per_day=int(shifts_day),
     shift_hours=shift_hrs, fte_shifts_per_week=fte_shifts, fte_fraction=fte_frac,
@@ -748,7 +743,7 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
     fig.add_hline(y=base_visits,line_dash="dash",line_color=SLATE,line_width=1,
                   annotation_text=f"Base {base_visits:.0f}/day",annotation_position="right",
                   annotation_font=dict(size=9,color=SLATE),row=1,col=1)
-    _m_impacts = monthly_impacts if monthly_impacts is not None else         [quarterly_impacts[MONTH_TO_QUARTER[m]] for m in range(12)]
+    _m_impacts = monthly_impacts if monthly_impacts is not None else quarterly_impacts
     for mi, im in enumerate(_m_impacts):
         fig.add_annotation(row=1,col=1,xref="x",yref="paper",x=mi,y=1.0,
                            text=f"{chr(43) if im>=0 else chr(45)}{abs(im*100):.0f}%",
