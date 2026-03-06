@@ -1303,7 +1303,11 @@ _czss_val      = s.get("final_czss", 0.0)
 _czss_peak     = s.get("peak_czss",  0.0)
 _czss_lbl      = s.get("overall_risk_label", "Green")
 _czss_clr      = {"Green": C_GREEN, "Yellow": C_YELLOW, "Red": C_RED, "Critical": C_CRITICAL}.get(_czss_lbl, C_CRITICAL)
-_czss_trend    = "↓ declining" if _czss_val < _czss_peak * 0.9 else ("↑ building" if _czss_val >= _czss_peak * 0.99 else "→ stable")
+# Trend: compare final 3 months to prior 3 months for direction
+_czss_mos   = best.months
+_czss_last3 = sum(m.czss for m in _czss_mos[-3:]) / 3 if len(_czss_mos) >= 3 else _czss_val
+_czss_prev3 = sum(m.czss for m in _czss_mos[-6:-3]) / 3 if len(_czss_mos) >= 6 else _czss_last3
+_czss_trend = "↓ declining" if _czss_last3 < _czss_prev3 - 0.5 else ("↑ building" if _czss_last3 > _czss_prev3 + 0.5 else "→ stable")
 _czss_sub      = f"{_czss_lbl} · peak {_czss_peak:.1f} · {_czss_trend}"
 _h1,_h2,_h3,_h4,_h5,_h6,_h7 = st.columns(7)
 _tile(_h1, f"{best.base_fte:.1f}",   "Base FTE")
