@@ -37,9 +37,10 @@ SURFACE  = "#F8FAFC"
 C_DEMAND = "#003366"
 C_ACTUAL = "#C84B11"
 C_BARS   = "#C5D4E3"
-C_GREEN  = "#0A6B4A"
-C_YELLOW = "#92600A"
-C_RED    = "#B91C1C"
+C_GREEN    = "#0A6B4A"
+C_YELLOW   = "#92600A"
+C_RED      = "#B91C1C"
+C_CRITICAL = "#7F1D1D"   # Dark maroon — patient safety risk (UCA threshold)
 C_STRESS = "#6D28D9"
 C_GOLD   = "#7A6200"          # Sunshine Gold — logo accent
 C_GOLD_BG= "#FDFAED"          # Gold wash for backgrounds
@@ -59,7 +60,7 @@ HIRE_COLORS = {
     "freeze_flu":        SLATE,
     "none":              RULE,
 }
-ZONE_COLORS = {"Green": C_GREEN, "Yellow": C_YELLOW, "Red": C_RED}
+ZONE_COLORS = {"Green": C_GREEN, "Yellow": C_YELLOW, "Red": C_RED, "Critical": C_CRITICAL}
 MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
                "Jul","Aug","Sep","Oct","Nov","Dec"]
 
