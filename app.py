@@ -1355,11 +1355,78 @@ def _openai_key():
     except Exception:
         return None
 
+def _build_risk_assessment(pol, cfg):
+    """Single source of truth for all risk labels. Every tile, scorecard,
+    and AI brief reads from here — never re-derives from raw dollars."""
+    s  = pol.summary
+    es = pol.ebitda_summary
+
+    # Burnout severity: % of captured revenue  (Yellow≥1%, Red≥3%, Critical≥6%)
+    _burnout_pct = (es["burnout"] / es["revenue"] * 100) if es.get("revenue", 0) > 0 else 0.0
+    burnout_severity = (
+        "Critical" if _burnout_pct >= 6.0 else
+        "Red"      if _burnout_pct >= 3.0 else
+        "Yellow"   if _burnout_pct >= 1.0 else "Green"
+    )
+
+    # Turnover severity: actual vs baseline expectation  (Yellow≥5%, Red≥15%, Critical≥30%)
+    _actual_to   = s.get("total_turnover_events", 0)
+    _baseline_to = s.get("baseline_turnover_events", _actual_to)
+    _to_excess   = (_actual_to - _baseline_to) / max(_baseline_to, 0.01) * 100
+    turnover_severity = (
+        "Critical" if _to_excess >= 30 else
+        "Red"      if _to_excess >= 15 else
+        "Yellow"   if _to_excess >= 5  else "Green"
+    )
+
+    # Unmet demand risk: avg unmet % amplified by growth
+    _unmet_pct  = s.get("avg_unmet_demand_pct", 0.0)
+    _unmet_risk = _unmet_pct * (1.0 + cfg.annual_growth_pct / 100)
+    unmet_demand_risk = (
+        "Critical" if _unmet_risk >= 15 else
+        "Red"      if _unmet_risk >= 7  else
+        "Yellow"   if _unmet_risk >= 2  else "Green"
+    )
+
+    # CZSS risk and turnover pressure — already computed by simulation
+    czss_risk         = s.get("overall_risk_label",       "Green")
+    turnover_pressure = s.get("turnover_pressure_label",  "Green")
+
+    # Composite: highest of all five dimensions
+    _rank = {"Green": 0, "Yellow": 1, "Red": 2, "Critical": 3}
+    _all  = {
+        "burnout":           burnout_severity,
+        "turnover":          turnover_severity,
+        "unmet demand":      unmet_demand_risk,
+        "czss":              czss_risk,
+        "turnover pressure": turnover_pressure,
+    }
+    composite_driver = max(_all, key=lambda k: _rank[_all[k]])
+    composite_risk   = _all[composite_driver]
+
+    return {
+        "burnout_severity":      burnout_severity,
+        "burnout_pct":           _burnout_pct,
+        "turnover_severity":     turnover_severity,
+        "turnover_excess_pct":   _to_excess,
+        "unmet_demand_risk":     unmet_demand_risk,
+        "unmet_pct":             _unmet_pct,
+        "czss_risk":             czss_risk,
+        "turnover_pressure":     turnover_pressure,
+        "composite_risk":        composite_risk,
+        "composite_driver":      composite_driver,
+        "peak_czss":             s.get("peak_czss", 0),
+        "final_czss":            s.get("final_czss", 0),
+        "avg_minutes_per_patient": s.get("avg_minutes_per_patient", 0),
+    }
+
+
 def _build_simulation_context(pol, cfg, MA):
     """Serialize the full simulation state into a compact text block for the system prompt."""
     es  = pol.ebitda_summary
     s   = pol.summary
     mos = pol.months
+    ra  = _build_risk_assessment(pol, cfg)
 
     lines = [
         "=== SIP SIMULATION STATE ===",
@@ -1383,7 +1450,18 @@ def _build_simulation_context(pol, cfg, MA):
         f"Burnout penalty: ${es['burnout']:,.0f}",
         f"Visit capture: {es['capture_rate']*100:.1f}%",
         f"SWB/visit actual: ${s['annual_swb_per_visit']:.2f}  target: ${cfg.swb_target_per_visit:.2f}",
-        f"Zone distribution: {s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R",
+        f"Zone distribution: {s['green_months']}G / {s['yellow_months']}Y / {s['red_months']}R / {s.get('critical_months',0)}C",
+        "",
+        "=== RISK ASSESSMENT (use these exact labels — do not re-derive from dollars) ===",
+        f"Composite risk:      {ra['composite_risk']}  (driver: {ra['composite_driver']})",
+        f"Burnout severity:    {ra['burnout_severity']}  ({ra['burnout_pct']:.1f}% of revenue — Yellow≥1% Red≥3% Critical≥6%)",
+        f"Turnover severity:   {ra['turnover_severity']}  ({ra['turnover_excess_pct']:+.0f}% vs baseline — Yellow≥5% Red≥15% Critical≥30%)",
+        f"Unmet demand risk:   {ra['unmet_demand_risk']}  ({ra['unmet_pct']:.1f}% avg unmet, growth-adjusted)",
+        f"CZSS risk:           {ra['czss_risk']}  (peak {ra['peak_czss']:.1f}, final {ra['final_czss']:.1f})",
+        f"Turnover pressure:   {ra['turnover_pressure']}  (leading indicator, CZSS-derived)",
+        f"Avg min/patient:     {ra['avg_minutes_per_patient']:.1f} min  (UCA standard ≥20 min all-in)",
+        "INSTRUCTION: Use the labels above verbatim. Do not use 'significant','moderate','concerning'.",
+        "Example: 'Burnout severity is Red (2.1% of revenue)' not 'burnout is significant'.",
         "",
         "=== RECOMMENDED POLICY ===",
         f"Base FTE: {pol.base_fte}  Winter FTE: {pol.winter_fte}",
