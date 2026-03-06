@@ -4100,6 +4100,66 @@ with tabs[12]:
             unsafe_allow_html=True)
     _check("Burnout cost vs simulation", es["burnout"], _total_burnout_c)
 
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION — CZSS STRESS AUDIT
+    # ══════════════════════════════════════════════════════════════════════════
+    _h2("⑥ CZSS Stress Audit — Cumulative Zone Stress Score")
+    st.markdown(
+        "<div style='font-size:0.82rem;color:#4B5563;margin-bottom:0.6rem;'>"
+        "The Cumulative Zone Stress Score (CZSS) is a duration-weighted risk accumulator. "
+        "Stress deposits each month based on zone and consecutive months in that zone. "
+        "Recovery scales with actual load slack below baseline — a well-staffed summer sheds more stress than a marginal one. "
+        "<b>Source:</b> Zone thresholds anchored to UCA all-in visit time benchmarks (20 min standard, 15 min safety floor)."
+        "</div>", unsafe_allow_html=True)
+
+    with st.expander("CZSS Month-by-Month Audit — expand to inspect risk accumulation", expanded=False):
+        _czss_rows = []
+        for mo in mos:
+            _czss_rows.append({
+                "Month":        mlabel(mo),
+                "Zone":         mo.zone,
+                "Pts/Prov":     f"{mo.patients_per_provider_per_shift:.1f}",
+                "Min/Pt":       f"{mo.minutes_per_patient:.1f}",
+                "Consec":       mo.consecutive_zone_months,
+                "Stress +":     f"{mo.czss_stress_added:.2f}",
+                "Recovery":     f"{mo.czss_recovery:.2f}" if mo.czss_recovery > 0 else "—",
+                "CZSS Balance": f"{mo.czss:.2f}",
+                "Risk":         mo.risk_label,
+                "Turnover P.":  mo.turnover_pressure,
+            })
+        import pandas as pd
+        _czss_df = pd.DataFrame(_czss_rows)
+
+        def _czss_style(row):
+            _zone_bg = {"Green":"#ECFDF5","Yellow":"#FFFBEB","Red":"#FEF2F2","Critical":"#F5E8E8"}
+            bg = _zone_bg.get(row["Zone"], "white")
+            rb = _zone_bg.get(row["Risk"], "white")
+            styles = [""] * len(row)
+            idx = list(row.index)
+            styles[idx.index("Zone")]        = f"background:{bg};font-weight:600"
+            styles[idx.index("Risk")]        = f"background:{rb};font-weight:600"
+            styles[idx.index("Turnover P.")] = f"background:{rb}"
+            return styles
+
+        st.dataframe(
+            _czss_df.style.apply(_czss_style, axis=1),
+            use_container_width=True, hide_index=True, height=400
+        )
+        _peak_mo = max(mos, key=lambda m: m.czss)
+        _c1, _c2, _c3, _c4 = st.columns(4)
+        _c1.metric("Peak CZSS", f"{_peak_mo.czss:.1f}", f"Month {mlabel(_peak_mo)}")
+        _c2.metric("Final CZSS", f"{mos[-1].czss:.1f}")
+        _c3.metric("Total Stress Added", f"{sum(mo.czss_stress_added for mo in mos):.1f}")
+        _c4.metric("Total Recovery", f"{sum(mo.czss_recovery for mo in mos):.1f}")
+        st.caption(
+            f"CZSS Risk thresholds: Green <5  ·  Yellow 5–15  ·  Red 15–30  ·  Critical \u226530  |  "
+            f"Zone weights: Yellow=1.0  ·  Red=3.0  ·  Critical=7.0  |  "
+            f"Persistence: +{cfg.czss_persistence_multiplier:.0%}/consecutive month  |  "
+            f"Recovery: demand-scaled, floor 0.10/mo, ceiling 0.50/mo  |  "
+            f"Source: UCA urgent care visit time benchmarks"
+        )
+
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 5 — HIRING CALENDAR LOGIC
     # ══════════════════════════════════════════════════════════════════════════
