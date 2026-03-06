@@ -1227,6 +1227,35 @@ _tile(_h1, f"{best.base_fte:.1f}",   "Base FTE")
 _tile(_h2, f"{best.winter_fte:.1f}", "Winter FTE")
 _tile(_h3, f"{best.base_fte*0.85:.1f}", "Summer Floor")
 _tile(_h4, MONTH_NAMES[best.req_post_month-1], "Post Req By", border="#7A6200")
+
+# ── Risk tiles — single RiskAssessment source of truth ───────────────────
+_ra  = _build_risk_assessment(active_policy(), cfg)
+_s2  = active_policy().summary
+_RC  = {"Green": C_GREEN, "Yellow": C_YELLOW, "Red": C_RED, "Critical": C_CRITICAL}
+
+def _risk_tile(col, label, value, sub, risk_key):
+    _col = _RC.get(_ra[risk_key], C_RED)
+    col.markdown(f"""<div style='background:#F8F9FB;border-radius:8px;padding:0.7rem 1rem;border-left:4px solid {_col};margin-top:0.5rem;'>
+        <div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:#6B7280;'>{label}</div>
+        <div style='font-size:1.3rem;font-weight:700;color:{_col};'>{value}</div>
+        <div style='font-size:0.68rem;color:#9CA3AF;'>{sub}</div>
+    </div>""", unsafe_allow_html=True)
+
+_hr1, _hr2, _hr3, _hr4 = st.columns(4)
+_risk_tile(_hr1, "Composite Risk",   _ra["composite_risk"],
+           f"driven by {_ra['composite_driver'].replace('_',' ')}", "composite_risk")
+_risk_tile(_hr2, "Burnout Severity", _ra["burnout_severity"],
+           f"{_ra['burnout_pct']:.1f}% of revenue · UCA threshold",             "burnout_severity")
+_risk_tile(_hr3, "Turnover Pressure", _ra["turnover_pressure"],
+           f"Leading indicator · CZSS {_ra['final_czss']:.1f}",                 "turnover_pressure")
+_unmet_k2  = _s2.get("total_unmet_visits", 0) / 1000
+_unmet_col = _RC.get(_ra["unmet_demand_risk"], C_RED)
+_hr4.markdown(f"""<div style='background:#F8F9FB;border-radius:8px;padding:0.7rem 1rem;border-left:4px solid {_unmet_col};margin-top:0.5rem;'>
+    <div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:#6B7280;'>Unmet Demand</div>
+    <div style='font-size:1.3rem;font-weight:700;color:{_unmet_col};'>{_unmet_k2:.1f}K visits</div>
+    <div style='font-size:0.68rem;color:#9CA3AF;'>{_s2.get("avg_unmet_demand_pct",0):.1f}% avg · {_ra["avg_minutes_per_patient"]:.1f} min/pt (UCA ≥20)</div>
+</div>""", unsafe_allow_html=True)
+st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 _tile(_h5, f"${_swb_actual:.2f}", "SWB / Visit",
       sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr, val_size="1.3rem")
 _tile(_h6, f"{_vpd_avg:.1f}", "Visits / Provider",
@@ -1473,6 +1502,15 @@ Your role:
 - When a situation falls outside the model (e.g. sudden departure, delayed start), reason through the impact using the monthly FTE and demand data
 - Keep responses concise — 3-5 sentences for simple questions, up to 3 short paragraphs for complex ones
 - Add a disclaimer on HR/legal questions: "This is operational planning guidance, not HR or legal advice"
+
+CRITICAL — RISK LABEL CONSISTENCY:
+The simulation context contains a RISK ASSESSMENT section with pre-computed labels (Green/Yellow/Red/Critical)
+for burnout severity, turnover severity, unmet demand risk, CZSS risk, and composite risk.
+You MUST use these exact labels in your response. Do NOT re-derive severity from dollar values or
+describe risk with subjective words like "significant", "moderate", "concerning", or "alarming".
+Use the label directly: "Burnout severity is Red (2.1% of revenue)" not "burnout is significant".
+Zone thresholds are anchored to UCA urgent care benchmarks (20 min all-in visit standard).
+This ensures your briefing matches the scorecard the user is looking at.
 
 {sim_context}"""
 
