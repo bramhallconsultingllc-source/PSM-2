@@ -355,7 +355,9 @@ hr {{ border-color: {RULE} !important; }}
 # ══════════════════════════════════════════════════════════════════════════════
 # SESSION STATE
 # ══════════════════════════════════════════════════════════════════════════════
-for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_policies=[]).items():
+for k, v in dict(optimized=False, best_policy=None, manual_policy=None, all_policies=[],
+                  staffing_mode="auto", manual_base_fte=3.0, manual_winter_fte=3.5,
+                  freeze_hiring=False).items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -680,7 +682,38 @@ with st.sidebar:
                    f"Overstaff: **${overstaff_pen:,}/FTE-mo**")
 
     st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
-    run_opt = st.button("RUN OPTIMIZER", type="primary", use_container_width=True)
+
+    # ── Staffing Mode toggle ──────────────────────────────────────────────────
+    st.markdown(f"""<div style='font-size:0.56rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.18em;color:{C_GOLD};margin-bottom:0.4rem;'>&#9632; STAFFING MODE</div>""",
+        unsafe_allow_html=True)
+    _mode = st.radio(
+        "Staffing Mode", ["Auto-Optimize", "Manual / What-If"],
+        index=0 if st.session_state.staffing_mode == "auto" else 1,
+        horizontal=True, label_visibility="collapsed",
+        help="Auto-Optimize: optimizer finds the best FTE plan. Manual: you control FTE directly to explore risk consequences."
+    )
+    st.session_state.staffing_mode = "auto" if _mode == "Auto-Optimize" else "manual"
+
+    if st.session_state.staffing_mode == "auto":
+        st.caption("Optimizer searches over base and winter FTE to minimize 36-month cost.")
+        run_opt = st.button("RUN OPTIMIZER", type="primary", use_container_width=True)
+    else:
+        st.caption("Risk scores reflect your inputs directly — the optimizer is not correcting for understaffing.")
+        _mc1, _mc2 = st.columns(2)
+        with _mc1:
+            _mb = st.number_input("Base FTE", 0.5, 20.0,
+                float(st.session_state.manual_base_fte), 0.25,
+                help="Permanent FTE outside flu season. Optimizer is off — this is your direct input.")
+        with _mc2:
+            _mw = st.number_input("Winter FTE", 0.5, 20.0,
+                float(st.session_state.manual_winter_fte), 0.25,
+                help="Permanent FTE floor during flu season (Dec–Mar). Can equal base FTE if no seasonal plan.")
+        _fh = st.checkbox("Freeze hiring (no new reqs)",
+            value=st.session_state.freeze_hiring,
+            help="When checked, the hiring trigger is disabled — no requisitions fire. Models a hard hiring freeze.")
+        st.session_state.update(manual_base_fte=_mb, manual_winter_fte=_mw, freeze_hiring=_fh)
+        run_opt = st.button("APPLY MANUAL INPUTS", type="primary", use_container_width=True)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 support_cfg = SupportStaffConfig(
@@ -715,11 +748,33 @@ cfg._apc_salary  = _apc_salary
 cfg._phys_salary = _phys_salary
 
 if run_opt:
-    with st.spinner("Running grid search..."):
-        best, all_p = optimize(cfg)
-    st.session_state.update(best_policy=best, all_policies=all_p, optimized=True,
-                            manual_b=best.base_fte, manual_w=best.winter_fte, manual_policy=None)
-    st.success(f"Optimizer complete — {len(all_p):,} policies evaluated")
+    if st.session_state.staffing_mode == "auto":
+        with st.spinner("Running grid search..."):
+            best, all_p = optimize(cfg)
+        st.session_state.update(best_policy=best, all_policies=all_p, optimized=True,
+                                manual_b=best.base_fte, manual_w=best.winter_fte, manual_policy=None)
+        st.success(f"Optimizer complete — {len(all_p):,} policies evaluated")
+    else:
+        # Manual mode — simulate directly with user-specified FTE
+        _mb  = float(st.session_state.manual_base_fte)
+        _mw  = float(st.session_state.manual_winter_fte)
+        _fh  = st.session_state.freeze_hiring
+        # If freeze_hiring, set hiring_trigger_pts impossibly high so no req fires
+        _cfg_manual = cfg
+        if _fh:
+            import dataclasses
+            _cfg_manual = dataclasses.replace(cfg, hiring_trigger_pts=9999.0)
+        _manual_pol = simulate_policy(_mb, _mw, _cfg_manual)
+        # Wrap in a minimal PolicyResult-compatible object if needed
+        # simulate_policy returns a PolicyResult directly
+        st.session_state.update(
+            manual_policy=_manual_pol,
+            optimized=True,
+            best_policy=_manual_pol,   # fallback so active_policy() always works
+            all_policies=[_manual_pol],
+        )
+        _freeze_note = " (hiring frozen)" if _fh else ""
+        st.success(f"Manual simulation complete — Base {_mb:.2f} FTE / Winter {_mw:.2f} FTE{_freeze_note}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PRE-OPTIMIZER LANDING
@@ -769,7 +824,11 @@ if not st.session_state.optimized:
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 def active_policy():
-    return st.session_state.get("manual_policy") or st.session_state.best_policy
+    """Returns the active PolicyResult. In manual mode returns manual_policy;
+    in auto mode returns best_policy from optimizer."""
+    if st.session_state.get("staffing_mode") == "manual" and st.session_state.get("manual_policy"):
+        return st.session_state.manual_policy
+    return st.session_state.best_policy
 
 def mlabel(mo):
     return f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1]}"
@@ -866,7 +925,20 @@ def render_hero_chart(pol, cfg, quarterly_impacts, base_visits, budget_ppp, peak
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("## PERMANENT STAFFING MODEL")
 st.title("Staffing Model")
-st.markdown(f"<p style='font-size:0.87rem;color:{SLATE};margin-top:-0.5rem;margin-bottom:1.5rem;'>"
+
+# Mode badge — shows which mode produced the current results
+_is_manual   = st.session_state.get("staffing_mode") == "manual"
+_is_frozen   = st.session_state.get("freeze_hiring", False) and _is_manual
+_badge_color = C_YELLOW if _is_manual else NAVY
+_badge_label = "MANUAL / WHAT-IF" if _is_manual else "AUTO-OPTIMIZED"
+_freeze_note = " &nbsp;·&nbsp; HIRING FROZEN" if _is_frozen else ""
+st.markdown(
+    f"<div style='display:inline-block;background:{_badge_color};color:white;"
+    f"font-size:0.58rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;"
+    f"padding:0.2rem 0.65rem;border-radius:3px;margin-bottom:0.4rem;'>"
+    f"{_badge_label}{_freeze_note}</div>",
+    unsafe_allow_html=True)
+st.markdown(f"<p style='font-size:0.87rem;color:{SLATE};margin-top:0.1rem;margin-bottom:1.5rem;'>"
             f"36-month horizon | load-band optimizer | attrition-as-burnout model</p>",unsafe_allow_html=True)
 st.markdown(f"<hr style='border-color:{RULE};margin:0 0 1rem;'>",unsafe_allow_html=True)
 
