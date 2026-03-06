@@ -152,12 +152,29 @@ class ClinicConfig:
 
     # ── Zone Thresholds ───────────────────────────────────────────────────────
     # Percentage-based zone thresholds above the budgeted pts/provider/shift.
-    # Green  : <= budget
-    # Yellow : budget < x <= budget * (1 + yellow_threshold_pct/100)
-    # Red    : > budget * (1 + red_threshold_pct/100)
-    # Defaults: +10% Yellow, +20% Red  (at budget=36: Yellow≤39.6, Red>43.2)
-    yellow_threshold_pct: float = 10.0   # % above budget where Yellow begins
-    red_threshold_pct:    float = 20.0   # % above budget where Red begins
+    # All derived from shift_hours so minutes/patient scales automatically.
+    # Green    : <= budget                          (≥ 20 min/pt at 36pts/12hr)
+    # Yellow   : budget < x <= budget*(1+yellow%)  (18–20 min — visit quality compressed)
+    # Red      : yellow_ceil < x <= budget*(1+red%) (16–18 min — documentation backlog)
+    # Critical : > budget*(1+red%)                  (< 16 min — patient safety risk)
+    # Source: Urgent Care Association visit time benchmarks (20 min all-in standard)
+    yellow_threshold_pct:   float = 10.0   # +10%  → 39.6 pts / 18.2 min at baseline 36/12hr
+    red_threshold_pct:      float = 20.0   # +20%  → 43.2 pts / 16.7 min
+    critical_threshold_pct: float = 33.0   # +33%  → 47.9 pts / 15.0 min (UCA safety floor)
+
+    # ── Cumulative Zone Stress Score (CZSS) ───────────────────────────────────
+    # CZSS is a duration-weighted risk accumulator — organizations carry stress
+    # forward across months. Recovery rate scales with actual slack below baseline
+    # so a well-staffed summer produces measurably more recovery than a marginal one.
+    # Zone stress weights (base, before persistence multiplier):
+    #   Green=0, Yellow=1.0, Red=3.0, Critical=7.0
+    # Persistence multiplier: +0.15 per consecutive month in same stress zone
+    # Recovery: base_recovery × (1 + slack_pct) × (1 + consecutive_green × 0.10)
+    #   slack_pct = (baseline - current_load) / baseline  (only when load < baseline)
+    # Floors/ceilings: recovery min=0.10/mo, max=0.50/mo
+    czss_base_recovery:          float = 0.25   # base monthly recovery during Green
+    czss_persistence_multiplier: float = 0.15   # additional stress per consecutive zone month
+    czss_green_multiplier:       float = 0.10   # recovery bonus per consecutive Green month
 
     # ── Derived ───────────────────────────────────────────────────────────────
     @property
@@ -252,7 +269,24 @@ class MonthResult:
     hiring_trigger_pts:  float   # pts/Provider/Shift that fires a req
     at_or_below_trigger: bool    # True if load <= hiring trigger
 
-    # Attrition (NEW: includes overload-driven component)
+    # Minutes per patient (derived from shift_hours / pts_per_prov)
+    minutes_per_patient: float   # all-in time budget per patient this month
+
+    # Cumulative Zone Stress Score
+    czss:                    float   # cumulative stress balance this month
+    czss_stress_added:       float   # stress deposited this month
+    czss_recovery:           float   # stress recovered this month
+    consecutive_zone_months: int     # consecutive months in current zone
+    risk_label:              str     # Green / Yellow / Red / Critical (CZSS-derived)
+
+    # Unmet demand
+    unmet_visits:       float   # visits demanded but not captured
+    unmet_demand_pct:   float   # unmet_visits / demanded (0–1)
+
+    # Turnover pressure (leading indicator, CZSS-derived)
+    turnover_pressure:  str     # Green / Yellow / Red / Critical
+
+    # Attrition (includes overload-driven component)
     effective_attrition_rate: float   # actual rate this month (base + overload)
     overload_attrition_delta: float   # extra attrition due to overwork
 
@@ -379,6 +413,27 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     total_swb_cost         = 0.0
     total_simulated_visits = 0.0
     total_ebitda           = 0.0
+
+    # ── CZSS state ────────────────────────────────────────────────────────────
+    czss_balance          = 0.0    # running stress score
+    czss_prev_zone        = None   # zone last month (for consecutive tracking)
+    czss_consecutive      = 0      # consecutive months in current zone
+    czss_consecutive_green = 0     # consecutive Green months (for recovery bonus)
+
+    # ── CZSS zone weights ─────────────────────────────────────────────────────
+    CZSS_WEIGHTS = {"Green": 0.0, "Yellow": 1.0, "Red": 3.0, "Critical": 7.0}
+
+    # ── CZSS risk label thresholds ────────────────────────────────────────────
+    # Mapped from cumulative balance — calibrated so:
+    #   8 consecutive Yellow months ≈ Red risk label
+    #   2 consecutive Red months    ≈ Red risk label
+    #   3+ consecutive Red months   ≈ Critical risk label
+    CZSS_RISK_THRESHOLDS = [
+        (0,   5,   "Green"),
+        (5,   15,  "Yellow"),
+        (15,  30,  "Red"),
+        (30,  9999,"Critical"),
+    ]
 
     base_monthly_attrition    = cfg.monthly_attrition_rate
     turnover_replace_cost     = cfg.turnover_replacement_cost_per_provider
@@ -624,14 +679,17 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         # ── Load & Zone ───────────────────────────────────────────────────────
         pts_per_prov = (visits_per_day / providers_on_floor) if providers_on_floor > 0 else 9999.0
 
-        _yellow_ceil = budget * (1 + cfg.yellow_threshold_pct / 100)
-        _red_ceil    = budget * (1 + cfg.red_threshold_pct    / 100)
+        _yellow_ceil   = budget * (1 + cfg.yellow_threshold_pct   / 100)
+        _red_ceil      = budget * (1 + cfg.red_threshold_pct      / 100)
+        _critical_ceil = budget * (1 + cfg.critical_threshold_pct / 100)
         if pts_per_prov <= budget:
             zone = "Green"
         elif pts_per_prov <= _yellow_ceil:
             zone = "Yellow"
-        else:
+        elif pts_per_prov <= _red_ceil:
             zone = "Red"
+        else:
+            zone = "Critical"
 
         at_or_below_trigger = pts_per_prov <= cfg.hiring_trigger_pts
 
@@ -672,12 +730,16 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         overstaff_pen = overstaff_providers * fte_per_slot * cfg.overstaff_penalty_per_fte_month
 
         # ── Throughput degradation & revenue captured ───────────────────────
+        # Critical adds an additional degradation tier beyond Red.
+        # Source: UCA benchmarks — patient throughput at <15 min/pt degrades ~20%+
         if zone == "Green":
             throughput_factor = 1.00
         elif zone == "Yellow":
             throughput_factor = 0.95
-        else:
+        elif zone == "Red":
             throughput_factor = 0.85
+        else:   # Critical
+            throughput_factor = 0.75
 
         visits_captured  = visits_per_day * operating_days_mo * throughput_factor
         revenue_captured = visits_captured * cfg.net_revenue_per_visit
@@ -685,7 +747,9 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
 
         # ── Turnover cost ─────────────────────────────────────────────────────
         turnover_cost = turnover_events * turnover_replace_cost
-        if zone in ("Yellow", "Red"):
+        if zone == "Critical":
+            turnover_cost *= 1.6   # Critical: severe pressure, high replacement cost
+        elif zone in ("Yellow", "Red"):
             turnover_cost *= 1.3
 
         # ── EBITDA contribution: Revenue − SWB − Flex − Turnover − Burnout − Fixed
@@ -697,6 +761,56 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
                           - burnout_pen
                           - fixed_cost)
         total_ebitda  += ebitda_month
+
+        # ── Minutes per patient ──────────────────────────────────────────────
+        minutes_per_patient = (cfg.shift_hours * 60.0 / pts_per_prov) if pts_per_prov > 0 else 999.0
+
+        # ── Unmet demand ──────────────────────────────────────────────────────
+        unmet_visits     = visits_per_day * operating_days_mo - visits_captured
+        unmet_demand_pct = unmet_visits / (visits_per_day * operating_days_mo) if visits_per_day > 0 else 0.0
+
+        # ── CZSS — Cumulative Zone Stress Score ───────────────────────────────
+        # Track consecutive months in current zone
+        if zone == czss_prev_zone:
+            czss_consecutive += 1
+        else:
+            czss_consecutive = 1
+        czss_prev_zone = zone
+
+        if zone == "Green":
+            czss_consecutive_green += 1
+            # Recovery: scales with slack below baseline + consecutive Green bonus
+            _slack_pct    = max(0.0, (budget - pts_per_prov) / budget)
+            _recovery_raw = cfg.czss_base_recovery * (1.0 + _slack_pct) *                             (1.0 + (czss_consecutive_green - 1) * cfg.czss_green_multiplier)
+            _czss_recovery = min(0.50, max(0.10, _recovery_raw))
+            _czss_stress   = 0.0
+        else:
+            czss_consecutive_green = 0
+            _czss_recovery = 0.0
+            # Stress: base weight × persistence multiplier
+            _base_weight = CZSS_WEIGHTS.get(zone, 0.0)
+            _persistence = 1.0 + (czss_consecutive - 1) * cfg.czss_persistence_multiplier
+            _czss_stress = _base_weight * _persistence
+
+        czss_balance = max(0.0, czss_balance - _czss_recovery + _czss_stress)
+
+        # Map CZSS balance to risk label
+        risk_label = "Green"
+        for _lo, _hi, _lbl in CZSS_RISK_THRESHOLDS:
+            if _lo <= czss_balance < _hi:
+                risk_label = _lbl
+                break
+
+        # ── Turnover pressure (leading indicator) ─────────────────────────────
+        # CZSS-derived — predicts future attrition pressure before it shows in events
+        if czss_balance < 5:
+            turnover_pressure = "Green"
+        elif czss_balance < 15:
+            turnover_pressure = "Yellow"
+        elif czss_balance < 30:
+            turnover_pressure = "Red"
+        else:
+            turnover_pressure = "Critical"
 
         # ── Legacy score (optimizer still minimizes cost for heatmap) ────────
         month_score = (perm_cost + flex_cost + support_cost + burnout_pen
@@ -722,6 +836,15 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
             hiring_mode=hiring_mode,
             hiring_trigger_pts=cfg.hiring_trigger_pts,
             at_or_below_trigger=at_or_below_trigger,
+            minutes_per_patient=minutes_per_patient,
+            czss=czss_balance,
+            czss_stress_added=_czss_stress,
+            czss_recovery=_czss_recovery,
+            consecutive_zone_months=czss_consecutive,
+            risk_label=risk_label,
+            unmet_visits=unmet_visits,
+            unmet_demand_pct=unmet_demand_pct,
+            turnover_pressure=turnover_pressure,
             effective_attrition_rate=effective_monthly_attrition,
             overload_attrition_delta=overload_attrition_delta,
             permanent_cost=perm_cost,
@@ -752,9 +875,10 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
     if swb_violation:
         total_score += cfg.swb_violation_penalty
 
-    red_m    = sum(1 for mo in months if mo.zone == "Red")
-    yellow_m = sum(1 for mo in months if mo.zone == "Yellow")
-    green_m  = sum(1 for mo in months if mo.zone == "Green")
+    red_m      = sum(1 for mo in months if mo.zone == "Red")
+    yellow_m   = sum(1 for mo in months if mo.zone == "Yellow")
+    green_m    = sum(1 for mo in months if mo.zone == "Green")
+    critical_m = sum(1 for mo in months if mo.zone == "Critical")
 
     # EBITDA waterfall
     total_revenue_captured = sum(mo.revenue_captured for mo in months)
@@ -771,6 +895,7 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         "red_months":               red_m,
         "yellow_months":            yellow_m,
         "green_months":             green_m,
+        "critical_months":          critical_m,
         "avg_flex_fte":             float(np.mean([mo.flex_fte for mo in months])),
         "total_turnover_events":    sum(mo.turnover_events for mo in months),
         "annual_swb_per_visit":     annual_swb,
@@ -796,6 +921,20 @@ def simulate_policy(base_fte: float, winter_fte: float, cfg: ClinicConfig,
         "total_visits_captured":    total_visits_captured,
         "total_visits_demanded":    total_visits_demanded,
         "visit_capture_rate":       total_visits_captured / total_visits_demanded if total_visits_demanded > 0 else 1.0,
+
+        # CZSS summary
+        "peak_czss":                max(mo.czss for mo in months),
+        "final_czss":               months[-1].czss,
+        "overall_risk_label":       months[-1].risk_label,
+        "critical_months":          sum(1 for mo in months if mo.zone == "Critical"),
+        "total_unmet_visits":       sum(mo.unmet_visits for mo in months),
+        "avg_unmet_demand_pct":     float(np.mean([mo.unmet_demand_pct for mo in months])) * 100,
+        "avg_minutes_per_patient":  float(np.mean([mo.minutes_per_patient for mo in months
+                                                    if mo.minutes_per_patient < 999])),
+        "turnover_pressure_label":  months[-1].turnover_pressure,
+        "baseline_turnover_events": sum(mo.paid_fte * (cfg.annual_attrition_pct / 100 / 12)
+                                        for mo in months),
+
         "q_avg_visits": {
             q: float(np.mean([mo.demand_visits_per_day for mo in months
                                if mo.year == 1 and mo.quarter == q]))
