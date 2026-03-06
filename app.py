@@ -1315,8 +1315,8 @@ _tile(_h5, f"${_swb_actual:.2f}", "SWB / Visit",
       sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr, val_size="1.3rem")
 _tile(_h6, f"{_vpd_avg:.1f}", "Visits / Provider",
       sub=_vpd_sub, border="#7A6200", val_color="#0F1923", val_size="1.3rem")
-_tile(_h7, f"{_czss_val:.1f}", f"Risk: {_czss_lbl}",
-      sub=_czss_sub, border=_czss_clr, val_color=_czss_clr, val_size="1.3rem")
+_tile(_h7, f"{_czss_val:.1f}", "Stress Score",
+      sub=f"Peak {_czss_peak:.1f} · {_czss_lbl} · {_czss_trend}", border=_czss_clr, val_color=_czss_clr, val_size="1.3rem")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY CARD
