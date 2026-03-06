@@ -2045,7 +2045,7 @@ with tabs[1]:
     # NARRATIVE GENERATOR — pure Python, no API needed
     # Reads live simulation data and writes conditional CFO-quality prose
     # ─────────────────────────────────────────────────────────────────────────
-    def _generate_exec_summary(pol, s, es, ma, cfg, MA):
+    def _generate_exec_summary(pol, s, es, ma, cfg, MA, ra=None):
         """
         Build a structured executive summary memo from simulation results.
         Returns a dict of {section_title: prose_string}.
@@ -2141,14 +2141,20 @@ with tabs[1]:
         else:
             ebitda_prose = f"a 3-year EBITDA loss of ${abs(ebitda)/1e6:.2f}M — immediate staffing restructuring is required"
 
-        # Burnout characterization
+        # Burnout characterization — uses RiskAssessment label for consistency
         burnout_pct_of_revenue = burnout / revenue * 100
-        if burnout < 50_000:
-            burnout_prose = f"Burnout-driven attrition cost of ${burnout/1e3:.0f}K is well-controlled, representing {burnout_pct_of_revenue:.1f}% of captured revenue"
-        elif burnout < 150_000:
-            burnout_prose = f"Burnout risk is accumulating at ${burnout/1e3:.0f}K — {burnout_pct_of_revenue:.1f}% of revenue is being eroded by overload-driven attrition"
+        _b_lbl = ra["burnout_severity"] if ra else (
+            "Green" if burnout < 50_000 else "Yellow" if burnout < 150_000 else "Red")
+        _b_colors = {"Green": "#0A6B4A", "Yellow": "#92600A", "Red": "#B91C1C", "Critical": "#7F1D1D"}
+        _bc = _b_colors.get(_b_lbl, "#B91C1C")
+        if _b_lbl == "Green":
+            burnout_prose = (f"Burnout severity is <strong style='color:{_bc}'>Green</strong> — "                f"${burnout/1e3:.0f}K ({burnout_pct_of_revenue:.1f}% of revenue) is well-controlled")
+        elif _b_lbl == "Yellow":
+            burnout_prose = (f"Burnout severity is <strong style='color:{_bc}'>Yellow</strong> — "                f"${burnout/1e3:.0f}K ({burnout_pct_of_revenue:.1f}% of revenue) is accumulating. "                f"Provider load is compressing visit time below the UCA 20-min standard")
+        elif _b_lbl == "Red":
+            burnout_prose = (f"Burnout severity is <strong style='color:{_bc}'>Red</strong> — "                f"${burnout/1e3:.0f}K ({burnout_pct_of_revenue:.1f}% of revenue) is being eroded "                f"by overload-driven attrition cycles")
         else:
-            burnout_prose = f"Burnout cost of ${burnout/1e3:.0f}K is a significant financial leak — {burnout_pct_of_revenue:.1f}% of captured revenue lost to overload-driven turnover cycles"
+            burnout_prose = (f"Burnout severity is <strong style='color:{_bc}'>Critical</strong> — "                f"${burnout/1e3:.0f}K ({burnout_pct_of_revenue:.1f}% of revenue) represents a patient "                f"safety and financial emergency. Immediate staffing intervention required")
 
         # Visit capture
         if capture >= 99.5:
@@ -2168,10 +2174,14 @@ with tabs[1]:
             _yr_supp    = sum(m.support_cost     for m in yr_mos)
             _yr_swb_act = (_yr_perm + _yr_supp) / _yr_visits if _yr_visits > 0 else 0
             _yr_swb_var = cfg.swb_target_per_visit - _yr_swb_act  # positive = favorable
+            _yr_peak_czss = max((m.czss for m in yr_mos), default=0)
+            _yr_risk = max((m.risk_label for m in yr_mos),
+                           key=lambda z: ["Green","Yellow","Red","Critical"].index(z), default="Green")
             yr_data[yr] = {
                 "G": sum(1 for m in yr_mos if m.zone == "Green"),
                 "Y": sum(1 for m in yr_mos if m.zone == "Yellow"),
                 "R": sum(1 for m in yr_mos if m.zone == "Red"),
+                "C": sum(1 for m in yr_mos if m.zone == "Critical"),
                 "peak": max(m.patients_per_provider_per_shift for m in yr_mos),
                 "avg_visits": sum(m.demand_visits_per_day for m in yr_mos) / 12,
                 "ebitda": sum(m.ebitda_contribution for m in yr_mos),
@@ -2179,7 +2189,26 @@ with tabs[1]:
                 "swb_actual": _yr_swb_act,
                 "swb_variance": _yr_swb_var,
                 "swb_impact": _yr_swb_var * _yr_visits,
+                "peak_czss": _yr_peak_czss,
+                "risk_label": _yr_risk,
             }
+
+        # CZSS / stress trajectory prose
+        _czss_final = s.get("final_czss", 0)
+        _czss_peak  = s.get("peak_czss", 0)
+        _czss_lbl   = ra["czss_risk"] if ra else "Green"
+        _czss_colors= {"Green": "#0A6B4A", "Yellow": "#92600A", "Red": "#B91C1C", "Critical": "#7F1D1D"}
+        _czss_c     = _czss_colors.get(_czss_lbl, "#B91C1C")
+        _avg_mpp    = s.get("avg_minutes_per_patient", 20)
+        _mpp_flag   = f" — avg {_avg_mpp:.1f} min/patient vs UCA 20-min standard" if _avg_mpp < 19.5 else f" — avg {_avg_mpp:.1f} min/patient (within UCA standard)"
+        if _czss_lbl == "Green":
+            stress_prose = (f"Organizational stress is <strong style='color:{_czss_c}'>Green</strong> "                f"(Stress Score {_czss_final:.1f}, peak {_czss_peak:.1f}){_mpp_flag}. "                f"Summer recovery is working — the team is entering each flu season in good shape.")
+        elif _czss_lbl == "Yellow":
+            stress_prose = (f"Organizational stress is <strong style='color:{_czss_c}'>Yellow</strong> "                f"(Stress Score {_czss_final:.1f}, peak {_czss_peak:.1f}){_mpp_flag}. "                f"Stress is accumulating but manageable — watch for persistence into flu season.")
+        elif _czss_lbl == "Red":
+            stress_prose = (f"Organizational stress is <strong style='color:{_czss_c}'>Red</strong> "                f"(Stress Score {_czss_final:.1f}, peak {_czss_peak:.1f}){_mpp_flag}. "                f"Duration is compounding risk — summer recovery is not fully unwinding flu-season stress. "                f"Turnover pressure is building ahead of realized attrition events.")
+        else:
+            stress_prose = (f"Organizational stress is <strong style='color:{_czss_c}'>Critical</strong> "                f"(Stress Score {_czss_final:.1f}, peak {_czss_peak:.1f}){_mpp_flag}. "                f"Cumulative overload has reached patient safety territory. "                f"Immediate staffing intervention is required — stress at this level predicts accelerating attrition.")
 
         # Marginal APC signal
         if ma:
@@ -2330,6 +2359,7 @@ with tabs[1]:
             "zone_health":    zone_health,
             "swb_prose":      swb_prose,
             "burnout_prose":  burnout_prose,
+            "stress_prose":   stress_prose,
             "yr_data":        yr_data,
             "hire_prose":     hire_prose,
             "marginal_prose": marginal_prose,
@@ -2337,7 +2367,8 @@ with tabs[1]:
             "actions":        actions,
         }
 
-    memo = _generate_exec_summary(pol, s, es, ma, cfg, MA)
+    _ra_memo = _build_risk_assessment(pol, cfg)
+    memo = _generate_exec_summary(pol, s, es, ma, cfg, MA, ra=_ra_memo)
 
     # ─────────────────────────────────────────────────────────────────────────
     # RENDER
@@ -2368,9 +2399,15 @@ with tabs[1]:
     headline_capture  = memo['capture_prose']
     headline_zone     = memo['zone_prose']
     headline_swb      = memo['swb_prose']
-    yr1_zones     = f"{yr1['G']}G / {yr1['Y']}Y / {yr1['R']}R &nbsp;&middot;&nbsp; Peak {yr1['peak']:.1f} pts/Provider"
-    yr2_zones     = f"{yr2['G']}G / {yr2['Y']}Y / {yr2['R']}R &nbsp;&middot;&nbsp; Peak {yr2['peak']:.1f} pts/Provider"
-    yr3_zones     = f"{yr3['G']}G / {yr3['Y']}Y / {yr3['R']}R &nbsp;&middot;&nbsp; Peak {yr3['peak']:.1f} pts/Provider"
+    _rc_map = {"Green":"#0A6B4A","Yellow":"#92600A","Red":"#B91C1C","Critical":"#7F1D1D"}
+    def _yr_zone_str(yd):
+        c_part = f" / {yd['C']}C" if yd.get('C', 0) > 0 else ""
+        rl = yd.get('risk_label','Green')
+        rc = _rc_map.get(rl, '#B91C1C')
+        return (f"{yd['G']}G / {yd['Y']}Y / {yd['R']}R{c_part} &nbsp;&middot;&nbsp; "                f"Peak {yd['peak']:.1f} pts/Provider &nbsp;&middot;&nbsp; "                f"<span style='color:{rc};font-weight:600'>Stress {yd['peak_czss']:.1f} · {rl}</span>")
+    yr1_zones = _yr_zone_str(yr1)
+    yr2_zones = _yr_zone_str(yr2)
+    yr3_zones = _yr_zone_str(yr3)
     def _swb_impact_label(yr_d, target):
         imp  = yr_d["swb_impact"]
         var  = yr_d["swb_variance"]
@@ -2386,8 +2423,23 @@ with tabs[1]:
     yr3_ebitda = _swb_impact_label(yr3, cfg.swb_target_per_visit)
     hire_txt      = memo['hire_prose']
     burnout_txt   = memo['burnout_prose']
+    stress_txt    = memo['stress_prose']
     marginal_txt  = memo['marginal_prose']
     growth_txt    = memo['growth_prose']
+    # Risk snapshot strip for HTML memo
+    _rm = _ra_memo
+    _rcs = {"Green":"#0A6B4A","Yellow":"#92600A","Red":"#B91C1C","Critical":"#7F1D1D"}
+    _rbg = {"Green":"#ECFDF5","Yellow":"#FFFBEB","Red":"#FEF2F2","Critical":"#F5E8E8"}
+    def _risk_chip(label, val):
+        c = _rcs.get(val,"#B91C1C"); bg = _rbg.get(val,"#FEF2F2")
+        return f"<span style='background:{bg};color:{c};border:1px solid {c};border-radius:3px;padding:0.1rem 0.5rem;font-size:0.75rem;font-weight:700;margin-right:0.5rem;white-space:nowrap;'>{label}: {val}</span>"
+    risk_chips = (
+        _risk_chip("Composite", _rm["composite_risk"]) +
+        _risk_chip("Burnout", _rm["burnout_severity"]) +
+        _risk_chip("Turnover Pressure", _rm["turnover_pressure"]) +
+        _risk_chip("Unmet Demand", _rm["unmet_demand_risk"]) +
+        f"<span style='font-size:0.75rem;color:#7A8799;'>Stress Score {_rm['final_czss']:.1f} · {_rm['avg_minutes_per_patient']:.1f} min/pt</span>"
+    )
 
     _memo_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px 0;background:#FFFFFF;">
 <style>
@@ -2551,6 +2603,9 @@ with tabs[1]:
 
   <div class="memo-body">
 
+    <div class="memo-section-label">Risk Snapshot</div>
+    <div style="padding:0.5rem 0 0.3rem;line-height:2.2;">{risk_chips}</div>
+
     <div class="memo-section-label">Headline Verdict</div>
     <div class="memo-prose">
       {headline_swb}.
@@ -2590,6 +2645,11 @@ with tabs[1]:
     <ol class="memo-actions">
       {actions_html}
     </ol>
+
+    <div class="memo-section-label">Organizational Stress</div>
+    <div class="memo-prose">
+      {stress_txt}
+    </div>
 
     <div class="memo-section-label">3-Year Outlook</div>
     <div class="memo-prose">
