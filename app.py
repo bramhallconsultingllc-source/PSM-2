@@ -833,7 +833,9 @@ def active_policy():
 def mlabel(mo):
     return f"Y{mo.year}-{MONTH_NAMES[mo.calendar_month-1]}"
 
-best   = st.session_state.best_policy
+# active_policy() returns manual_policy in manual mode, best_policy in auto mode.
+# ALL downstream calculations must read from here — never directly from best_policy.
+best   = active_policy()
 s      = best.summary
 budget = cfg.budgeted_patients_per_provider_per_day
 
