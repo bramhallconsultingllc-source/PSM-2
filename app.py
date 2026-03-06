@@ -3975,105 +3975,292 @@ with tabs[7]:
 
 # ── TAB 8: Stress Test ────────────────────────────────────────────────────────
 with tabs[8]:
-    st.markdown("## STRESS TEST — VOLUME SHOCK SCENARIOS")
-    st.caption("Apply a volume surge and see how the current policy holds.")
     pol=active_policy()
+
+    # ── Section header ────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style='padding:1.6rem 0 0.2rem;'>
+      <div style='font-size:0.56rem;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:{MUTED};margin-bottom:0.35rem;'>Scenario Analysis</div>
+      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.55rem;font-weight:500;color:{INK};letter-spacing:-0.01em;'>Volume Shock Stress Test</div>
+      <div style='width:32px;height:2px;background:{C_GOLD};border-radius:1px;margin-top:6px;'></div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:0.82rem;color:{SLATE};margin:0.4rem 0 1.2rem;'>Apply a demand surge to the current staffing policy and quantify the financial and operational impact.</p>", unsafe_allow_html=True)
+
+    # ── Shock parameters ──────────────────────────────────────────────────────
+    st.markdown(f"<div style='font-size:0.56rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{MUTED};margin-bottom:0.6rem;border-bottom:1px solid {RULE};padding-bottom:0.4rem;'>Shock Parameters</div>", unsafe_allow_html=True)
     sc1,sc2,sc3=st.columns(3)
-    with sc1: shock_start=st.number_input("Shock start (simulation month)",1,34,13)
+    with sc1: shock_start=st.number_input("Start month",1,34,13,help="Simulation month when the surge begins (1=first month of Year 1)")
     with sc2: shock_dur=st.number_input("Duration (months)",1,12,3)
-    with sc3: shock_mag=st.slider("Surge magnitude",0.05,0.50,0.15,0.05)
+    with sc3: shock_mag=st.slider("Surge magnitude",0.05,0.50,0.15,0.05,format="+%d%%",help="Additional visit volume as a fraction of baseline")
 
     shock_end=min(36,int(shock_start)+int(shock_dur)-1)
     _slabels=[]
     for sm in range(int(shock_start),shock_end+1):
         cm=((sm-1)%12)+1; yr=((sm-1)//12)+1
         _slabels.append(f"Y{yr}-{MONTH_NAMES[cm-1]}")
-    st.info(f"Shock window: **{_slabels[0]}** to **{_slabels[-1]}**  (+{shock_mag*100:.0f}% volume for {shock_dur} months)")
+
+    st.markdown(
+        f"<div style='background:{C_GOLD_BG};border-left:3px solid {C_GOLD};border-radius:3px;"
+        f"padding:0.6rem 1rem;margin:0.5rem 0 1.2rem;font-size:0.82rem;color:{INK};'>"
+        f"<strong>Shock window:</strong> {_slabels[0]} — {_slabels[-1]} &nbsp;·&nbsp; "
+        f"<strong>+{shock_mag*100:.0f}% volume</strong> for {shock_dur} month{'s' if shock_dur>1 else ''} "
+        f"&nbsp;·&nbsp; {int(shock_dur/36*100+0.5)}% of the 36-month horizon</div>",
+        unsafe_allow_html=True)
 
     with st.spinner("Running stress simulation..."):
         pol_stress=simulate_stress(pol,cfg,int(shock_start),int(shock_dur),shock_mag)
 
     ss=pol_stress.summary; ss0=pol.summary
-    st1,st2,st3,st4,st5=st.columns(5)
-    st1.metric("Red Months (base)",   f"{ss0['red_months']}",delta=f"+{ss['red_months']-ss0['red_months']} shock",delta_color="inverse")
-    st2.metric("Yellow Months",       f"{ss0['yellow_months']}",delta=f"+{ss['yellow_months']-ss0['yellow_months']} shock",delta_color="inverse")
-    st3.metric("SWB/Visit",           f"${ss0['annual_swb_per_visit']:.2f}",delta=f"+${ss['annual_swb_per_visit']-ss0['annual_swb_per_visit']:.2f}",delta_color="inverse")
-    st4.metric("3-Yr EBITDA",         f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M",delta=f"${(ss.get('total_ebitda_3yr',0)-ss0.get('total_ebitda_3yr',0))/1e6:+.2f}M")
-    st5.metric("Extra Turnover",      f"{ss['total_turnover_events']-ss0['total_turnover_events']:.1f} FTE")
 
-    if ss["red_months"]>ss0["red_months"]:
-        st.error(f"Policy breaks — {ss['red_months']-ss0['red_months']} new Red months under this shock.")
-    elif ss["yellow_months"]>ss0["yellow_months"]:
-        st.warning(f"Policy shows strain — {ss['yellow_months']-ss0['yellow_months']} new Yellow months. Flex staffing would help.")
+    # ── Impact scorecard ──────────────────────────────────────────────────────
+    st.markdown(f"<div style='font-size:0.56rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{MUTED};margin:1.4rem 0 0.8rem;border-bottom:1px solid {RULE};padding-bottom:0.4rem;'>Impact Scorecard</div>", unsafe_allow_html=True)
+
+    _delta_red    = ss["red_months"]      - ss0["red_months"]
+    _delta_yellow = ss["yellow_months"]   - ss0["yellow_months"]
+    _delta_swb    = ss["annual_swb_per_visit"] - ss0["annual_swb_per_visit"]
+    _delta_ebitda = (ss.get("total_ebitda_3yr",0) - ss0.get("total_ebitda_3yr",0)) / 1e6
+    _delta_turn   = ss["total_turnover_events"] - ss0["total_turnover_events"]
+    _delta_czss   = ss.get("final_czss",0) - ss0.get("final_czss",0)
+
+    def _impact_card(col, label, base_val, delta_val, fmt_base, fmt_delta, good_direction="up"):
+        _neg = (good_direction=="up" and delta_val < 0) or (good_direction=="down" and delta_val > 0)
+        _pos = (good_direction=="up" and delta_val > 0) or (good_direction=="down" and delta_val < 0)
+        _dc  = C_RED if _neg else (C_GREEN if _pos else MUTED)
+        _sign = "+" if delta_val > 0 else ""
+        col.markdown(
+            f"<div style='background:#F8FAFC;border:1px solid {RULE};border-top:3px solid {NAVY};"
+            f"border-radius:4px;padding:0.9rem 1rem 0.7rem;'>"
+            f"<div style='font-size:0.58rem;text-transform:uppercase;letter-spacing:0.14em;color:{MUTED};margin-bottom:0.3rem;'>{label}</div>"
+            f"<div style='font-size:1.3rem;font-weight:700;color:{INK};line-height:1;'>{fmt_base}</div>"
+            f"<div style='font-size:0.78rem;font-weight:600;color:{_dc};margin-top:0.3rem;'>{_sign}{fmt_delta} under shock</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    ic1,ic2,ic3,ic4,ic5,ic6 = st.columns(6)
+    _impact_card(ic1,"Red Months",    f"{ss0['red_months']}",    f"+{_delta_red}",    f"{ss0['red_months']}",    f"{_delta_red}",    "down")
+    _impact_card(ic2,"Yellow Months", f"{ss0['yellow_months']}", f"+{_delta_yellow}", f"{ss0['yellow_months']}", f"{_delta_yellow}", "down")
+    _impact_card(ic3,"SWB / Visit",   f"${ss0['annual_swb_per_visit']:.2f}", f"${_delta_swb:+.2f}", f"${ss0['annual_swb_per_visit']:.2f}", f"${_delta_swb:+.2f}", "down")
+    _impact_card(ic4,"3-Yr EBITDA",   f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M", f"{_delta_ebitda:+.2f}M", f"${ss0.get('total_ebitda_3yr',0)/1e6:.2f}M", f"{_delta_ebitda:+.2f}M", "up")
+    _impact_card(ic5,"Extra Turnover",f"{ss0['total_turnover_events']:.1f}", f"+{_delta_turn:.1f}", f"{ss0['total_turnover_events']:.1f} events", f"{_delta_turn:+.1f}", "down")
+    _impact_card(ic6,"Stress Score Δ",f"{ss0.get('final_czss',0):.1f}", f"{_delta_czss:+.1f}", f"{ss0.get('final_czss',0):.1f}", f"{_delta_czss:+.1f}", "down")
+
+    # ── Verdict banner ────────────────────────────────────────────────────────
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+    if _delta_red > 0:
+        _vbg, _vc2, _vicon = "#FEF2F2", C_RED, "⚠"
+        _vmsg = f"Policy breaks under this shock — <strong>{_delta_red} new Red month{'s' if _delta_red>1 else ''}</strong> introduced. Provider load exceeds the Red threshold during the surge window."
+    elif _delta_yellow > 0:
+        _vbg, _vc2, _vicon = "#FFFBEB", C_YELLOW, "△"
+        _vmsg = f"Policy shows strain — <strong>{_delta_yellow} new Yellow month{'s' if _delta_yellow>1 else ''}</strong>. Current staffing absorbs the shock with degraded but manageable load. Consider flex staffing reserves."
     else:
-        st.success("Policy holds under this shock — all months remain in current zones.")
+        _vbg, _vc2, _vicon = "#ECFDF5", C_GREEN, "✓"
+        _vmsg = "Policy is resilient — all months remain within current zones under this shock. The staffing buffer is adequate to absorb this demand scenario."
+    st.markdown(
+        f"<div style='background:{_vbg};border-left:4px solid {_vc2};border-radius:3px;"
+        f"padding:0.75rem 1.1rem;font-size:0.86rem;color:{INK};'>"
+        f"<span style='color:{_vc2};font-weight:700;margin-right:0.5rem;'>{_vicon}</span>{_vmsg}</div>",
+        unsafe_allow_html=True)
+    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
 
+    # ── Charts ────────────────────────────────────────────────────────────────
     lbls_36=[mlabel(mo) for mo in pol.months]
+    _shaded = dict(x0=shock_start-1.5, x1=shock_end-0.5,
+                   fillcolor="rgba(109,40,217,0.07)", layer="below", line_width=0)
+
     fs2=go.Figure()
-    fs2.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
-    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol.months],
-                    name="Base scenario",line=dict(color=NAVY,width=2.5))
-    fs2.add_scatter(x=lbls_36,y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
-                    name=f"Stress (+{shock_mag*100:.0f}%)",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    _st_yceil = budget * (1 + cfg.yellow_threshold_pct / 100)
-    _st_rceil = budget * (1 + cfg.red_threshold_pct    / 100)
+    fs2.add_vrect(**_shaded)
+    fs2.add_scatter(x=lbls_36, y=[mo.patients_per_provider_per_shift for mo in pol.months],
+                    name="Base", line=dict(color=NAVY, width=2.5))
+    fs2.add_scatter(x=lbls_36, y=[mo.patients_per_provider_per_shift for mo in pol_stress.months],
+                    name=f"Stress +{shock_mag*100:.0f}%", line=dict(color=C_STRESS, width=2, dash="dash"))
+    _st_yceil = budget*(1+cfg.yellow_threshold_pct/100)
+    _st_rceil = budget*(1+cfg.red_threshold_pct/100)
+    _st_cceil = budget*(1+cfg.critical_threshold_pct/100)
     for yv,lbl,col in [
-        (budget,      f"Green  {budget:.0f}",                                         C_GREEN),
-        (_st_yceil,   f"Yellow {_st_yceil:.1f} (+{cfg.yellow_threshold_pct:.0f}%)",   C_YELLOW),
-        (_st_rceil,   f"Red    {_st_rceil:.1f} (+{cfg.red_threshold_pct:.0f}%)",      C_RED),
+        (budget,    f"Baseline {budget:.0f}",  C_GREEN),
+        (_st_yceil, f"Yellow   {_st_yceil:.1f}", C_YELLOW),
+        (_st_rceil, f"Red      {_st_rceil:.1f}", C_RED),
+        (_st_cceil, f"Critical {_st_cceil:.1f}", C_CRITICAL),
     ]:
-        fs2.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.5,
+        fs2.add_hline(y=yv, line_dash="dot", line_color=col, line_width=1.2,
                       annotation_text=lbl, annotation_position="right",
                       annotation_font=dict(size=9, color=col))
-    fs2.update_layout(**mk_layout(height=360,xaxis=dict(tickangle=-45),title=f"Load: Base vs Stress (+{shock_mag*100:.0f}% volume)"))
-    fs2.update_yaxes(title_text="Pts/Provider/Shift")
-    st.plotly_chart(fs2,use_container_width=True)
+    fs2.update_layout(**mk_layout(height=340, xaxis=dict(tickangle=-45),
+                                  title="Provider Load: Base vs. Stress Scenario"))
+    fs2.update_yaxes(title_text="Pts / Provider / Shift")
+    st.plotly_chart(fs2, use_container_width=True)
+
+    # CZSS comparison chart
+    fs_czss = go.Figure()
+    fs_czss.add_vrect(**_shaded)
+    fs_czss.add_scatter(x=lbls_36, y=[mo.czss for mo in pol.months],
+                        name="Base Stress Score", line=dict(color=NAVY, width=2.5),
+                        fill="tozeroy", fillcolor="rgba(0,51,102,0.06)")
+    fs_czss.add_scatter(x=lbls_36, y=[mo.czss for mo in pol_stress.months],
+                        name=f"Stress Stress Score", line=dict(color=C_STRESS, width=2, dash="dash"),
+                        fill="tozeroy", fillcolor="rgba(109,40,217,0.05)")
+    for thresh, lbl, col in [(5,"Low Risk (5)",C_GREEN),(15,"Moderate (15)",C_YELLOW),(30,"High Risk (30)",C_RED)]:
+        fs_czss.add_hline(y=thresh, line_dash="dot", line_color=col, line_width=1,
+                          annotation_text=lbl, annotation_position="right",
+                          annotation_font=dict(size=9, color=col))
+    fs_czss.update_layout(**mk_layout(height=240, xaxis=dict(tickangle=-45),
+                                      title="Cumulative Stress Score: Base vs. Stress"))
+    fs_czss.update_yaxes(title_text="Stress Score (CZSS)")
+    st.plotly_chart(fs_czss, use_container_width=True)
 
     fs3=go.Figure()
-    fs3.add_vrect(x0=shock_start-1.5,x1=shock_end-0.5,fillcolor="rgba(124,58,237,0.08)",layer="below",line_width=0)
-    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol.months],name="Base Paid FTE",line=dict(color=NAVY,width=2.5))
-    fs3.add_scatter(x=lbls_36,y=[mo.paid_fte for mo in pol_stress.months],name="Stress Paid FTE",line=dict(color=C_STRESS,width=2.5,dash="dash"))
-    fs3.add_scatter(x=lbls_36,y=[mo.demand_fte_required for mo in pol_stress.months],name="FTE Required (stress)",line=dict(color=C_RED,width=1.5,dash="dot"),opacity=0.7)
-    fs3.update_layout(**mk_layout(height=260,xaxis=dict(tickangle=-45),title="FTE Trajectory Under Stress"))
+    fs3.add_vrect(**_shaded)
+    fs3.add_scatter(x=lbls_36, y=[mo.paid_fte for mo in pol.months],
+                    name="Base FTE", line=dict(color=NAVY, width=2.5))
+    fs3.add_scatter(x=lbls_36, y=[mo.paid_fte for mo in pol_stress.months],
+                    name="Stress FTE", line=dict(color=C_STRESS, width=2, dash="dash"))
+    fs3.add_scatter(x=lbls_36, y=[mo.demand_fte_required for mo in pol_stress.months],
+                    name="FTE Required (stress)", line=dict(color=C_RED, width=1.5, dash="dot"), opacity=0.7)
+    fs3.update_layout(**mk_layout(height=240, xaxis=dict(tickangle=-45), title="FTE Trajectory Under Stress"))
     fs3.update_yaxes(title_text="FTE")
-    st.plotly_chart(fs3,use_container_width=True)
+    st.plotly_chart(fs3, use_container_width=True)
 
+    # ── Detail table ──────────────────────────────────────────────────────────
+    st.markdown(f"<div style='font-size:0.56rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{MUTED};margin:1rem 0 0.5rem;border-bottom:1px solid {RULE};padding-bottom:0.4rem;'>Month-by-Month Detail</div>", unsafe_allow_html=True)
+    _zcolors = {"Green":"#ECFDF5","Yellow":"#FFFBEB","Red":"#FEF2F2","Critical":"#F5E8E8"}
     df_stress=pd.DataFrame([{
-        "Month":mlabel(mo),
-        "Base Load":round(pol.months[i].patients_per_provider_per_shift,1),
-        "Stress Load":round(mo.patients_per_provider_per_shift,1),
-        "Delta":round(mo.patients_per_provider_per_shift-pol.months[i].patients_per_provider_per_shift,1),
-        "Base Zone":pol.months[i].zone,"Stress Zone":mo.zone,
-        "Zone Changed":"YES" if mo.zone!=pol.months[i].zone else "",
+        "Month":       mlabel(mo),
+        "Base Pts/Prov":  round(pol.months[i].patients_per_provider_per_shift,1),
+        "Stress Pts/Prov":round(mo.patients_per_provider_per_shift,1),
+        "Load Δ":      round(mo.patients_per_provider_per_shift-pol.months[i].patients_per_provider_per_shift,1),
+        "Base Min/Pt": round(pol.months[i].minutes_per_patient,1) if pol.months[i].minutes_per_patient < 999 else None,
+        "Stress Min/Pt":round(mo.minutes_per_patient,1) if mo.minutes_per_patient < 999 else None,
+        "Base CZSS":   round(pol.months[i].czss,1),
+        "Stress CZSS": round(mo.czss,1),
+        "CZSS Δ":      round(mo.czss - pol.months[i].czss,1),
+        "Base Zone":   pol.months[i].zone,
+        "Stress Zone": mo.zone,
+        "Escalated":   "▲" if mo.zone != pol.months[i].zone else "",
     } for i,mo in enumerate(pol_stress.months)])
-    def _zc(v): return f"color:{C_RED};font-weight:600" if "YES" in str(v) else ""
-    st.dataframe(df_stress.style.applymap(_sz,subset=["Stress Zone"]).applymap(_zc,subset=["Zone Changed"]),
-                 use_container_width=True,height=380)
+    def _zst(v): return f"background-color:{_zcolors.get(v,'')}"
+    def _zesc(v): return f"color:{C_RED};font-weight:700" if "▲" in str(v) else ""
+    def _zdelta(v):
+        try:
+            f=float(v)
+            if f > 1: return f"color:{C_RED};font-weight:600"
+            if f < -1: return f"color:{C_GREEN}"
+        except: pass
+        return ""
+    st.dataframe(
+        df_stress.style
+            .applymap(_zst,  subset=["Stress Zone"])
+            .applymap(_zesc, subset=["Escalated"])
+            .applymap(_zdelta, subset=["Load Δ","CZSS Δ"]),
+        use_container_width=True, height=400)
+    st.download_button("Download CSV", df_stress.to_csv(index=False), "psm_stress_test.csv", "text/csv")
 
 
 # ── TAB 9: Policy Heatmap ─────────────────────────────────────────────────────
 with tabs[9]:
-    st.markdown("## POLICY SCORE HEATMAP")
-    if st.session_state.all_policies:
-        all_p=st.session_state.all_policies
-        bv=sorted(set(round(p.base_fte,1) for p in all_p)); wv=sorted(set(round(p.winter_fte,1) for p in all_p))
-        bi={v:i for i,v in enumerate(bv)}; wi={v:i for i,v in enumerate(wv)}
-        mat=np.full((len(wv),len(bv)),np.nan)
-        for p in all_p:
-            b2=bi.get(round(p.base_fte,1)); w2=wi.get(round(p.winter_fte,1))
-            if b2 is not None and w2 is not None: mat[w2][b2]=p.summary.get('total_ebitda_3yr', -p.total_score)
-        vmin,vmax=np.nanmin(mat),np.nanpercentile(mat,95)
-        fh=go.Figure(go.Heatmap(z=mat,x=[str(v) for v in bv],y=[str(v) for v in wv],
-                                 colorscale=[[0,C_GREEN],[0.5,"#FFFBEB"],[1,C_RED]],zmin=vmin,zmax=vmax,
-                                 colorbar=dict(title="Score ($)",tickfont=dict(size=10,color=SLATE))))
-        fh.add_scatter(x=[str(round(best.base_fte,1))],y=[str(round(best.winter_fte,1))],mode="markers",
-                       marker=dict(symbol="star",size=22,color="white",line=dict(color=INK,width=2)),name="Optimal")
-        fh.update_layout(**mk_layout(height=500,title="Policy Score Landscape (lower = better) * = Optimal",
-                          xaxis=dict(title="Base FTE"),yaxis=dict(title="Winter FTE",showgrid=False)))
-        st.plotly_chart(fh,use_container_width=True)
-    else:
-        st.info("Run the optimizer to see the heatmap.")
+    # ── Section header ────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style='padding:1.6rem 0 0.2rem;'>
+      <div style='font-size:0.56rem;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:{MUTED};margin-bottom:0.35rem;'>Optimization Landscape</div>
+      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.55rem;font-weight:500;color:{INK};letter-spacing:-0.01em;'>Policy Score Heatmap</div>
+      <div style='width:32px;height:2px;background:{C_GOLD};border-radius:1px;margin-top:6px;'></div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:0.82rem;color:{SLATE};margin:0.4rem 0 1.2rem;'>Each cell represents a candidate staffing policy (Base FTE × Winter FTE). Color encodes 3-year EBITDA — darker green is better. The star marks the optimizer-selected optimum.</p>", unsafe_allow_html=True)
 
+    if st.session_state.all_policies:
+        all_p = st.session_state.all_policies
+        bv = sorted(set(round(p.base_fte,1) for p in all_p))
+        wv = sorted(set(round(p.winter_fte,1) for p in all_p))
+        bi = {v:i for i,v in enumerate(bv)}
+        wi = {v:i for i,v in enumerate(wv)}
+
+        # EBITDA matrix
+        mat_e = np.full((len(wv),len(bv)), np.nan)
+        # CZSS matrix for overlay
+        mat_c = np.full((len(wv),len(bv)), np.nan)
+        for p in all_p:
+            b2 = bi.get(round(p.base_fte,1))
+            w2 = wi.get(round(p.winter_fte,1))
+            if b2 is not None and w2 is not None:
+                mat_e[w2][b2] = p.summary.get("total_ebitda_3yr", -p.total_score)
+                mat_c[w2][b2] = p.summary.get("final_czss", 0)
+
+        # Toggle: EBITDA or Stress Score
+        _hm_view = st.radio("Color by", ["3-Year EBITDA", "Stress Score (CZSS)"],
+                            horizontal=True, label_visibility="collapsed",
+                            help="Switch heatmap color encoding between financial performance and organizational stress")
+        st.caption("Color by: " + ("Higher EBITDA = darker green" if _hm_view=="3-Year EBITDA" else "Lower stress = darker green — use alongside EBITDA to find the policy with best risk-adjusted outcome"))
+
+        if _hm_view == "3-Year EBITDA":
+            _mat    = mat_e
+            _cscale = [[0, "#FEF2F2"], [0.4, "#FFFBEB"], [1.0, "#0A6B4A"]]
+            _cb_ttl = "3-Yr EBITDA ($)"
+            _vmin   = np.nanmin(_mat)
+            _vmax   = np.nanpercentile(_mat, 97)
+        else:
+            _mat    = mat_c
+            # For stress: lower = better, so invert (green=low, red=high)
+            _cscale = [[0, "#0A6B4A"], [0.4, "#FFFBEB"], [1.0, "#7F1D1D"]]
+            _cb_ttl = "Stress Score"
+            _vmin   = 0
+            _vmax   = max(np.nanpercentile(_mat, 97), 30)
+
+        # Custom hover text
+        _hover = [[
+            f"Base FTE: {bv[j]:.1f}<br>Winter FTE: {wv[i]:.1f}<br>"
+            f"EBITDA: ${mat_e[i][j]/1e6:.2f}M<br>Stress Score: {mat_c[i][j]:.1f}"
+            if not np.isnan(mat_e[i][j]) else ""
+            for j in range(len(bv))] for i in range(len(wv))]
+
+        fh = go.Figure(go.Heatmap(
+            z=_mat, x=[str(v) for v in bv], y=[str(v) for v in wv],
+            colorscale=_cscale, zmin=_vmin, zmax=_vmax,
+            text=_hover, hovertemplate="%{text}<extra></extra>",
+            colorbar=dict(
+                title=dict(text=_cb_ttl, font=dict(size=11, color=SLATE)),
+                tickfont=dict(size=10, color=SLATE),
+                thickness=14, len=0.85
+            )
+        ))
+        # Optimal policy star
+        _opt = best
+        fh.add_scatter(
+            x=[str(round(_opt.base_fte,1))], y=[str(round(_opt.winter_fte,1))],
+            mode="markers+text",
+            marker=dict(symbol="star", size=20, color="white", line=dict(color=INK, width=1.5)),
+            text=["  Optimal"], textfont=dict(size=10, color=INK), textposition="middle right",
+            name="Optimizer selection", showlegend=True
+        )
+        fh.update_layout(**mk_layout(
+            height=520,
+            title=f"Policy Landscape — {len(all_p):,} Policies Evaluated",
+            xaxis=dict(title="Base FTE", tickfont=dict(size=10)),
+            yaxis=dict(title="Winter FTE", tickfont=dict(size=10), showgrid=False),
+            legend=dict(orientation="h", y=-0.12, font=dict(size=11))
+        ))
+        st.plotly_chart(fh, use_container_width=True)
+
+        # ── Summary strip ─────────────────────────────────────────────────────
+        _all_e = [p.summary.get("total_ebitda_3yr", 0) for p in all_p if not np.isnan(p.summary.get("total_ebitda_3yr", float("nan")))]
+        _all_c = [p.summary.get("final_czss", 0) for p in all_p]
+        _best_e = max(_all_e) if _all_e else 0
+        _worst_e = min(_all_e) if _all_e else 0
+        _spread = _best_e - _worst_e
+        st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:0.56rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{MUTED};margin-bottom:0.5rem;border-bottom:1px solid {RULE};padding-bottom:0.4rem;'>Landscape Summary</div>", unsafe_allow_html=True)
+        _ls1, _ls2, _ls3, _ls4 = st.columns(4)
+        _ls1.metric("Policies evaluated", f"{len(all_p):,}")
+        _ls2.metric("Best 3-Yr EBITDA",   f"${_best_e/1e6:.2f}M")
+        _ls3.metric("EBITDA spread",        f"${_spread/1e6:.2f}M", help="Difference between best and worst policy — the value at risk from a suboptimal hiring plan")
+        _ls4.metric("Optimal Stress Score", f"{_opt.summary.get('final_czss',0):.1f}", help="CZSS at the optimizer-selected policy — lower is better")
+
+    else:
+        _nd = ('<div style="background:#FDFAED;border:1px solid rgba(122,98,0,0.2);border-radius:6px;'
+               'padding:2rem 2.5rem;text-align:center;margin-top:2rem;">'
+               '<div style="font-family:Georgia,serif;font-size:1.2rem;margin-bottom:0.5rem;">No optimization data</div>'
+               '<div style="font-size:0.82rem;color:#4A5568;">Run the optimizer from the sidebar to generate the policy landscape.</div>'
+               '</div>')
+        st.markdown(_nd, unsafe_allow_html=True)
 
 # ── TAB 10: Req Timing ─────────────────────────────────────────────────────────
 with tabs[10]:
@@ -4102,23 +4289,73 @@ with tabs[10]:
 # ── TAB 11: Data Table ────────────────────────────────────────────────────────
 with tabs[11]:
     pol=active_policy()
-    st.markdown("## FULL 36-MONTH DATA")
+
+    # ── Section header ────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style='padding:1.6rem 0 0.2rem;'>
+      <div style='font-size:0.56rem;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:{MUTED};margin-bottom:0.35rem;'>Raw Output</div>
+      <div style='font-family:"EB Garamond",Georgia,serif;font-size:1.55rem;font-weight:500;color:{INK};letter-spacing:-0.01em;'>36-Month Data Export</div>
+      <div style='width:32px;height:2px;background:{C_GOLD};border-radius:1px;margin-top:6px;'></div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:0.82rem;color:{SLATE};margin:0.4rem 0 1.2rem;'>Complete month-by-month simulation output. All columns are color-coded by zone threshold. Download CSV for external analysis.</p>", unsafe_allow_html=True)
+
     dff=pd.DataFrame([{
-        "Month":mlabel(mo),"Q":f"Q{mo.quarter}","Zone":mo.zone,
-        "Hiring Mode":mo.hiring_mode,"At/Below Trigger":"Y" if mo.at_or_below_trigger else "N",
-        "Visits/Day":round(mo.demand_visits_per_day,1),
-        "FTE Required":round(mo.demand_fte_required,2),"Paid FTE":round(mo.paid_fte,2),
+        "Month":       mlabel(mo),
+        "Q":           f"Q{mo.quarter}",
+        "Zone":        mo.zone,
+        "Risk":        mo.risk_label,
+        "Stress Score":round(mo.czss,1),
+        "Hiring Mode": mo.hiring_mode,
+        "Visits/Day":  round(mo.demand_visits_per_day,1),
+        "Pts/Provider":round(mo.patients_per_provider_per_shift,1),
+        "Min/Patient": round(mo.minutes_per_patient,1) if mo.minutes_per_patient < 999 else None,
+        "FTE Required":round(mo.demand_fte_required,2),
+        "Paid FTE":    round(mo.paid_fte,2),
         "Providers on Floor":round(mo.providers_on_floor,2),
-        "Pts/Provider/Shift":round(mo.patients_per_provider_per_shift,1),
-        "Attrition %/mo":f"{mo.effective_attrition_rate*100:.2f}%",
-        "Overload Att":round(mo.overload_attrition_delta,3),
-        "Perm Cost":f"${mo.permanent_cost:,.0f}","Support":f"${mo.support_cost:,.0f}",
-        "Turnover":round(mo.turnover_events,2),"Burnout":f"${mo.burnout_penalty:,.0f}",
-        "Lost Rev":f"${mo.lost_revenue:,.0f}",
+        "Attrition %": f"{mo.effective_attrition_rate*100:.2f}%",
+        "Overload Δ":  round(mo.overload_attrition_delta,3),
+        "Perm Cost":   f"${mo.permanent_cost:,.0f}",
+        "Support Cost":f"${mo.support_cost:,.0f}",
+        "Turnover":    round(mo.turnover_events,2),
+        "Burnout Cost":f"${mo.burnout_penalty:,.0f}",
+        "Lost Revenue":f"${mo.lost_revenue:,.0f}",
     } for mo in pol.months])
-    def _szz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
-    st.dataframe(dff.style.applymap(_szz,subset=["Zone"]),use_container_width=True,height=520)
-    st.download_button("Download CSV",dff.to_csv(index=False),"psm_36month.csv","text/csv")
+
+    _zone_bg  = {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2","Critical":"background-color:#F5E8E8"}
+    _risk_bg  = {"Green":"background-color:#ECFDF5;color:#0A6B4A","Yellow":"background-color:#FFFBEB;color:#92600A",
+                 "Red":"background-color:#FEF2F2;color:#B91C1C","Critical":"background-color:#F5E8E8;color:#7F1D1D;font-weight:700"}
+    def _szz(v):  return _zone_bg.get(v, "")
+    def _srzz(v): return _risk_bg.get(v, "")
+    def _sczss(v):
+        try:
+            f=float(v)
+            if f>=30: return f"color:{C_CRITICAL};font-weight:700"
+            if f>=15: return f"color:{C_RED};font-weight:600"
+            if f>=5:  return f"color:{C_YELLOW}"
+        except: pass
+        return ""
+    def _sppts(v):
+        try:
+            f=float(v); b=cfg.budgeted_patients_per_provider_per_day
+            if f>b*(1+cfg.critical_threshold_pct/100): return f"color:{C_CRITICAL};font-weight:700"
+            if f>b*(1+cfg.red_threshold_pct/100):      return f"color:{C_RED};font-weight:600"
+            if f>b*(1+cfg.yellow_threshold_pct/100):   return f"color:{C_YELLOW};font-weight:600"
+        except: pass
+        return ""
+
+    st.dataframe(
+        dff.style
+            .applymap(_szz,   subset=["Zone"])
+            .applymap(_srzz,  subset=["Risk"])
+            .applymap(_sczss, subset=["Stress Score"])
+            .applymap(_sppts, subset=["Pts/Provider"]),
+        use_container_width=True, height=540)
+
+    _dl1, _dl2 = st.columns([1,5])
+    with _dl1:
+        st.download_button("⬇ Download CSV", dff.to_csv(index=False), "psm_36month.csv", "text/csv",
+                           use_container_width=True)
 
 
 
