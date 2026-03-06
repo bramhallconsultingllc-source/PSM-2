@@ -3426,7 +3426,7 @@ with tabs[2]:
     fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,row_heights=[0.55,0.45])
 
     for i,mo in enumerate(mos):
-        zc={"Green":"rgba(10,117,84,0.07)","Yellow":"rgba(154,100,0,0.10)","Red":"rgba(185,28,28,0.12)"}[mo.zone]
+        zc={"Green":"rgba(10,117,84,0.07)","Yellow":"rgba(154,100,0,0.10)","Red":"rgba(185,28,28,0.12)","Critical":"rgba(127,29,29,0.18)"}.get(mo.zone,"rgba(127,29,29,0.18)")
         fig.add_vrect(x0=i-0.5,x1=i+0.5,fillcolor=zc,layer="below",line_width=0,row=1,col=1)
 
     fig.add_hline(y=cfg.hiring_trigger_pts, line_dash="dash", line_color=C_GREEN, line_width=1.5,
