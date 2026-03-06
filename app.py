@@ -1297,6 +1297,14 @@ def _tile(col, val, label, sub=None, border="#003366", val_color="#0F1923", val_
 _swb_sub  = f"{'▲' if _swb_delta_pv > 0 else '▼'} ${abs(_swb_delta_pv):.2f} vs ${_swb_target:.0f} target"
 _vpd_sub  = f"↓ {_vpd_min:.1f} min · ↑ {_vpd_max:.1f} max"
 _turn_sub = f"{_turn_risk_lbl} · ${_turn_cost_3yr/1e3:.0f}K cost"
+
+# ── CZSS hero tile values ────────────────────────────────────────────────────
+_czss_val      = s.get("final_czss", 0.0)
+_czss_peak     = s.get("peak_czss",  0.0)
+_czss_lbl      = s.get("overall_risk_label", "Green")
+_czss_clr      = {"Green": C_GREEN, "Yellow": C_YELLOW, "Red": C_RED, "Critical": C_CRITICAL}.get(_czss_lbl, C_CRITICAL)
+_czss_trend    = "↓ declining" if _czss_val < _czss_peak * 0.9 else ("↑ building" if _czss_val >= _czss_peak * 0.99 else "→ stable")
+_czss_sub      = f"{_czss_lbl} · peak {_czss_peak:.1f} · {_czss_trend}"
 _h1,_h2,_h3,_h4,_h5,_h6,_h7 = st.columns(7)
 _tile(_h1, f"{best.base_fte:.1f}",   "Base FTE")
 _tile(_h2, f"{best.winter_fte:.1f}", "Winter FTE")
@@ -1307,8 +1315,8 @@ _tile(_h5, f"${_swb_actual:.2f}", "SWB / Visit",
       sub=_swb_sub, border=_swb_tile_clr, val_color=_swb_tile_clr, val_size="1.3rem")
 _tile(_h6, f"{_vpd_avg:.1f}", "Visits / Provider",
       sub=_vpd_sub, border="#7A6200", val_color="#0F1923", val_size="1.3rem")
-_tile(_h7, f"{_tot_turn_events:.1f}", "Turnover Events",
-      sub=_turn_sub, border=_turn_risk_clr, val_color=_turn_risk_clr, val_size="1.3rem")
+_tile(_h7, f"{_czss_val:.1f}", f"Risk: {_czss_lbl}",
+      sub=_czss_sub, border=_czss_clr, val_color=_czss_clr, val_size="1.3rem")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY CARD
