@@ -3685,8 +3685,10 @@ with tabs[4]:
     df_sh=pd.DataFrame([{"Month":mlabel(mo),"Q":f"Q{mo.quarter}","Visits/Day":round(mo.demand_visits_per_day,1),
         "Providers Needed":round(mo.demand_providers_per_shift,2),"FTE Required":round(mo.demand_fte_required,2),
         "Paid FTE":round(mo.paid_fte,2),"Providers on Floor":round(mo.providers_on_floor,2),
+        "Pts/Provider":round(mo.patients_per_provider_per_shift,1),
+        "Min/Patient":round(mo.minutes_per_patient,1) if mo.minutes_per_patient < 999 else None,
         "Coverage Gap":round(mo.shift_coverage_gap,2),"Hiring Mode":mo.hiring_mode,"Zone":mo.zone} for mo in mos])
-    def _sz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2"}.get(v,"")
+    def _sz(v): return {"Green":"background-color:#ECFDF5","Yellow":"background-color:#FFFBEB","Red":"background-color:#FEF2F2","Critical":"background-color:#F5E8E8"}.get(v,"")
     def _sg(v):
         try:
             f=float(v)
@@ -3694,7 +3696,16 @@ with tabs[4]:
             if f<-0.1: return f"color:{C_GREEN}"
         except: pass
         return ""
-    st.dataframe(df_sh.style.applymap(_sz,subset=["Zone"]).applymap(_sg,subset=["Coverage Gap"]),use_container_width=True,height=440)
+    def _sp(v):
+        try:
+            f=float(v); b=cfg.budgeted_patients_per_provider_per_day
+            if f > b*(1+cfg.critical_threshold_pct/100): return f"color:{C_CRITICAL};font-weight:700"
+            if f > b*(1+cfg.red_threshold_pct/100):      return f"color:{C_RED};font-weight:600"
+            if f > b*(1+cfg.yellow_threshold_pct/100):   return f"color:{C_YELLOW};font-weight:600"
+            if f > b:                                     return f"color:{C_YELLOW}"
+        except: pass
+        return ""
+    st.dataframe(df_sh.style.applymap(_sz,subset=["Zone"]).applymap(_sg,subset=["Coverage Gap"]).applymap(_sp,subset=["Pts/Provider"]),use_container_width=True,height=440)
     st.download_button("Download CSV",df_sh.to_csv(index=False),"psm_shift.csv","text/csv")
 
 
