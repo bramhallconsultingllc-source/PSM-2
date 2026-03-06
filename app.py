@@ -1698,8 +1698,8 @@ with tabs[0]:
             })
 
     # ── Colour helpers ────────────────────────────────────────────────────────
-    ZONE_BG   = {"Green": "#ECFDF5", "Yellow": "#FFFBEB", "Red": "#FEF2F2"}
-    ZONE_PILL = {"Green": ("#0A6B4A","#ECFDF5"), "Yellow": ("#92600A","#FFFBEB"), "Red": ("#B91C1C","#FEF2F2")}
+    ZONE_BG   = {"Green": "#ECFDF5", "Yellow": "#FFFBEB", "Red": "#FEF2F2", "Critical": "#F5E8E8"}
+    ZONE_PILL = {"Green": ("#0A6B4A","#ECFDF5"), "Yellow": ("#92600A","#FFFBEB"), "Red": ("#B91C1C","#FEF2F2"), "Critical": ("#7F1D1D","#F5E8E8")}
 
     # ── Clinic summary header values ──────────────────────────────────────────
     _total_fte_avg = sum(r["total_fte"] for r in rows) / len(rows) if rows else 0
@@ -1725,7 +1725,7 @@ with tabs[0]:
         prev_yr  = r['year']
         q_labels = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct–Dec)"]
         q_label  = q_labels[r['quarter'] - 1]
-        pill_fg, pill_bg = ZONE_PILL[r["zone"]]
+        pill_fg, pill_bg = ZONE_PILL.get(r["zone"], ("#7F1D1D","#F5E8E8"))
         zone_pill = (f"<span style='background:{pill_bg};color:{pill_fg};"
                      f"font-size:0.62rem;font-weight:700;padding:1px 6px;"
                      f"border-radius:3px;letter-spacing:0.06em'>{r['zone'].upper()}</span>")
@@ -3437,7 +3437,7 @@ with tabs[2]:
     fig.add_scatter(x=lbls,y=[mo.patients_per_provider_per_shift for mo in mos],
                     mode="lines+markers",name="Pts/Provider/Shift",
                     line=dict(color=NAVY,width=2.5),
-                    marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=7,line=dict(color="white",width=1.5)),
+                    marker=dict(color=[ZONE_COLORS.get(mo.zone, C_CRITICAL) for mo in mos],size=7,line=dict(color="white",width=1.5)),
                     row=1,col=1)
     # Build threshold lines; stagger labels vertically when values are close
     _y_ceil = budget * (1 + cfg.yellow_threshold_pct / 100)
@@ -3489,7 +3489,7 @@ with tabs[2]:
     fig.update_yaxes(title_text="FTE",showgrid=True,gridcolor=RULE,row=2,col=1)
     st.plotly_chart(fig,use_container_width=True)
 
-    fz=go.Figure(go.Bar(x=lbls,y=[1]*len(mos),marker_color=[ZONE_COLORS[mo.zone] for mo in mos],showlegend=False,
+    fz=go.Figure(go.Bar(x=lbls,y=[1]*len(mos),marker_color=[ZONE_COLORS.get(mo.zone, C_CRITICAL) for mo in mos],showlegend=False,
                          hovertext=[f"{mlabel(mo)}: {mo.zone} {mo.patients_per_provider_per_shift:.1f}" for mo in mos]))
     fz.update_layout(height=44,margin=dict(t=0,b=0,l=0,r=0),paper_bgcolor="white",plot_bgcolor="white",
                      yaxis=dict(visible=False),xaxis=dict(visible=False))
@@ -3658,7 +3658,7 @@ with tabs[5]:
     fa=go.Figure()
     fa.add_scatter(x=[mlabel(mo) for mo in mos],y=[mo.effective_attrition_rate*100 for mo in mos],
                    name="Effective attrition %/mo",mode="lines+markers",line=dict(color=C_RED,width=2.5),
-                   marker=dict(color=[ZONE_COLORS[mo.zone] for mo in mos],size=8,line=dict(color="white",width=1.5)))
+                   marker=dict(color=[ZONE_COLORS.get(mo.zone, C_CRITICAL) for mo in mos],size=8,line=dict(color="white",width=1.5)))
     fa.add_hline(y=cfg.monthly_attrition_rate*100,line_dash="dash",line_color=SLATE,line_width=1.5,
                  annotation_text=f"Base {cfg.monthly_attrition_rate*100:.2f}%/mo",
                  annotation_position="right",annotation_font=dict(size=9,color=SLATE))
